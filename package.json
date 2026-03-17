@@ -10,7 +10,8 @@
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
     "gateway": "tsx src/gateway/server.ts",
-    "watcher": "tsx src/watchdog/output_watcher.ts"
+    "watcher": "tsx src/watchdog/output_watcher.ts",
+    "hunter": "tsx src/hunter/main.ts"
   },
   "keywords": [
     "automation",

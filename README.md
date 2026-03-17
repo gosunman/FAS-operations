@@ -137,6 +137,7 @@
 fully-automation-system/
 ├── src/
 │   ├── gateway/          # Task API 서버 (Express, SQLite)
+│   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬
 │   └── shared/           # 공유 타입 정의

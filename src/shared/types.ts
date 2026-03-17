@@ -79,6 +79,30 @@ export type Task = {
   completed_at?: string;
 };
 
+// === Hunter Types ===
+
+export type HunterActionType =
+  | 'notebooklm_verify'
+  | 'deep_research'
+  | 'web_crawl'
+  | 'browser_task';
+
+export type HunterTaskResult = {
+  status: 'success' | 'failure';
+  output: string;
+  files: string[];
+};
+
+export type HunterHeartbeatResponse = {
+  ok: boolean;
+  server_time: string;
+};
+
+export type HunterPendingTasksResponse = {
+  tasks: Task[];
+  count: number;
+};
+
 // === Gateway Types ===
 
 export type ApprovalRequest = {

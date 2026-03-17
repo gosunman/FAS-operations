@@ -53,6 +53,9 @@
 | `NOTION_API_KEY` | N | Notion API 통합 키 |
 | `GATEWAY_PORT` | N | Gateway 포트 (기본: 3100) |
 | `GATEWAY_HOST` | N | Gateway 호스트 (기본: 0.0.0.0) |
+| `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 (기본: http://100.64.0.1:3100) |
+| `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
+| `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
 | `N8N_USER` | N | n8n 관리자 ID |
@@ -69,6 +72,14 @@
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
 - **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
+
+### Hunter (`src/hunter/`)
+- **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit)
+- **task_executor.ts**: 태스크 액션 라우팅 + 실행기 (현재 스텁, OpenClaw 통합 시 교체)
+- **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
+- **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
+- **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
+- **main.ts**: 진입점 (`pnpm run hunter`)
 
 ### Watchdog (`src/watchdog/`)
 - **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
@@ -111,6 +122,7 @@ pnpm test          # watch 모드
 # 서버 실행
 pnpm run gateway   # Gateway + Task API
 pnpm run watcher   # Output Watcher
+pnpm run hunter    # Hunter Agent (on hunter machine)
 
 # tmux 환경
 ./scripts/setup/setup_tmux.sh      # tmux-resurrect 설치
