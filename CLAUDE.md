@@ -13,7 +13,7 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - 주석: 많이 달 것
 - 테스트: vitest, TDD 방향
 - 프레임워크: Express (Gateway), n8n (오케스트레이션)
-- DB: 파일 기반 (JSON/YAML), 추후 필요 시 MongoDB
+- DB: 태스크 큐/로컬 상태 → SQLite, 앱 서비스/학생 데이터 → MongoDB
 - 인프라: Docker/Colima, tmux, Tailscale
 
 ## 자율 실행 범위

@@ -146,6 +146,34 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 }
 ```
 
+## 구글 계정 세션 관리
+
+구글 서비스(NotebookLM, Deep Research)는 자동화된 브라우저 로그인을 강력히 차단한다(CAPTCHA 등).
+매번 로그인하는 방식은 비현실적이므로 **초기 1회 수동 로그인 후 세션 재사용** 방식을 사용한다.
+
+```text
+1. 초기 세팅 (수동, 1회):
+   - 헌터/캡틴에서 브라우저(Chrome) 실행
+   - 구글 계정 수동 로그인
+   - 쿠키/세션 데이터를 프로필 디렉토리에 저장
+     (Chrome: --user-data-dir=/path/to/fas-google-profile)
+
+2. 자동화 실행 시:
+   - 저장된 프로필 디렉토리를 지정하여 브라우저 시작
+   - 이미 로그인된 상태이므로 CAPTCHA 없이 접근 가능
+   - OpenClaw/Puppeteer/Playwright 모두 --user-data-dir 옵션 지원
+
+3. 세션 만료 시:
+   - Watchdog이 "로그인 필요" 화면 감지 → Telegram 알림
+   - 주인님이 원격(VNC)으로 재로그인 (수동, 5분 이내)
+   - 재로그인 후 세션 자동 갱신
+
+4. 프로필 경로:
+   - 헌터: /Users/user/fas-google-profile-hunter/
+   - 캡틴: /Users/user/fas-google-profile-captain/
+   - 각각 별도 구글 계정
+```
+
 ## Tailscale ACL 설정
 
 ```json
