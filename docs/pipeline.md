@@ -219,9 +219,15 @@ SEO/GEO 분석 SaaS 예시:
 4. 정기 구독 고객: 매월 자동 재분석 + 변화 추적
 
 기술 스택:
-- Next.js + Stripe + Vercel
+- Next.js + Stripe + Vercel (Public API — 외부 웹훅 수신 가능)
 - 분석 엔진: Lighthouse CI + 커스텀 GEO 스코어러
 - 이메일: Resend 또는 SendGrid
+- DB: MongoDB Atlas (클라우드)
+
+아키텍처 핵심:
+- Public API (Vercel): 결제 웹훅 수신 + 고객 대시보드
+- 내부 연동: Public API → n8n 웹훅 or Task DB → FAS 분석 파이프라인
+- Gateway(Tailscale 내부)와 Public API(외부)는 완전 분리
 ```
 
 ## 주인님의 기존 아이디어 목록

@@ -8,6 +8,8 @@ Express 서버가 두 가지 역할을 겸한다:
 
 캡틴에서 실행. 포트 3100. Tailscale 내부에서만 접근 가능.
 
+> **주의**: 이 Gateway는 내부용이다. B2B SaaS 등 외부 결제 웹훅(Stripe/Toss)을 수신해야 하는 수익화 프로젝트는 **별도의 Public API 서버**(Next.js API Routes, Vercel 배포)를 두고, 이 서버가 내부 n8n 웹훅 또는 Task DB로 안전하게 데이터를 넘기는 구조로 설계한다. 웹 개발 보일러플레이트에 이 패턴을 포함시킨다.
+
 ## 서버 구조
 
 ```typescript
