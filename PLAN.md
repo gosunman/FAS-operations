@@ -32,31 +32,31 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-gemini-b`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
   - 헌터: `fas-openclaw`, `fas-watchdog`
 
-### 0-3. 소통 채널 구축 ✅ (코드 구현 완료, 토큰 설정 대기)
+### 0-3. 소통 채널 구축 ✅
 
 - [x] **Telegram Bot** 코드 구현 — 긴급 알림 전용
   - [x] 알림 전송 모듈 (TypeScript) — `src/notification/telegram.ts`
   - [x] `send(text, type)` + `wait_for_approval(request_id, timeout_ms)`
-  - [ ] BotFather에서 실제 봇 생성 + Chat ID 확인 *(인간 작업)*
-  - [ ] Galaxy Watch 텔레그램 알림 허용 설정 *(인간 작업)*
+  - [x] BotFather에서 실제 봇 생성 + Chat ID 확인
+  - [x] Galaxy Watch 텔레그램 알림 허용 설정
 - [x] **Slack** 코드 구현 — 업무 소통
   - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
   - [x] 통합 라우터 — `src/notification/router.ts`
-  - [ ] Slack 워크스페이스 생성 + Bot 토큰 발급 *(인간 작업)*
+  - [x] Slack 워크스페이스 생성 + Bot 토큰 발급
 - [ ] **Notion** 연동 — 보고서/긴 문서 *(Phase 2에서 구현 예정)*
 
-### 0-4. Docker 환경 (캡틴) ✅ (설정 완료, Colima 설치 대기)
+### 0-4. Docker 환경 (캡틴) ✅
 
-- [ ] 캡틴에 Colima 설치 — `scripts/setup/setup_colima.sh` *(인간 승인 후 실행)*
+- [x] 캡틴에 Colima + Docker 설치 완료 (Docker 29.2.1)
 - [x] n8n Docker Compose 파일 작성 — `docker-compose.yml`
 - [x] 볼륨 매핑: tasks, state, reports, config
 
-### 0-5. AI CLI 설치 & 인증 ✅ (가이드 스크립트 생성, 인간 설정 대기)
+### 0-5. AI CLI 설치 & 인증 ✅
 
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
-- [ ] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜) *(인간 작업)*
-- [ ] Gemini CLI: 캡틴에 2개 계정 인증 설정 *(인간 작업)*
-- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업)*
+- [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
+- [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 별도 진행)*
 
 ### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
 
