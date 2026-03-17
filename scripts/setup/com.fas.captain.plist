@@ -1,0 +1,47 @@
+<!-- FAS Captain launchd plist
+     Auto-starts FAS tmux sessions on login.
+
+     Install:
+       cp scripts/setup/com.fas.captain.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.fas.captain.plist
+
+     Uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.fas.captain.plist
+       rm ~/Library/LaunchAgents/com.fas.captain.plist
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fas.captain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>/Users/user/fully-automation-system/scripts/start_captain_sessions.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/user/fully-automation-system/logs/launchd_captain.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/user/fully-automation-system/logs/launchd_captain_error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/user</string>
+    </dict>
+</dict>
+</plist>
