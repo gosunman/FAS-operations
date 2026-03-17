@@ -15,21 +15,97 @@
 //
 //   GET    /api/health             — Health check
 //   GET    /api/stats              — Task statistics
+//
+// Security (NotebookLM review response):
+//   - Hunter API key authentication (Defense in Depth)
+//   - Rate limiting on hunter endpoints (Prompt Injection defense)
+//   - Schema validation on hunter result submission
+//   - PII quarantine strategy (reject & quarantine instead of auto-sanitize)
 
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
-import { sanitize_task, contains_pii, sanitize_text } from './sanitizer.js';
+import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
+import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
+import type { Request, Response, NextFunction } from 'express';
 import type { TaskStatus } from '../shared/types.js';
+
+// === Hunter API security constants ===
+
+const HUNTER_API_KEY_HEADER = 'x-hunter-api-key';
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;  // 1 minute
+const DEFAULT_RATE_LIMIT_MAX = 30;            // 30 requests per minute
+const DEFAULT_MAX_OUTPUT_LENGTH = 50_000;     // 50KB text output limit
+const DEFAULT_MAX_FILES_COUNT = 20;           // Max files per result
+const MAX_FILE_PATH_LENGTH = 500;             // Max length for each file path
+const BODY_SIZE_LIMIT = '100kb';              // Max request body size
+
+// Allowed file extensions for hunter result files (deny by default)
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  '.md', '.txt', '.json', '.csv', '.html', '.htm', '.xml', '.yaml', '.yml', '.log',
+]);
+
+// === App configuration options ===
+
+export type AppOptions = {
+  hunter_api_key?: string;          // If set, require for /api/hunter/* (Defense in Depth)
+  rate_limit_window_ms?: number;    // Rate limit window (default: 60s)
+  rate_limit_max_requests?: number; // Max requests per window (default: 30)
+  max_output_length?: number;       // Max hunter output text length (default: 50KB)
+  max_files_count?: number;         // Max files per result (default: 20)
+};
 
 // === Create Express app ===
 
-export const create_app = (store: TaskStore) => {
+export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: BODY_SIZE_LIMIT }));
 
   // Track hunter heartbeat
   let last_hunter_heartbeat: Date | null = null;
   const start_time = Date.now();
+
+  // Rate limiter for hunter endpoints
+  const hunter_rate_limiter = create_rate_limiter({
+    window_ms: options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
+    max_requests: options.rate_limit_max_requests ?? DEFAULT_RATE_LIMIT_MAX,
+  });
+
+  const max_output_length = options.max_output_length ?? DEFAULT_MAX_OUTPUT_LENGTH;
+  const max_files_count = options.max_files_count ?? DEFAULT_MAX_FILES_COUNT;
+
+  // === Hunter API key authentication middleware ===
+  // Defense in Depth: even with Tailscale network auth, require app-level key
+  const hunter_auth = (req: Request, res: Response, next: NextFunction): void => {
+    if (!options.hunter_api_key) {
+      // No key configured — skip auth (development mode)
+      next();
+      return;
+    }
+
+    const provided_key = req.headers[HUNTER_API_KEY_HEADER] as string | undefined;
+    if (provided_key !== options.hunter_api_key) {
+      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid or missing API key`);
+      res.status(401).json({ error: 'Invalid or missing API key' });
+      return;
+    }
+    next();
+  };
+
+  // === Hunter rate limiting middleware ===
+  const hunter_rate_limit = (_req: Request, res: Response, next: NextFunction): void => {
+    if (!hunter_rate_limiter.is_allowed()) {
+      console.warn('[SECURITY] Hunter rate limit exceeded');
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        retry_after_ms: options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
+      });
+      return;
+    }
+    next();
+  };
+
+  // Apply auth + rate limit to all hunter endpoints
+  app.use('/api/hunter', hunter_auth, hunter_rate_limit);
 
   // === Task CRUD ===
 
@@ -127,7 +203,7 @@ export const create_app = (store: TaskStore) => {
     res.json(store.get_by_id(req.params.id));
   });
 
-  // === Hunter API (sanitized) ===
+  // === Hunter API (sanitized, authenticated, rate-limited) ===
 
   // Get pending tasks for hunter (PII removed)
   app.get('/api/hunter/tasks/pending', (_req, res) => {
@@ -142,24 +218,107 @@ export const create_app = (store: TaskStore) => {
     }
   });
 
-  // Submit hunter task result (with reverse PII check)
+  // Submit hunter task result (with schema validation + PII quarantine)
   app.post('/api/hunter/tasks/:id/result', (req, res) => {
     const { status: result_status, output, files } = req.body;
 
-    // Reverse PII check: sanitize any personal info in hunter's output
-    let safe_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
-    if (contains_pii(safe_output)) {
-      console.warn(`[SECURITY] Hunter task ${req.params.id} output contains PII — sanitizing`);
-      safe_output = sanitize_text(safe_output);
+    // --- Schema validation ---
+
+    // Validate result_status
+    if (result_status !== 'success' && result_status !== 'failure') {
+      res.status(400).json({ error: 'status must be "success" or "failure"' });
+      return;
     }
+
+    // Validate output type and length
+    if (output !== undefined && typeof output !== 'string') {
+      res.status(400).json({ error: 'output must be a string' });
+      return;
+    }
+    if (typeof output === 'string' && output.length > max_output_length) {
+      res.status(400).json({
+        error: `output exceeds max length (${max_output_length} chars)`,
+        max_length: max_output_length,
+      });
+      return;
+    }
+
+    // Validate files array
+    if (files !== undefined) {
+      if (!Array.isArray(files)) {
+        res.status(400).json({ error: 'files must be an array of strings' });
+        return;
+      }
+      if (files.length > max_files_count) {
+        res.status(400).json({
+          error: `files array exceeds max count (${max_files_count})`,
+          max_count: max_files_count,
+        });
+        return;
+      }
+
+      // Validate each file entry
+      for (const file of files) {
+        if (typeof file !== 'string') {
+          res.status(400).json({ error: 'each file entry must be a string' });
+          return;
+        }
+        if (file.length > MAX_FILE_PATH_LENGTH) {
+          res.status(400).json({ error: `file path exceeds max length (${MAX_FILE_PATH_LENGTH})` });
+          return;
+        }
+        // Block path traversal attempts
+        if (file.includes('..') || file.startsWith('/')) {
+          res.status(400).json({ error: 'file paths must not contain ".." or start with "/"' });
+          return;
+        }
+        // Check file extension against allowlist
+        const ext = file.substring(file.lastIndexOf('.')).toLowerCase();
+        if (file.includes('.') && !ALLOWED_FILE_EXTENSIONS.has(ext)) {
+          res.status(400).json({
+            error: `file extension "${ext}" is not allowed`,
+            allowed: [...ALLOWED_FILE_EXTENSIONS],
+          });
+          return;
+        }
+      }
+    }
+
+    // --- PII quarantine check ---
+
+    const raw_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
+
+    if (contains_pii(raw_output)) {
+      // Quarantine: do NOT save raw PII. Store sanitized preview for human review.
+      const detected = detect_pii_types(raw_output);
+      const sanitized_preview = sanitize_text(raw_output);
+
+      console.warn(
+        `[SECURITY] Hunter task ${req.params.id} output contains PII ` +
+        `(${detected.join(', ')}) — quarantined for human review`
+      );
+
+      store.quarantine_task(req.params.id, sanitized_preview, detected);
+
+      // Return 202 Accepted — result received but quarantined, not approved
+      res.status(202).json({
+        ok: false,
+        quarantined: true,
+        reason: 'PII detected in output — quarantined for human review',
+        detected_types: detected,
+      });
+      return;
+    }
+
+    // --- Normal processing (no PII detected) ---
 
     if (result_status === 'success') {
       store.complete_task(req.params.id, {
-        summary: safe_output,
+        summary: raw_output,
         files_created: files ?? [],
       });
     } else {
-      store.block_task(req.params.id, safe_output);
+      store.block_task(req.params.id, raw_output);
     }
 
     res.json({ ok: true });
@@ -194,7 +353,8 @@ export const create_app = (store: TaskStore) => {
     res.json(store.get_stats());
   });
 
-  return app;
+  // Expose rate limiter for testing
+  return Object.assign(app, { _hunter_rate_limiter: hunter_rate_limiter });
 };
 
 // === Start server (when run directly) ===
@@ -209,10 +369,17 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
-  const app = create_app(store);
+  const app = create_app(store, {
+    hunter_api_key: process.env.HUNTER_API_KEY,
+  });
 
   app.listen(port, host, () => {
     console.log(`[Gateway] FAS Gateway + Task API listening on ${host}:${port}`);
+    if (process.env.HUNTER_API_KEY) {
+      console.log('[Gateway] Hunter API key authentication: ENABLED');
+    } else {
+      console.warn('[Gateway] Hunter API key authentication: DISABLED (set HUNTER_API_KEY to enable)');
+    }
   });
 
   // Graceful shutdown

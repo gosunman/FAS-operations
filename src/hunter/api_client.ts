@@ -1,11 +1,13 @@
 // HTTP client for Captain's Task API
 // Uses native fetch — no external dependencies needed
+// Supports API key authentication (Defense in Depth)
 
 import type { Task, HunterTaskResult, HunterHeartbeatResponse } from '../shared/types.js';
 import type { Logger } from './logger.js';
 
 export type ApiClientConfig = {
   base_url: string;
+  api_key?: string;       // Optional API key for captain authentication
   timeout_ms?: number;
 };
 
@@ -16,16 +18,27 @@ export type ApiClient = {
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+const API_KEY_HEADER = 'x-hunter-api-key';
 
 export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiClient => {
-  const { base_url, timeout_ms = DEFAULT_TIMEOUT_MS } = config;
+  const { base_url, api_key, timeout_ms = DEFAULT_TIMEOUT_MS } = config;
 
   const make_url = (path: string): string => `${base_url}${path}`;
+
+  // Build common headers — include API key if configured
+  const make_headers = (extra?: Record<string, string>): Record<string, string> => {
+    const headers: Record<string, string> = { ...extra };
+    if (api_key) {
+      headers[API_KEY_HEADER] = api_key;
+    }
+    return headers;
+  };
 
   // Fetch pending tasks assigned to hunter (PII-sanitized by captain)
   const fetch_pending_tasks = async (): Promise<Task[]> => {
     try {
       const res = await fetch(make_url('/api/hunter/tasks/pending'), {
+        headers: make_headers(),
         signal: AbortSignal.timeout(timeout_ms),
       });
 
@@ -47,12 +60,20 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
     try {
       const res = await fetch(make_url(`/api/hunter/tasks/${task_id}/result`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: make_headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(result),
         signal: AbortSignal.timeout(timeout_ms),
       });
 
       if (!res.ok) {
+        // Handle quarantine response (202) — PII detected in output
+        if (res.status === 202) {
+          const data = await res.json() as { quarantined: boolean; detected_types: string[] };
+          logger.warn(
+            `submit_result(${task_id}): quarantined — PII detected: ${data.detected_types?.join(', ')}`
+          );
+          return false;
+        }
         logger.warn(`submit_result(${task_id}): HTTP ${res.status}`);
         return false;
       }
@@ -69,7 +90,7 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
     try {
       const res = await fetch(make_url('/api/hunter/heartbeat'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: make_headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           agent: 'openclaw',
           timestamp: new Date().toISOString(),

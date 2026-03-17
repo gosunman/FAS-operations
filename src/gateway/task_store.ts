@@ -156,9 +156,22 @@ export const create_task_store = (config: TaskStoreConfig) => {
     return result.changes > 0;
   };
 
+  // Quarantine a task — PII detected in hunter output, needs human review
+  const quarantine_task = (id: string, sanitized_preview: string, pii_types: string[]): boolean => {
+    const summary = `[QUARANTINED] PII detected: ${pii_types.join(', ')}\n---\n${sanitized_preview}`;
+    const result = stmts.update_result.run(
+      'quarantined',
+      summary,
+      '[]',
+      new Date().toISOString(),
+      id,
+    );
+    return result.changes > 0;
+  };
+
   const get_stats = (): Record<string, number> => {
     const rows = stmts.count_by_status.all() as { status: string; count: number }[];
-    const stats: Record<string, number> = { pending: 0, in_progress: 0, done: 0, blocked: 0 };
+    const stats: Record<string, number> = { pending: 0, in_progress: 0, done: 0, blocked: 0, quarantined: 0 };
     for (const row of rows) {
       stats[row.status] = row.count;
     }
@@ -182,6 +195,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
     update_status,
     complete_task,
     block_task,
+    quarantine_task,
     get_stats,
     get_all,
     close,

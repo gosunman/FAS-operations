@@ -69,6 +69,12 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /(자산|현금|예금|보증금|연봉|월급)[:：]?\s*[약~]?\s*\d+[만억천]/g,
     replacement: '[금융정보 제거됨]',
   },
+  // Internal/private URLs and hostnames (*.local, *.internal, *.ts.net, localhost)
+  {
+    name: 'internal_url',
+    regex: /https?:\/\/(?:localhost|[\w.-]+\.(?:local|internal|tailnet|ts\.net))(?::\d+)?(?:\/[^\s]*)?/gi,
+    replacement: '[내부URL 제거됨]',
+  },
 ];
 
 // === Sanitize text ===

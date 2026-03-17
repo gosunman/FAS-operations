@@ -56,6 +56,27 @@ describe('Sanitizer', () => {
       expect(sanitize_text('DNS: 8.8.8.8')).toBe('DNS: 8.8.8.8');
     });
 
+    it('should remove internal URLs (*.local, *.internal, *.ts.net)', () => {
+      expect(sanitize_text('접속: http://captain.local:3100/api/tasks'))
+        .toBe('접속: [내부URL 제거됨]');
+      expect(sanitize_text('URL: https://fas.internal/dashboard'))
+        .toBe('URL: [내부URL 제거됨]');
+      expect(sanitize_text('http://hunter.tailnet:8080'))
+        .toBe('[내부URL 제거됨]');
+      expect(sanitize_text('http://my-device.ts.net/path'))
+        .toBe('[내부URL 제거됨]');
+    });
+
+    it('should remove localhost URLs', () => {
+      expect(sanitize_text('서버 http://localhost:3100에서 실행'))
+        .toBe('서버 [내부URL 제거됨]에서 실행');
+    });
+
+    it('should not remove public URLs', () => {
+      expect(sanitize_text('https://github.com/repo')).toBe('https://github.com/repo');
+      expect(sanitize_text('https://k-startup.go.kr')).toBe('https://k-startup.go.kr');
+    });
+
     it('should not modify text without PII', () => {
       const clean_text = 'K-Startup 창업지원사업 검색 결과 3건';
       expect(sanitize_text(clean_text)).toBe(clean_text);

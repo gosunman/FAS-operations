@@ -53,7 +53,8 @@
 | `NOTION_API_KEY` | N | Notion API 통합 키 |
 | `GATEWAY_PORT` | N | Gateway 포트 (기본: 3100) |
 | `GATEWAY_HOST` | N | Gateway 호스트 (기본: 0.0.0.0) |
-| `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 (기본: http://100.64.0.1:3100) |
+| `HUNTER_API_KEY` | Y | 헌터 API 인증 키 — 캡틴/헌터 공유 시크릿 (Defense in Depth) |
+| `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
 | `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
 | `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
@@ -66,7 +67,8 @@
 ### Gateway (`src/gateway/`)
 - **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check
 - **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
-- **sanitizer.ts**: 개인정보 제거 (한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
+- **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
+- **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
 
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
@@ -74,7 +76,7 @@
 - **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
 
 ### Hunter (`src/hunter/`)
-- **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit)
+- **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
 - **task_executor.ts**: 태스크 액션 라우팅 + 실행기 (현재 스텁, OpenClaw 통합 시 교체)
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
@@ -94,9 +96,9 @@
 | PATCH | `/api/tasks/:id/status` | 상태 변경 |
 | POST | `/api/tasks/:id/complete` | 완료 처리 |
 | POST | `/api/tasks/:id/block` | 차단 처리 |
-| GET | `/api/hunter/tasks/pending` | 헌터 전용 (PII 제거됨) |
-| POST | `/api/hunter/tasks/:id/result` | 헌터 결과 제출 |
-| POST | `/api/hunter/heartbeat` | 헌터 생존 신호 |
+| GET | `/api/hunter/tasks/pending` | 헌터 전용 (PII 제거됨, 인증+속도제한) |
+| POST | `/api/hunter/tasks/:id/result` | 헌터 결과 제출 (스키마 검증+PII 격리) |
+| POST | `/api/hunter/heartbeat` | 헌터 생존 신호 (인증+속도제한) |
 | GET | `/api/health` | 시스템 상태 |
 | GET | `/api/stats` | 태스크 통계 |
 

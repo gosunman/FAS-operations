@@ -55,7 +55,7 @@ export type ApprovalResponse = {
 
 export type RiskLevel = 'low' | 'mid' | 'high' | 'critical';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked';
+export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked' | 'quarantined';
 
 export type FasMode = 'sleep' | 'awake';
 

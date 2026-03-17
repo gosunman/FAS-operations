@@ -10,6 +10,7 @@ const mock_logger: Logger = {
 };
 
 const BASE_URL = 'http://localhost:3100';
+const TEST_API_KEY = 'test-hunter-key-123';
 
 describe('api_client', () => {
   beforeEach(() => {
@@ -108,6 +109,33 @@ describe('api_client', () => {
       // Then
       expect(result).toBe(false);
     });
+
+    it('should handle quarantine response (202)', async () => {
+      // Given — captain returns 202 when PII detected
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 202,
+        json: () => Promise.resolve({
+          quarantined: true,
+          detected_types: ['phone_number', 'email'],
+        }),
+      }));
+
+      const client = create_api_client({ base_url: BASE_URL }, mock_logger);
+
+      // When
+      const result = await client.submit_result('task_1', {
+        status: 'success',
+        output: '연락처: 010-1234-5678, test@email.com',
+        files: [],
+      });
+
+      // Then — should return false (not accepted)
+      expect(result).toBe(false);
+      expect(mock_logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('quarantined'),
+      );
+    });
   });
 
   describe('send_heartbeat', () => {
@@ -139,6 +167,107 @@ describe('api_client', () => {
 
       // Then
       expect(result).toBeNull();
+    });
+  });
+
+  // === API key authentication ===
+
+  describe('API key header', () => {
+    it('should include API key header when configured', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ tasks: [], count: 0 }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.fetch_pending_tasks();
+
+      // Then — verify API key header was sent
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+          }),
+        }),
+      );
+    });
+
+    it('should not include API key header when not configured', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ tasks: [], count: 0 }),
+      }));
+
+      const client = create_api_client({ base_url: BASE_URL }, mock_logger);
+
+      // When
+      await client.fetch_pending_tasks();
+
+      // Then — no API key header
+      const call_args = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const headers = call_args[1]?.headers as Record<string, string>;
+      expect(headers['x-hunter-api-key']).toBeUndefined();
+    });
+
+    it('should include API key in heartbeat requests', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, server_time: '2026-03-17T12:00:00Z' }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.send_heartbeat();
+
+      // Then
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+          }),
+        }),
+      );
+    });
+
+    it('should include API key in result submission', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.submit_result('task_1', { status: 'success', output: 'Done', files: [] });
+
+      // Then
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+            'Content-Type': 'application/json',
+          }),
+        }),
+      );
     });
   });
 });
