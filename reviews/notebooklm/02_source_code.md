@@ -1,10 +1,65 @@
 # FAS 전체 코드 리뷰 — Part 2: 소스 코드 (Source Code)
 > 이 파일은 민감정보가 마스킹된 상태입니다.
-> 파일 수: 16개 | 생성일: 2026-03-17
+> 파일 수: 17개 | 생성일: 2026-03-17
+
+## 파일: src/gateway/rate_limiter.ts
+
+`````typescript
+// Simple in-memory sliding window rate limiter for Hunter API
+// No external dependencies — lightweight defense against abuse
+
+export type RateLimiterConfig = {
+  window_ms: number;     // Time window in ms (e.g., 60_000 = 1 min)
+  max_requests: number;  // Max requests allowed within the window
+};
+
+export const create_rate_limiter = (config: RateLimiterConfig) => {
+  const timestamps: number[] = [];
+
+  // Check if a new request is allowed within the rate limit
+  const is_allowed = (): boolean => {
+    const now = Date.now();
+
+    // Evict expired entries outside the sliding window
+    while (timestamps.length > 0 && timestamps[0]! <= now - config.window_ms) {
+      timestamps.shift();
+    }
+
+    // Reject if at capacity
+    if (timestamps.length >= config.max_requests) {
+      return false;
+    }
+
+    // Record this request
+    timestamps.push(now);
+    return true;
+  };
+
+  // Reset all tracked requests (useful for testing)
+  const reset = (): void => {
+    timestamps.length = 0;
+  };
+
+  // Get remaining requests in current window
+  const remaining = (): number => {
+    const now = Date.now();
+    while (timestamps.length > 0 && timestamps[0]! <= now - config.window_ms) {
+      timestamps.shift();
+    }
+    return Math.max(0, config.max_requests - timestamps.length);
+  };
+
+  return { is_allowed, reset, remaining };
+};
+
+export type RateLimiter = ReturnType<typeof create_rate_limiter>;
+`````
+
+---
 
 ## 파일: src/gateway/sanitizer.ts
 
-```typescript
+`````typescript
 // Personal information sanitizer for FAS
 // Removes PII before sending tasks to Hunter (isolated device)
 // Stage 1: Regex-based pattern matching (fast, deterministic)
@@ -76,6 +131,12 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /(자산|현금|예금|보증금|연봉|월급)[:：]?\s*[약~]?\s*\d+[만억천]/g,
     replacement: '[금융정보 제거됨]',
   },
+  // Internal/private URLs and hostnames (*.local, *.internal, *.ts.net, localhost)
+  {
+    name: 'internal_url',
+    regex: /https?:\/\/(?:localhost|[\w.-]+\.(?:local|internal|tailnet|ts\.net))(?::\d+)?(?:\/[^\s]*)?/gi,
+    replacement: '[내부URL 제거됨]',
+  },
 ];
 
 // === Sanitize text ===
@@ -130,13 +191,13 @@ export const detect_pii_types = (text: string): string[] => {
     })
     .map((pattern) => pattern.name);
 };
-```
+`````
 
 ---
 
 ## 파일: src/gateway/server.ts
 
-```typescript
+`````typescript
 // FAS Gateway + Task API Server
 // Port 3100 — Tailscale internal only
 //
@@ -154,21 +215,97 @@ export const detect_pii_types = (text: string): string[] => {
 //
 //   GET    /api/health             — Health check
 //   GET    /api/stats              — Task statistics
+//
+// Security (NotebookLM review response):
+//   - Hunter API key authentication (Defense in Depth)
+//   - Rate limiting on hunter endpoints (Prompt Injection defense)
+//   - Schema validation on hunter result submission
+//   - PII quarantine strategy (reject & quarantine instead of auto-sanitize)
 
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
-import { sanitize_task, contains_pii, sanitize_text } from './sanitizer.js';
+import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
+import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
+import type { Request, Response, NextFunction } from 'express';
 import type { TaskStatus } from '../shared/types.js';
+
+// === Hunter API security constants ===
+
+const HUNTER_API_KEY_HEADER = 'x-hunter-api-key';
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;  // 1 minute
+const DEFAULT_RATE_LIMIT_MAX = 30;            // 30 requests per minute
+const DEFAULT_MAX_OUTPUT_LENGTH = 50_000;     // 50KB text output limit
+const DEFAULT_MAX_FILES_COUNT = 20;           // Max files per result
+const MAX_FILE_PATH_LENGTH = 500;             // Max length for each file path
+const BODY_SIZE_LIMIT = '100kb';              // Max request body size
+
+// Allowed file extensions for hunter result files (deny by default)
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  '.md', '.txt', '.json', '.csv', '.html', '.htm', '.xml', '.yaml', '.yml', '.log',
+]);
+
+// === App configuration options ===
+
+export type AppOptions = {
+  hunter_api_key?: string;          // If set, require for /api/hunter/* (Defense in Depth)
+  rate_limit_window_ms?: number;    // Rate limit window (default: 60s)
+  rate_limit_max_requests?: number; // Max requests per window (default: 30)
+  max_output_length?: number;       // Max hunter output text length (default: 50KB)
+  max_files_count?: number;         // Max files per result (default: 20)
+};
 
 // === Create Express app ===
 
-export const create_app = (store: TaskStore) => {
+export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: BODY_SIZE_LIMIT }));
 
   // Track hunter heartbeat
   let last_hunter_heartbeat: Date | null = null;
   const start_time = Date.now();
+
+  // Rate limiter for hunter endpoints
+  const hunter_rate_limiter = create_rate_limiter({
+    window_ms: options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
+    max_requests: options.rate_limit_max_requests ?? DEFAULT_RATE_LIMIT_MAX,
+  });
+
+  const max_output_length = options.max_output_length ?? DEFAULT_MAX_OUTPUT_LENGTH;
+  const max_files_count = options.max_files_count ?? DEFAULT_MAX_FILES_COUNT;
+
+  // === Hunter API key authentication middleware ===
+  // Defense in Depth: even with Tailscale network auth, require app-level key
+  const hunter_auth = (req: Request, res: Response, next: NextFunction): void => {
+    if (!options.hunter_api_key) {
+      // No key configured — skip auth (development mode)
+      next();
+      return;
+    }
+
+    const provided_key = req.headers[HUNTER_API_KEY_HEADER] as string | undefined;
+    if (provided_key !== options.hunter_api_key) {
+      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid or missing API key`);
+      res.status(401).json({ error: 'Invalid or missing API key' });
+      return;
+    }
+    next();
+  };
+
+  // === Hunter rate limiting middleware ===
+  const hunter_rate_limit = (_req: Request, res: Response, next: NextFunction): void => {
+    if (!hunter_rate_limiter.is_allowed()) {
+      console.warn('[SECURITY] Hunter rate limit exceeded');
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        retry_after_ms: options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
+      });
+      return;
+    }
+    next();
+  };
+
+  // Apply auth + rate limit to all hunter endpoints
+  app.use('/api/hunter', hunter_auth, hunter_rate_limit);
 
   // === Task CRUD ===
 
@@ -266,7 +403,7 @@ export const create_app = (store: TaskStore) => {
     res.json(store.get_by_id(req.params.id));
   });
 
-  // === Hunter API (sanitized) ===
+  // === Hunter API (sanitized, authenticated, rate-limited) ===
 
   // Get pending tasks for hunter (PII removed)
   app.get('/api/hunter/tasks/pending', (_req, res) => {
@@ -281,24 +418,107 @@ export const create_app = (store: TaskStore) => {
     }
   });
 
-  // Submit hunter task result (with reverse PII check)
+  // Submit hunter task result (with schema validation + PII quarantine)
   app.post('/api/hunter/tasks/:id/result', (req, res) => {
     const { status: result_status, output, files } = req.body;
 
-    // Reverse PII check: sanitize any personal info in hunter's output
-    let safe_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
-    if (contains_pii(safe_output)) {
-      console.warn(`[SECURITY] Hunter task ${req.params.id} output contains PII — sanitizing`);
-      safe_output = sanitize_text(safe_output);
+    // --- Schema validation ---
+
+    // Validate result_status
+    if (result_status !== 'success' && result_status !== 'failure') {
+      res.status(400).json({ error: 'status must be "success" or "failure"' });
+      return;
     }
+
+    // Validate output type and length
+    if (output !== undefined && typeof output !== 'string') {
+      res.status(400).json({ error: 'output must be a string' });
+      return;
+    }
+    if (typeof output === 'string' && output.length > max_output_length) {
+      res.status(400).json({
+        error: `output exceeds max length (${max_output_length} chars)`,
+        max_length: max_output_length,
+      });
+      return;
+    }
+
+    // Validate files array
+    if (files !== undefined) {
+      if (!Array.isArray(files)) {
+        res.status(400).json({ error: 'files must be an array of strings' });
+        return;
+      }
+      if (files.length > max_files_count) {
+        res.status(400).json({
+          error: `files array exceeds max count (${max_files_count})`,
+          max_count: max_files_count,
+        });
+        return;
+      }
+
+      // Validate each file entry
+      for (const file of files) {
+        if (typeof file !== 'string') {
+          res.status(400).json({ error: 'each file entry must be a string' });
+          return;
+        }
+        if (file.length > MAX_FILE_PATH_LENGTH) {
+          res.status(400).json({ error: `file path exceeds max length (${MAX_FILE_PATH_LENGTH})` });
+          return;
+        }
+        // Block path traversal attempts
+        if (file.includes('..') || file.startsWith('/')) {
+          res.status(400).json({ error: 'file paths must not contain ".." or start with "/"' });
+          return;
+        }
+        // Check file extension against allowlist
+        const ext = file.substring(file.lastIndexOf('.')).toLowerCase();
+        if (file.includes('.') && !ALLOWED_FILE_EXTENSIONS.has(ext)) {
+          res.status(400).json({
+            error: `file extension "${ext}" is not allowed`,
+            allowed: [...ALLOWED_FILE_EXTENSIONS],
+          });
+          return;
+        }
+      }
+    }
+
+    // --- PII quarantine check ---
+
+    const raw_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
+
+    if (contains_pii(raw_output)) {
+      // Quarantine: do NOT save raw PII. Store sanitized preview for human review.
+      const detected = detect_pii_types(raw_output);
+      const sanitized_preview = sanitize_text(raw_output);
+
+      console.warn(
+        `[SECURITY] Hunter task ${req.params.id} output contains PII ` +
+        `(${detected.join(', ')}) — quarantined for human review`
+      );
+
+      store.quarantine_task(req.params.id, sanitized_preview, detected);
+
+      // Return 202 Accepted — result received but quarantined, not approved
+      res.status(202).json({
+        ok: false,
+        quarantined: true,
+        reason: 'PII detected in output — quarantined for human review',
+        detected_types: detected,
+      });
+      return;
+    }
+
+    // --- Normal processing (no PII detected) ---
 
     if (result_status === 'success') {
       store.complete_task(req.params.id, {
-        summary: safe_output,
+        summary: raw_output,
         files_created: files ?? [],
       });
     } else {
-      store.block_task(req.params.id, safe_output);
+      store.block_task(req.params.id, raw_output);
     }
 
     res.json({ ok: true });
@@ -333,7 +553,8 @@ export const create_app = (store: TaskStore) => {
     res.json(store.get_stats());
   });
 
-  return app;
+  // Expose rate limiter for testing
+  return Object.assign(app, { _hunter_rate_limiter: hunter_rate_limiter });
 };
 
 // === Start server (when run directly) ===
@@ -348,10 +569,17 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
-  const app = create_app(store);
+  const app = create_app(store, {
+    hunter_api_key: process.env.HUNTER_API_KEY,
+  });
 
   app.listen(port, host, () => {
     console.log(`[Gateway] FAS Gateway + Task API listening on ${host}:${port}`);
+    if (process.env.HUNTER_API_KEY) {
+      console.log('[Gateway] Hunter API key authentication: ENABLED');
+    } else {
+      console.warn('[Gateway] Hunter API key authentication: DISABLED (set HUNTER_API_KEY to enable)');
+    }
   });
 
   // Graceful shutdown
@@ -361,13 +589,13 @@ if (is_main) {
     process.exit(0);
   });
 }
-```
+`````
 
 ---
 
 ## 파일: src/gateway/task_store.ts
 
-```typescript
+`````typescript
 // SQLite-based task store for FAS
 // Manages task lifecycle: create -> pending -> in_progress -> done/blocked
 
@@ -526,9 +754,22 @@ export const create_task_store = (config: TaskStoreConfig) => {
     return result.changes > 0;
   };
 
+  // Quarantine a task — PII detected in hunter output, needs human review
+  const quarantine_task = (id: string, sanitized_preview: string, pii_types: string[]): boolean => {
+    const summary = `[QUARANTINED] PII detected: ${pii_types.join(', ')}\n---\n${sanitized_preview}`;
+    const result = stmts.update_result.run(
+      'quarantined',
+      summary,
+      '[]',
+      new Date().toISOString(),
+      id,
+    );
+    return result.changes > 0;
+  };
+
   const get_stats = (): Record<string, number> => {
     const rows = stmts.count_by_status.all() as { status: string; count: number }[];
-    const stats: Record<string, number> = { pending: 0, in_progress: 0, done: 0, blocked: 0 };
+    const stats: Record<string, number> = { pending: 0, in_progress: 0, done: 0, blocked: 0, quarantined: 0 };
     for (const row of rows) {
       stats[row.status] = row.count;
     }
@@ -552,6 +793,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
     update_status,
     complete_task,
     block_task,
+    quarantine_task,
     get_stats,
     get_all,
     close,
@@ -560,21 +802,23 @@ export const create_task_store = (config: TaskStoreConfig) => {
 };
 
 export type TaskStore = ReturnType<typeof create_task_store>;
-```
+`````
 
 ---
 
 ## 파일: src/hunter/api_client.ts
 
-```typescript
+`````typescript
 // HTTP client for Captain's Task API
 // Uses native fetch — no external dependencies needed
+// Supports API key authentication (Defense in Depth)
 
 import type { Task, HunterTaskResult, HunterHeartbeatResponse } from '../shared/types.js';
 import type { Logger } from './logger.js';
 
 export type ApiClientConfig = {
   base_url: string;
+  api_key?: string;       // Optional API key for captain authentication
   timeout_ms?: number;
 };
 
@@ -585,16 +829,27 @@ export type ApiClient = {
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+const API_KEY_HEADER = 'x-hunter-api-key';
 
 export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiClient => {
-  const { base_url, timeout_ms = DEFAULT_TIMEOUT_MS } = config;
+  const { base_url, api_key, timeout_ms = DEFAULT_TIMEOUT_MS } = config;
 
   const make_url = (path: string): string => `${base_url}${path}`;
+
+  // Build common headers — include API key if configured
+  const make_headers = (extra?: Record<string, string>): Record<string, string> => {
+    const headers: Record<string, string> = { ...extra };
+    if (api_key) {
+      headers[API_KEY_HEADER] = api_key;
+    }
+    return headers;
+  };
 
   // Fetch pending tasks assigned to hunter (PII-sanitized by captain)
   const fetch_pending_tasks = async (): Promise<Task[]> => {
     try {
       const res = await fetch(make_url('/api/hunter/tasks/pending'), {
+        headers: make_headers(),
         signal: AbortSignal.timeout(timeout_ms),
       });
 
@@ -616,12 +871,20 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
     try {
       const res = await fetch(make_url(`/api/hunter/tasks/${task_id}/result`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: make_headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(result),
         signal: AbortSignal.timeout(timeout_ms),
       });
 
       if (!res.ok) {
+        // Handle quarantine response (202) — PII detected in output
+        if (res.status === 202) {
+          const data = await res.json() as { quarantined: boolean; detected_types: string[] };
+          logger.warn(
+            `submit_result(${task_id}): quarantined — PII detected: ${data.detected_types?.join(', ')}`
+          );
+          return false;
+        }
         logger.warn(`submit_result(${task_id}): HTTP ${res.status}`);
         return false;
       }
@@ -638,7 +901,7 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
     try {
       const res = await fetch(make_url('/api/hunter/heartbeat'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: make_headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           agent: 'openclaw',
           timestamp: new Date().toISOString(),
@@ -660,18 +923,19 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
 
   return { fetch_pending_tasks, submit_result, send_heartbeat };
 };
-```
+`````
 
 ---
 
 ## 파일: src/hunter/config.ts
 
-```typescript
+`````typescript
 // Hunter agent configuration loader
 // Reads from environment variables with sensible defaults
 
 export type HunterConfig = {
   captain_api_url: string;
+  hunter_api_key?: string;  // API key for captain authentication (Defense in Depth)
   poll_interval_ms: number;
   log_dir: string;
   device_name: string;
@@ -683,20 +947,26 @@ export const load_hunter_config = (): HunterConfig => {
     throw new Error('CAPTAIN_API_URL environment variable is required');
   }
 
+  const hunter_api_key = process.env.HUNTER_API_KEY;
+  if (!hunter_api_key) {
+    console.warn('[Hunter] HUNTER_API_KEY not set — API key authentication disabled');
+  }
+
   return {
     captain_api_url,
+    hunter_api_key,
     poll_interval_ms: parseInt(process.env.HUNTER_POLL_INTERVAL ?? '10000', 10),
     log_dir: process.env.HUNTER_LOG_DIR ?? './logs',
     device_name: 'hunter',
   };
 };
-```
+`````
 
 ---
 
 ## 파일: src/hunter/index.ts
 
-```typescript
+`````typescript
 // Hunter module — barrel export
 
 export { load_hunter_config, type HunterConfig } from './config.js';
@@ -704,13 +974,13 @@ export { create_api_client, type ApiClient, type ApiClientConfig } from './api_c
 export { create_task_executor, resolve_action } from './task_executor.js';
 export { create_poll_loop, type PollLoopDeps, type PollLoopState } from './poll_loop.js';
 export { create_logger, type Logger } from './logger.js';
-```
+`````
 
 ---
 
 ## 파일: src/hunter/logger.ts
 
-```typescript
+`````typescript
 // Simple file + console logger for Hunter agent
 // Logs to: console + {log_dir}/hunter_{date}.log
 
@@ -762,13 +1032,13 @@ export const create_logger = (log_dir: string): Logger => {
     error: (msg) => write('error', msg),
   };
 };
-```
+`````
 
 ---
 
 ## 파일: src/hunter/main.ts
 
-```typescript
+`````typescript
 // Hunter agent entry point
 // Polls Captain's Task API, executes tasks via OpenClaw (stubs for now)
 //
@@ -810,13 +1080,13 @@ if (is_main) {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
-```
+`````
 
 ---
 
 ## 파일: src/hunter/poll_loop.ts
 
-```typescript
+`````typescript
 // Main polling loop for Hunter agent
 // Cycle: heartbeat → fetch pending → execute first task → submit result → wait
 //
@@ -945,13 +1215,13 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
 
   return { start, stop, get_state, run_cycle, get_current_interval };
 };
-```
+`````
 
 ---
 
 ## 파일: src/hunter/task_executor.ts
 
-```typescript
+`````typescript
 // Task executor with action routing
 // Currently all executors are stubs — OpenClaw integration comes later
 
@@ -1039,24 +1309,24 @@ export const create_task_executor = (logger: Logger) => {
 
   return { execute, resolve_action };
 };
-```
+`````
 
 ---
 
 ## 파일: src/notification/index.ts
 
-```typescript
+`````typescript
 // Notification module barrel export
 export { create_telegram_client, type TelegramClient, type TelegramConfig } from './telegram.js';
 export { create_slack_client, type SlackClient, type SlackConfig } from './slack.js';
 export { create_notification_router, type NotificationRouter, type NotificationRouterDeps } from './router.js';
-```
+`````
 
 ---
 
 ## 파일: src/notification/router.ts
 
-```typescript
+`````typescript
 // Unified notification router for FAS
 // Routes events to Telegram, Slack, and Notion based on the routing matrix
 
@@ -1149,13 +1419,13 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
 };
 
 export type NotificationRouter = ReturnType<typeof create_notification_router>;
-```
+`````
 
 ---
 
 ## 파일: src/notification/slack.ts
 
-```typescript
+`````typescript
 // Slack notification module for FAS
 // Handles: agent logs, approvals, reports, crawl results, alerts
 
@@ -1265,13 +1535,13 @@ export const create_slack_client = (config: SlackConfig) => {
 };
 
 export type SlackClient = ReturnType<typeof create_slack_client>;
-```
+`````
 
 ---
 
 ## 파일: src/notification/telegram.ts
 
-```typescript
+`````typescript
 // Telegram Bot notification module for FAS
 // Handles: urgent alerts, approval requests, morning briefings
 
@@ -1423,13 +1693,13 @@ export const create_telegram_client = (config: TelegramConfig) => {
 };
 
 export type TelegramClient = ReturnType<typeof create_telegram_client>;
-```
+`````
 
 ---
 
 ## 파일: src/shared/types.ts
 
-```typescript
+`````typescript
 // === Notification Types ===
 
 export type NotificationLevel = 'info' | 'approval' | 'alert' | 'briefing' | 'critical';
@@ -1487,7 +1757,7 @@ export type ApprovalResponse = {
 
 export type RiskLevel = 'low' | 'mid' | 'high' | 'critical';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked';
+export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked' | 'quarantined';
 
 export type FasMode = 'sleep' | 'awake';
 
@@ -1564,13 +1834,13 @@ export type HealthCheckResponse = {
   }>;
   timestamp: string;
 };
-```
+`````
 
 ---
 
 ## 파일: src/watchdog/output_watcher.ts
 
-```typescript
+`````typescript
 // FAS Output Watcher
 // Monitors tmux session output for predefined patterns
 // and routes them to Telegram/Slack notifications.
@@ -1793,6 +2063,6 @@ if (is_main) {
     process.exit(0);
   });
 }
-```
+`````
 
 ---

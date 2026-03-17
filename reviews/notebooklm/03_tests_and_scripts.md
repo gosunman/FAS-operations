@@ -4,7 +4,7 @@
 
 ## 파일: scripts/agent_wrapper.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # FAS Agent Wrapper — Auto-restart on crash
 # Usage: agent_wrapper.sh <command> [args...]
@@ -77,313 +77,13 @@ while true; do
   echo "[Wrapper] Restarting in ${DELAY}s..."
   sleep "$DELAY"
 done
-```
-
----
-
-## 파일: scripts/generate_review_files.ts
-
-```typescript
-/**
- * generate_review_files.ts
- *
- * Reads all project files, masks sensitive information, and generates
- * categorized markdown files for NotebookLM upload.
- *
- * Usage: npx tsx scripts/generate_review_files.ts
- */
-
-import fs from "node:fs";
-import path from "node:path";
-
-// ── Constants ──────────────────────────────────────────────────────────
-
-const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
-const OUTPUT_DIR = path.join(PROJECT_ROOT, "reviews", "notebooklm");
-const TODAY = new Date().toISOString().slice(0, 10);
-
-// Directories / files to completely exclude
-const EXCLUDE_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "reviews",
-  "state",
-  "logs",
-  "dist",
-  ".claude",
-]);
-
-const EXCLUDE_FILES = new Set([
-  "pnpm-lock.yaml",
-  ".env",
-]);
-
-// File that should NOT be overwritten
-const PRESERVE_FILE = "03_review_prompt.md";
-
-// ── Masking Functions ──────────────────────────────────────────────────
-
-/**
- * Apply all masking rules to file content.
- * Order matters — more specific patterns first to avoid partial matches.
- */
-const mask_sensitive = (content: string): string => {
-  let result = content;
-
-  // 1. Telegram bot token pattern: digits:alphanumeric (e.g., 123456789:ABCdefGHI_jklMNO)
-  result = result.replace(/\b\d{8,10}:[A-Za-z0-9_-]{30,50}\b/g, "[MASKED_TOKEN]");
-
-  // 2. Slack token pattern (xoxb-..., xoxp-..., xoxa-..., xoxs-...)
-  result = result.replace(/xox[bpas]-[A-Za-z0-9\-]+/g, "[MASKED_TOKEN]");
-
-  // 3. GitHub URLs with username [MASKED_OWNER]
-  result = result.replace(/github\.com\/[MASKED_OWNER]/g, "github.com/[MASKED_USER]");
-
-  // 4. The word "[MASKED_OWNER]" (case-insensitive, but preserve surrounding context)
-  result = result.replace(/\bsunman\b/gi, "[MASKED_OWNER]");
-  // Also catch [MASKED_OWNER] as a whole
-  result = result.replace(/\bgosunman\b/gi, "[MASKED_OWNER]");
-
-  // 5. File paths containing /Users/[MASKED_USER]/ → /Users/[MASKED_USER]/
-  result = result.replace(/\/Users\/user\//g, "/Users/[MASKED_USER]/");
-
-  // 6. Private IP addresses
-  //    100.x.x.x (Tailscale), 192.168.x.x, 10.x.x.x, 172.16-31.x.x
-  result = result.replace(/\b100\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
-  result = result.replace(/\b192\.168\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
-  result = result.replace(/\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
-  result = result.replace(
-    /\b172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}\b/g,
-    "[MASKED_IP]"
-  );
-
-  // 7. Token/API key-like strings after = or : (long alphanumeric, 20+ chars)
-  //    But skip obvious non-secrets (URLs, version strings, common hex hashes)
-  //    Pattern: key= or key: followed by a long alphanumeric string
-  result = result.replace(
-    /([=:]\s*)([A-Za-z0-9_\-]{32,})(?=\s|$|"|'|`)/gm,
-    "$1[MASKED_TOKEN]"
-  );
-
-  // 8. Catch Notion/API database IDs (32-char hex with hyphens)
-  result = result.replace(
-    /([=:]\s*)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-    "$1[MASKED_TOKEN]"
-  );
-
-  return result;
-};
-
-// ── File Collection ────────────────────────────────────────────────────
-
-type FileEntry = {
-  relative_path: string;
-  absolute_path: string;
-  content: string;
-};
-
-/**
- * Recursively collect all files under dir, respecting exclusions.
- */
-const collect_files = (dir: string, base: string = PROJECT_ROOT): FileEntry[] => {
-  const entries: FileEntry[] = [];
-  const items = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const item of items) {
-    const abs = path.join(dir, item.name);
-    const rel = path.relative(base, abs);
-
-    if (item.isDirectory()) {
-      if (EXCLUDE_DIRS.has(item.name)) continue;
-      entries.push(...collect_files(abs, base));
-    } else if (item.isFile()) {
-      // Exclude specific files
-      if (EXCLUDE_FILES.has(item.name)) continue;
-      if (rel === ".env") continue;
-      // Exclude .claude/settings.local.json
-      if (rel.includes(".claude/settings.local.json")) continue;
-      // Exclude pnpm-workspace.yaml (not in spec, but it's just a one-liner — include it actually)
-      // Exclude binary files
-      const ext = path.extname(item.name).toLowerCase();
-      if ([".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".db", ".sqlite"].includes(ext)) continue;
-
-      try {
-        const content = fs.readFileSync(abs, "utf-8");
-        entries.push({ relative_path: rel, absolute_path: abs, content });
-      } catch {
-        // Skip unreadable files
-        console.warn(`  [WARN] Skipped unreadable file: ${rel}`);
-      }
-    }
-  }
-
-  return entries;
-};
-
-// ── Categorization ─────────────────────────────────────────────────────
-
-type Category = {
-  filename: string;
-  title: string;
-  files: FileEntry[];
-};
-
-/**
- * Determine the file extension for code fences.
- */
-const get_lang = (filepath: string): string => {
-  const ext = path.extname(filepath).toLowerCase();
-  const map: Record<string, string> = {
-    ".ts": "typescript",
-    ".js": "javascript",
-    ".json": "json",
-    ".yml": "yaml",
-    ".yaml": "yaml",
-    ".md": "markdown",
-    ".sh": "bash",
-    ".plist": "xml",
-    ".conf": "conf",
-    ".example": "bash",
-    ".gitignore": "gitignore",
-  };
-  // Special case for .gitignore (no extension)
-  if (filepath.endsWith(".gitignore")) return "gitignore";
-  return map[ext] || "text";
-};
-
-/**
- * Categorize a file into one of the three output groups.
- * Returns category index: 0 = docs_and_config, 1 = source_code, 2 = tests_and_scripts
- */
-const categorize = (rel: string): number => {
-  const ext = path.extname(rel).toLowerCase();
-  const basename = path.basename(rel);
-
-  // Category 3: tests and scripts
-  // - All *.test.ts files
-  // - All .sh files
-  // - scripts/*.ts (but NOT the generate_review_files.ts itself)
-  if (rel.endsWith(".test.ts")) return 2;
-  if (ext === ".sh") return 2;
-  if (rel.startsWith("scripts/") && ext === ".ts") return 2;
-
-  // Category 2: source code
-  // - All .ts files in src/ that are NOT test files
-  if (rel.startsWith("src/") && ext === ".ts" && !rel.endsWith(".test.ts")) return 1;
-
-  // Category 1: docs and config — everything else
-  // - .md files, .yml, .yaml, .json, .example, .plist, .gitignore, docker-compose.yml, .conf
-  if ([".md", ".yml", ".yaml", ".json", ".example", ".plist", ".conf"].includes(ext)) return 0;
-  if (basename === ".gitignore") return 0;
-
-  // Fallback: vitest.config.ts, tsconfig.json → config
-  if (basename === "vitest.config.ts") return 0;
-
-  // Anything else → docs_and_config
-  return 0;
-};
-
-// ── Main ───────────────────────────────────────────────────────────────
-
-const main = () => {
-  console.log("=== FAS Review File Generator ===");
-  console.log(`Project root: ${PROJECT_ROOT}`);
-  console.log(`Output dir: ${OUTPUT_DIR}`);
-  console.log(`Date: ${TODAY}\n`);
-
-  // Ensure output directory exists
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-
-  // Collect all files
-  console.log("Collecting files...");
-  const all_files = collect_files(PROJECT_ROOT);
-  console.log(`  Found ${all_files.length} files total.\n`);
-
-  // Set up categories
-  const categories: Category[] = [
-    { filename: "01_docs_and_config.md", title: "문서 & 설정 (Docs & Config)", files: [] },
-    { filename: "02_source_code.md", title: "소스 코드 (Source Code)", files: [] },
-    { filename: "03_tests_and_scripts.md", title: "테스트 & 스크립트 (Tests & Scripts)", files: [] },
-  ];
-
-  // Categorize files
-  for (const file of all_files) {
-    const cat_idx = categorize(file.relative_path);
-    categories[cat_idx].files.push(file);
-  }
-
-  // Sort files within each category alphabetically
-  for (const cat of categories) {
-    cat.files.sort((a, b) => a.relative_path.localeCompare(b.relative_path));
-  }
-
-  // Generate output files
-  for (let i = 0; i < categories.length; i++) {
-    const cat = categories[i];
-    const out_path = path.join(OUTPUT_DIR, cat.filename);
-
-    // Check for the preserve-file rule:
-    // If the output filename matches 03_review_prompt.md, skip
-    // (but 03_tests_and_scripts.md is different, so this is fine)
-    if (cat.filename === PRESERVE_FILE) {
-      console.log(`  [SKIP] ${cat.filename} (preserved)`);
-      continue;
-    }
-
-    console.log(`Generating ${cat.filename}...`);
-    console.log(`  Files in this category: ${cat.files.length}`);
-
-    // Build markdown content
-    const lines: string[] = [];
-
-    // Header
-    lines.push(`# FAS 전체 코드 리뷰 — Part ${i + 1}: ${cat.title}`);
-    lines.push(`> 이 파일은 민감정보가 마스킹된 상태입니다.`);
-    lines.push(`> 파일 수: ${cat.files.length}개 | 생성일: ${TODAY}`);
-    lines.push("");
-
-    // File entries
-    for (const file of cat.files) {
-      const lang = get_lang(file.relative_path);
-      const masked_content = mask_sensitive(file.content);
-
-      lines.push(`## 파일: ${file.relative_path}`);
-      lines.push("");
-      lines.push(`\`\`\`${lang}`);
-      lines.push(masked_content.trimEnd());
-      lines.push("```");
-      lines.push("");
-      lines.push("---");
-      lines.push("");
-    }
-
-    fs.writeFileSync(out_path, lines.join("\n"), "utf-8");
-    console.log(`  Written to: ${out_path}`);
-
-    // List files included
-    for (const file of cat.files) {
-      console.log(`    - ${file.relative_path}`);
-    }
-    console.log("");
-  }
-
-  // Also ensure 03_review_prompt.md is not touched
-  const prompt_path = path.join(OUTPUT_DIR, PRESERVE_FILE);
-  if (fs.existsSync(prompt_path)) {
-    console.log(`[OK] ${PRESERVE_FILE} preserved (not overwritten).`);
-  }
-
-  console.log("\n=== Generation complete! ===");
-};
-
-main();
-```
+`````
 
 ---
 
 ## 파일: scripts/setup/setup_ai_cli.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # AI CLI authentication setup guide
 # This script checks auth status and guides manual setup steps
@@ -470,13 +170,13 @@ echo "  2. Create Slack workspace + bot token"
 echo "  3. Copy .env.example to .env and fill in values"
 echo "  4. Run 'claude' to complete OAuth login"
 echo "=========================================="
-```
+`````
 
 ---
 
 ## 파일: scripts/setup/setup_colima.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # Install and configure Colima + Docker for FAS
 # Requires: Homebrew
@@ -530,13 +230,13 @@ docker info --format '  Memory: {{.MemTotal}}'
 echo ""
 echo "[FAS] Colima + Docker setup complete!"
 echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
-```
+`````
 
 ---
 
 ## 파일: scripts/setup/setup_tmux.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # FAS tmux environment setup script
 # Sets up tmux configuration and session naming conventions
@@ -594,13 +294,13 @@ fi
 
 echo "[FAS] tmux setup complete!"
 echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
-```
+`````
 
 ---
 
 ## 파일: scripts/start_captain_sessions.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # Start all FAS tmux sessions on Captain
 # Naming convention: fas-{service}
@@ -662,13 +362,13 @@ create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJEC
 echo ""
 echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
 echo "[FAS] Attach to a session: tmux attach -t fas-claude"
-```
+`````
 
 ---
 
 ## 파일: scripts/status.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # Show status of all FAS tmux sessions and services
 
@@ -723,13 +423,13 @@ echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
 echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
 echo ""
 echo "=========================================="
-```
+`````
 
 ---
 
 ## 파일: scripts/stop_all.sh
 
-```bash
+`````bash
 #!/usr/bin/env bash
 # Stop all FAS tmux sessions gracefully
 # Sends SIGTERM to running processes, then kills sessions
@@ -751,13 +451,13 @@ for session in "${FAS_SESSIONS[@]}"; do
 done
 
 echo "[FAS] All FAS sessions stopped."
-```
+`````
 
 ---
 
 ## 파일: scripts/test_notifications.ts
 
-```typescript
+`````typescript
 // Quick integration test: send real messages to Telegram and Slack
 import 'dotenv/config';
 import { create_telegram_client } from '../src/notification/telegram.js';
@@ -804,13 +504,94 @@ const run = async () => {
 };
 
 run();
-```
+`````
+
+---
+
+## 파일: src/gateway/rate_limiter.test.ts
+
+`````typescript
+// TDD tests for rate limiter
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { create_rate_limiter } from './rate_limiter.js';
+
+describe('RateLimiter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should allow requests within the limit', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
+
+    // When / Then
+    expect(limiter.is_allowed()).toBe(true);
+    expect(limiter.is_allowed()).toBe(true);
+    expect(limiter.is_allowed()).toBe(true);
+  });
+
+  it('should reject requests exceeding the limit', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 2 });
+
+    // When
+    limiter.is_allowed(); // 1st
+    limiter.is_allowed(); // 2nd
+
+    // Then
+    expect(limiter.is_allowed()).toBe(false); // 3rd — rejected
+  });
+
+  it('should allow requests again after the window expires', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 1_000, max_requests: 1 });
+    limiter.is_allowed(); // 1st — allowed
+
+    // When — advance past the window
+    vi.advanceTimersByTime(1_001);
+
+    // Then — should allow again
+    expect(limiter.is_allowed()).toBe(true);
+  });
+
+  it('should track remaining requests', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
+
+    // When / Then
+    expect(limiter.remaining()).toBe(3);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(2);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(1);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(0);
+  });
+
+  it('should reset all tracked requests', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 1 });
+    limiter.is_allowed();
+    expect(limiter.is_allowed()).toBe(false);
+
+    // When
+    limiter.reset();
+
+    // Then
+    expect(limiter.is_allowed()).toBe(true);
+  });
+});
+`````
 
 ---
 
 ## 파일: src/gateway/sanitizer.test.ts
 
-```typescript
+`````typescript
 // TDD tests for PII sanitizer
 import { describe, it, expect } from 'vitest';
 import { sanitize_text, sanitize_task, contains_pii, detect_pii_types, type HunterSafeTask } from './sanitizer.js';
@@ -867,6 +648,27 @@ describe('Sanitizer', () => {
     it('should not remove public IP addresses', () => {
       // 8.8.8.8 is a public IP — should not match private/Tailscale ranges
       expect(sanitize_text('DNS: 8.8.8.8')).toBe('DNS: 8.8.8.8');
+    });
+
+    it('should remove internal URLs (*.local, *.internal, *.ts.net)', () => {
+      expect(sanitize_text('접속: http://captain.local:3100/api/tasks'))
+        .toBe('접속: [내부URL 제거됨]');
+      expect(sanitize_text('URL: https://fas.internal/dashboard'))
+        .toBe('URL: [내부URL 제거됨]');
+      expect(sanitize_text('http://hunter.tailnet:8080'))
+        .toBe('[내부URL 제거됨]');
+      expect(sanitize_text('http://my-device.ts.net/path'))
+        .toBe('[내부URL 제거됨]');
+    });
+
+    it('should remove localhost URLs', () => {
+      expect(sanitize_text('서버 http://localhost:3100에서 실행'))
+        .toBe('서버 [내부URL 제거됨]에서 실행');
+    });
+
+    it('should not remove public URLs', () => {
+      expect(sanitize_text('https://github.com/repo')).toBe('https://github.com/repo');
+      expect(sanitize_text('https://k-startup.go.kr')).toBe('https://k-startup.go.kr');
     });
 
     it('should not modify text without PII', () => {
@@ -976,26 +778,49 @@ describe('Sanitizer', () => {
     });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/gateway/server.test.ts
 
-```typescript
+`````typescript
 // TDD tests for Gateway + Task API server
+// Covers: CRUD, Hunter API, authentication, rate limiting, quarantine, schema validation
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { create_app } from './server.js';
 import { create_task_store, type TaskStore } from './task_store.js';
+
+// === Test helpers ===
+
+const TEST_API_KEY = 'test-hunter-secret-key-abc123';
+
+const create_test_app = (opts: { with_auth?: boolean } = {}) => {
+  const store = create_task_store({ db_path: ':memory:' });
+  const app = create_app(store, {
+    hunter_api_key: opts.with_auth ? TEST_API_KEY : undefined,
+    rate_limit_window_ms: 60_000,
+    rate_limit_max_requests: 30,
+    max_output_length: 1_000,  // Small limit for testing
+    max_files_count: 3,
+  });
+  return { store, app };
+};
+
+// Helper to send authenticated hunter requests
+const hunter_get = (app: ReturnType<typeof create_app>, path: string) =>
+  request(app).get(path).set('x-hunter-api-key', TEST_API_KEY);
+
+const hunter_post = (app: ReturnType<typeof create_app>, path: string) =>
+  request(app).post(path).set('x-hunter-api-key', TEST_API_KEY);
 
 describe('Gateway Server', () => {
   let store: TaskStore;
   let app: ReturnType<typeof create_app>;
 
   beforeEach(() => {
-    store = create_task_store({ db_path: ':memory:' });
-    app = create_app(store);
+    ({ store, app } = create_test_app());
   });
 
   afterEach(() => {
@@ -1147,11 +972,10 @@ describe('Gateway Server', () => {
     });
   });
 
-  // === Hunter API ===
+  // === Hunter API (no auth mode) ===
 
   describe('GET /api/hunter/tasks/pending', () => {
     it('should return sanitized pending tasks for openclaw', async () => {
-      // Create tasks for different agents
       await request(app).post('/api/tasks').send({
         title: '이름: 홍길동 학생 정보 조회',
         assigned_to: 'openclaw',
@@ -1165,7 +989,6 @@ describe('Gateway Server', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.count).toBe(1);
-      // PII should be sanitized
       expect(res.body.tasks[0].title).toContain('[이름 제거됨]');
       expect(res.body.tasks[0].title).not.toContain('홍길동');
     });
@@ -1184,7 +1007,6 @@ describe('Gateway Server', () => {
       expect(task.id).toBeDefined();
       expect(task.title).toBeDefined();
       expect(task.priority).toBeDefined();
-      // Non-whitelisted fields must not be present
       expect(task).not.toHaveProperty('assigned_to');
       expect(task).not.toHaveProperty('requires_personal_info');
       expect(task).not.toHaveProperty('depends_on');
@@ -1224,26 +1046,32 @@ describe('Gateway Server', () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
 
-      // Verify task was completed
       const task_res = await request(app).get(`/api/tasks/${create_res.body.id}`);
       expect(task_res.body.status).toBe('done');
     });
 
-    it('should sanitize PII in hunter result output (reverse check)', async () => {
+    it('should quarantine result with PII instead of auto-sanitizing', async () => {
       const create_res = await request(app)
         .post('/api/tasks')
         .send({ title: 'Crawl task', assigned_to: 'openclaw' });
 
-      await request(app)
+      const res = await request(app)
         .post(`/api/hunter/tasks/${create_res.body.id}/result`)
         .send({ status: 'success', output: '결과: 이름: 홍길동, 전화 010-1234-5678' });
 
+      // Should return 202 (quarantined), not 200
+      expect(res.status).toBe(202);
+      expect(res.body.quarantined).toBe(true);
+      expect(res.body.detected_types).toContain('labeled_korean_name');
+      expect(res.body.detected_types).toContain('phone_number');
+
+      // Task should be quarantined, not done
       const task_res = await request(app).get(`/api/tasks/${create_res.body.id}`);
-      expect(task_res.body.status).toBe('done');
+      expect(task_res.body.status).toBe('quarantined');
+      // Stored output should contain sanitized preview (no raw PII)
+      expect(task_res.body.output.summary).toContain('[QUARANTINED]');
       expect(task_res.body.output.summary).not.toContain('홍길동');
       expect(task_res.body.output.summary).not.toContain('010-1234-5678');
-      expect(task_res.body.output.summary).toContain('[이름 제거됨]');
-      expect(task_res.body.output.summary).toContain('[전화번호 제거됨]');
     });
 
     it('should mark task as blocked on failure', async () => {
@@ -1291,15 +1119,286 @@ describe('Gateway Server', () => {
       expect(res.body.pending).toBe(1);
       expect(res.body.done).toBe(1);
     });
+
+    it('should include quarantined count', async () => {
+      const res = await request(app).get('/api/stats');
+      expect(res.body.quarantined).toBe(0);
+    });
+  });
+
+  // === Hunter API Authentication ===
+
+  describe('Hunter API key authentication', () => {
+    let auth_store: TaskStore;
+    let auth_app: ReturnType<typeof create_app>;
+
+    beforeEach(() => {
+      ({ store: auth_store, app: auth_app } = create_test_app({ with_auth: true }));
+    });
+
+    afterEach(() => {
+      auth_store.close();
+    });
+
+    it('should reject hunter requests without API key', async () => {
+      const res = await request(auth_app).get('/api/hunter/tasks/pending');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toContain('API key');
+    });
+
+    it('should reject hunter requests with wrong API key', async () => {
+      const res = await request(auth_app)
+        .get('/api/hunter/tasks/pending')
+        .set('x-hunter-api-key', 'wrong-key');
+      expect(res.status).toBe(401);
+    });
+
+    it('should allow hunter requests with correct API key', async () => {
+      const res = await hunter_get(auth_app, '/api/hunter/tasks/pending');
+      expect(res.status).toBe(200);
+    });
+
+    it('should require auth for heartbeat', async () => {
+      const res = await request(auth_app).post('/api/hunter/heartbeat');
+      expect(res.status).toBe(401);
+
+      const auth_res = await hunter_post(auth_app, '/api/hunter/heartbeat');
+      expect(auth_res.status).toBe(200);
+    });
+
+    it('should require auth for result submission', async () => {
+      // Create a task first (captain API — no auth needed)
+      const create_res = await request(auth_app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      // Submit without auth — should fail
+      const res = await request(auth_app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'success', output: 'Done' });
+      expect(res.status).toBe(401);
+
+      // Submit with auth — should succeed
+      const auth_res = await hunter_post(auth_app, `/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'success', output: 'Done' });
+      expect(auth_res.status).toBe(200);
+    });
+
+    it('should NOT require auth for captain endpoints', async () => {
+      // Captain endpoints should work without API key even when auth is enabled
+      const res = await request(auth_app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'claude' });
+      expect(res.status).toBe(201);
+
+      const health = await request(auth_app).get('/api/health');
+      expect(health.status).toBe(200);
+    });
+  });
+
+  // === Schema Validation ===
+
+  describe('Hunter result schema validation', () => {
+    it('should reject invalid result status', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'invalid_status', output: 'Test' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('status');
+    });
+
+    it('should reject non-string output', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'success', output: { nested: 'object' } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('output must be a string');
+    });
+
+    it('should reject output exceeding max length', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      // Our test app has max_output_length = 1000
+      const long_output = 'x'.repeat(1_001);
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'success', output: long_output });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('max length');
+    });
+
+    it('should reject files exceeding max count', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      // Our test app has max_files_count = 3
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: ['a.md', 'b.md', 'c.md', 'd.md'],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('max count');
+    });
+
+    it('should reject files with path traversal', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: ['../../etc/passwd'],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('..');
+    });
+
+    it('should reject files with absolute paths', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: ['/etc/shadow'],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('"/"');
+    });
+
+    it('should reject files with disallowed extensions', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: ['malware.exe'],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('.exe');
+      expect(res.body.allowed).toBeDefined();
+    });
+
+    it('should allow files with permitted extensions', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: ['report.md', 'data.json', 'results.csv'],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('should reject non-array files', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Test', assigned_to: 'openclaw' });
+
+      const res = await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({
+          status: 'success',
+          output: 'Done',
+          files: 'not-an-array',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('array');
+    });
+  });
+
+  // === Rate Limiting ===
+
+  describe('Hunter rate limiting', () => {
+    it('should enforce rate limits on hunter endpoints', async () => {
+      // Create app with very low rate limit for testing
+      const rl_store = create_task_store({ db_path: ':memory:' });
+      const rl_app = create_app(rl_store, {
+        rate_limit_window_ms: 60_000,
+        rate_limit_max_requests: 2,  // Only 2 requests per minute
+      });
+
+      // 1st and 2nd requests — allowed
+      const res1 = await request(rl_app).get('/api/hunter/tasks/pending');
+      expect(res1.status).toBe(200);
+
+      const res2 = await request(rl_app).post('/api/hunter/heartbeat');
+      expect(res2.status).toBe(200);
+
+      // 3rd request — rate limited
+      const res3 = await request(rl_app).get('/api/hunter/tasks/pending');
+      expect(res3.status).toBe(429);
+      expect(res3.body.error).toContain('Rate limit');
+
+      rl_store.close();
+    });
+
+    it('should not rate limit captain endpoints', async () => {
+      const rl_store = create_task_store({ db_path: ':memory:' });
+      const rl_app = create_app(rl_store, {
+        rate_limit_window_ms: 60_000,
+        rate_limit_max_requests: 1,  // Very strict — 1 request per minute
+      });
+
+      // Use up the rate limit on hunter endpoint
+      await request(rl_app).get('/api/hunter/tasks/pending');
+
+      // Captain endpoints should still work
+      const health = await request(rl_app).get('/api/health');
+      expect(health.status).toBe(200);
+
+      const tasks = await request(rl_app).get('/api/tasks');
+      expect(tasks.status).toBe(200);
+
+      rl_store.close();
+    });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/gateway/task_store.test.ts
 
-```typescript
+`````typescript
 // TDD tests for SQLite task store
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { create_task_store, type TaskStore } from './task_store.js';
@@ -1502,13 +1601,13 @@ describe('TaskStore', () => {
     });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/hunter/api_client.test.ts
 
-```typescript
+`````typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_api_client } from './api_client.js';
 import type { Logger } from './logger.js';
@@ -1521,6 +1620,7 @@ const mock_logger: Logger = {
 };
 
 const BASE_URL = 'http://localhost:3100';
+const TEST_API_KEY = 'test-hunter-key-123';
 
 describe('api_client', () => {
   beforeEach(() => {
@@ -1619,6 +1719,33 @@ describe('api_client', () => {
       // Then
       expect(result).toBe(false);
     });
+
+    it('should handle quarantine response (202)', async () => {
+      // Given — captain returns 202 when PII detected
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 202,
+        json: () => Promise.resolve({
+          quarantined: true,
+          detected_types: ['phone_number', 'email'],
+        }),
+      }));
+
+      const client = create_api_client({ base_url: BASE_URL }, mock_logger);
+
+      // When
+      const result = await client.submit_result('task_1', {
+        status: 'success',
+        output: '연락처: 010-1234-5678, test@email.com',
+        files: [],
+      });
+
+      // Then — should return false (not accepted)
+      expect(result).toBe(false);
+      expect(mock_logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('quarantined'),
+      );
+    });
   });
 
   describe('send_heartbeat', () => {
@@ -1652,14 +1779,115 @@ describe('api_client', () => {
       expect(result).toBeNull();
     });
   });
+
+  // === API key authentication ===
+
+  describe('API key header', () => {
+    it('should include API key header when configured', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ tasks: [], count: 0 }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.fetch_pending_tasks();
+
+      // Then — verify API key header was sent
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+          }),
+        }),
+      );
+    });
+
+    it('should not include API key header when not configured', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ tasks: [], count: 0 }),
+      }));
+
+      const client = create_api_client({ base_url: BASE_URL }, mock_logger);
+
+      // When
+      await client.fetch_pending_tasks();
+
+      // Then — no API key header
+      const call_args = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const headers = call_args[1]?.headers as Record<string, string>;
+      expect(headers['x-hunter-api-key']).toBeUndefined();
+    });
+
+    it('should include API key in heartbeat requests', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, server_time: '2026-03-17T12:00:00Z' }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.send_heartbeat();
+
+      // Then
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+          }),
+        }),
+      );
+    });
+
+    it('should include API key in result submission', async () => {
+      // Given
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true }),
+      }));
+
+      const client = create_api_client(
+        { base_url: BASE_URL, api_key: TEST_API_KEY },
+        mock_logger,
+      );
+
+      // When
+      await client.submit_result('task_1', { status: 'success', output: 'Done', files: [] });
+
+      // Then
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-hunter-api-key': TEST_API_KEY,
+            'Content-Type': 'application/json',
+          }),
+        }),
+      );
+    });
+  });
 });
-```
+`````
 
 ---
 
 ## 파일: src/hunter/poll_loop.test.ts
 
-```typescript
+`````typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_poll_loop } from './poll_loop.js';
 import type { ApiClient } from './api_client.js';
@@ -1829,13 +2057,13 @@ describe('poll_loop', () => {
     expect(loop.get_current_interval()).toBe(1000);
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/hunter/task_executor.test.ts
 
-```typescript
+`````typescript
 import { describe, it, expect, vi } from 'vitest';
 import { create_task_executor, resolve_action } from './task_executor.js';
 import type { Task } from '../shared/types.js';
@@ -1937,13 +2165,13 @@ describe('create_task_executor', () => {
     expect(result.output).toContain('NotebookLM');
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/notification/router.test.ts
 
-```typescript
+`````typescript
 // TDD tests for notification router
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_notification_router } from './router.js';
@@ -2170,13 +2398,13 @@ describe('Notification Router', () => {
     });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/notification/slack.test.ts
 
-```typescript
+`````typescript
 // TDD tests for Slack notification module
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_slack_client } from './slack.js';
@@ -2386,13 +2614,13 @@ describe('Slack Client', () => {
     });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/notification/telegram.test.ts
 
-```typescript
+`````typescript
 // TDD tests for Telegram notification module
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_telegram_client } from './telegram.js';
@@ -2592,13 +2820,13 @@ describe('Telegram Client', () => {
     });
   });
 });
-```
+`````
 
 ---
 
 ## 파일: src/watchdog/output_watcher.test.ts
 
-```typescript
+`````typescript
 // TDD tests for output watcher
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scan_line, OutputWatcher, type PatternMatch } from './output_watcher.js';
@@ -2734,6 +2962,6 @@ describe('Output Watcher', () => {
     });
   });
 });
-```
+`````
 
 ---

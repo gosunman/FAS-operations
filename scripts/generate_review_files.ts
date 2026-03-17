@@ -30,6 +30,7 @@ const EXCLUDE_DIRS = new Set([
 const EXCLUDE_FILES = new Set([
   "pnpm-lock.yaml",
   ".env",
+  "generate_review_files.ts",   // Contains masking patterns with real PII strings
 ]);
 
 // File that should NOT be overwritten
@@ -257,15 +258,21 @@ const main = () => {
     lines.push("");
 
     // File entries
+    // Use 5-backtick fences to avoid collision with inner code fences (``` inside .md files)
     for (const file of cat.files) {
       const lang = get_lang(file.relative_path);
       const masked_content = mask_sensitive(file.content);
 
+      // Determine fence depth: if content contains 4+ backtick fences, use 6; otherwise 5
+      const max_inner_fence = (masked_content.match(/`{3,}/g) || [])
+        .reduce((max, m) => Math.max(max, m.length), 0);
+      const fence = "`".repeat(Math.max(max_inner_fence + 1, 5));
+
       lines.push(`## 파일: ${file.relative_path}`);
       lines.push("");
-      lines.push(`\`\`\`${lang}`);
+      lines.push(`${fence}${lang}`);
       lines.push(masked_content.trimEnd());
-      lines.push("```");
+      lines.push(fence);
       lines.push("");
       lines.push("---");
       lines.push("");
