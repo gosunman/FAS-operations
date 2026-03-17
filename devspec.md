@@ -95,6 +95,15 @@
 # 의존성 설치
 pnpm install
 
+# 환경 변수 설정
+cp .env.example .env   # 이후 토큰 값 입력
+
+# AI CLI 설치 & 인증 확인
+./scripts/setup/setup_ai_cli.sh
+
+# 알림 연동 테스트 (Telegram + Slack)
+npx tsx scripts/test_notifications.ts
+
 # 테스트 실행
 pnpm test:run      # 단발 실행
 pnpm test          # watch 모드
@@ -109,6 +118,14 @@ pnpm run watcher   # Output Watcher
 ./scripts/status.sh                # 시스템 상태 확인
 ./scripts/stop_all.sh              # 모든 세션 중지
 ```
+
+## 셋업 스크립트
+
+| 스크립트 | 설명 |
+|---------|------|
+| `scripts/setup/setup_ai_cli.sh` | AI CLI 설치/인증 상태 확인 (Claude Code, Gemini CLI `@google/gemini-cli`, OpenClaw) |
+| `scripts/setup/setup_tmux.sh` | tmux + resurrect 설치 |
+| `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
 
 ## 배포 유의 사항
 

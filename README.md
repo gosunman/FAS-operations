@@ -142,6 +142,7 @@ fully-automation-system/
 │   └── shared/           # 공유 타입 정의
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트
+│   ├── test_notifications.ts  # Telegram/Slack 연동 테스트
 │   ├── start_captain_sessions.sh
 │   ├── stop_all.sh
 │   ├── status.sh
@@ -167,13 +168,16 @@ cp .env.example .env
 # 3. tmux 환경 셋업
 ./scripts/setup/setup_tmux.sh
 
-# 4. 테스트 실행
+# 4. 알림 연동 테스트
+npx tsx scripts/test_notifications.ts
+
+# 5. 유닛 테스트 실행
 pnpm test:run
 
-# 5. Gateway 서버 시작
+# 6. Gateway 서버 시작
 pnpm run gateway
 
-# 6. 전체 세션 시작
+# 7. 전체 세션 시작
 ./scripts/start_captain_sessions.sh
 ```
 
