@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+
+# Runtime state (local only)
+state/
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# SQLite databases (runtime)
+*.sqlite
+*.sqlite-journal
+
+# tmux resurrect local state
+.tmux/resurrect/
+
+# Docker volumes
+.n8n/

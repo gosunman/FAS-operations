@@ -1,0 +1,28 @@
+{
+  "name": "fully-automation-system",
+  "version": "0.1.0",
+  "description": "FAS - 24/7 AI Worker System",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/gateway/server.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit",
+    "gateway": "tsx src/gateway/server.ts",
+    "watcher": "tsx src/watchdog/output_watcher.ts"
+  },
+  "keywords": [
+    "automation",
+    "ai-agents"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.30.3",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
