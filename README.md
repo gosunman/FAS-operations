@@ -131,7 +131,51 @@
 - 디바이스 리소스 24시간 최대 활용 (남으면 추가 태스크 배정)
 - AI 토큰 사용량 최대 활용 (한도 임박 시 플랜 업그레이드 제안)
 
+## 프로젝트 구조
+
+```
+fully-automation-system/
+├── src/
+│   ├── gateway/          # Task API 서버 (Express, SQLite)
+│   ├── notification/     # Telegram Bot + Slack 알림 모듈
+│   ├── watchdog/         # 출력 감시 데몬
+│   └── shared/           # 공유 타입 정의
+├── scripts/
+│   ├── setup/            # 환경 셋업 스크립트
+│   ├── start_captain_sessions.sh
+│   ├── stop_all.sh
+│   ├── status.sh
+│   └── agent_wrapper.sh  # 자동 재시작 래퍼
+├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
+├── docs/                 # 상세 기술 문서
+├── tasks/                # 태스크 큐 (pending/in_progress/done/blocked)
+├── docker-compose.yml    # n8n (Colima)
+├── CLAUDE.md             # AI 자율 실행 규칙
+└── PLAN.md               # 구축 계획
+```
+
 ## 빠른 시작
+
+```bash
+# 1. 의존성 설치
+pnpm install
+
+# 2. 환경 변수 설정
+cp .env.example .env
+# .env 파일에 Telegram/Slack 토큰 입력
+
+# 3. tmux 환경 셋업
+./scripts/setup/setup_tmux.sh
+
+# 4. 테스트 실행
+pnpm test:run
+
+# 5. Gateway 서버 시작
+pnpm run gateway
+
+# 6. 전체 세션 시작
+./scripts/start_captain_sessions.sh
+```
 
 > 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
 

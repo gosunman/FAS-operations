@@ -24,66 +24,65 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 고정 Tailscale IP 기록 및 alias 설정
 - [x] 방화벽 규칙: Tailscale 서브넷만 허용
 
-### 0-2. tmux 환경 구성
+### 0-2. tmux 환경 구성 ✅
 
-- [ ] 캡틴, 헌터에 tmux 설치
-- [ ] 자동 세션 복구 스크립트 (`tmux-resurrect` 또는 커스텀)
-- [ ] 세션 네이밍 컨벤션:
+- [x] 캡틴, 헌터에 tmux 설치
+- [x] 자동 세션 복구 스크립트 (`tmux-resurrect` 또는 커스텀)
+- [x] 세션 네이밍 컨벤션:
   - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-gemini-b`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
   - 헌터: `fas-openclaw`, `fas-watchdog`
 
-### 0-3. 소통 채널 구축
+### 0-3. 소통 채널 구축 ✅ (코드 구현 완료, 토큰 설정 대기)
 
-- [ ] **Telegram Bot** 생성 (BotFather) — 긴급 알림 전용
-  - Chat ID 확인
-  - 알림 전송 모듈 (TypeScript)
-  - `send_notification(level: 'info' | 'approval' | 'critical', message: string)`
-  - `wait_for_approval(timeout_minutes: number): Promise<boolean>`
-  - Galaxy Watch 텔레그램 알림 허용 설정
-- [ ] **Slack 워크스페이스** 생성 — 업무 소통
-  - 채널 구성: `#captain-logs`, `#hunter-logs`, `#approvals`, `#reports`, `#alerts`
-  - Slack Bot 토큰 발급
-  - 디바이스별/업무별 채널 그룹핑
-- [ ] **Notion** 연동 — 보고서/긴 문서
-  - Notion API Integration 생성
-  - 보고서 템플릿 데이터베이스 생성
-  - 페이지 생성 → URL 전달 자동화
+- [x] **Telegram Bot** 코드 구현 — 긴급 알림 전용
+  - [x] 알림 전송 모듈 (TypeScript) — `src/notification/telegram.ts`
+  - [x] `send(text, type)` + `wait_for_approval(request_id, timeout_ms)`
+  - [ ] BotFather에서 실제 봇 생성 + Chat ID 확인 *(인간 작업)*
+  - [ ] Galaxy Watch 텔레그램 알림 허용 설정 *(인간 작업)*
+- [x] **Slack** 코드 구현 — 업무 소통
+  - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
+  - [x] 통합 라우터 — `src/notification/router.ts`
+  - [ ] Slack 워크스페이스 생성 + Bot 토큰 발급 *(인간 작업)*
+- [ ] **Notion** 연동 — 보고서/긴 문서 *(Phase 2에서 구현 예정)*
 
-### 0-4. Docker 환경 (캡틴)
+### 0-4. Docker 환경 (캡틴) ✅ (설정 완료, Colima 설치 대기)
 
-- [ ] 캡틴에 Colima 설치
-- [ ] n8n Docker Compose 파일 작성
-- [ ] 볼륨 매핑: `~/.n8n` → 외장하드 백업 경로
+- [ ] 캡틴에 Colima 설치 — `scripts/setup/setup_colima.sh` *(인간 승인 후 실행)*
+- [x] n8n Docker Compose 파일 작성 — `docker-compose.yml`
+- [x] 볼륨 매핑: tasks, state, reports, config
 
-### 0-5. AI CLI 설치 & 인증
+### 0-5. AI CLI 설치 & 인증 ✅ (가이드 스크립트 생성, 인간 설정 대기)
 
-- [ ] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
-- [ ] Gemini CLI: 캡틴에 2개 계정 인증 설정 (프로필 분리)
-- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 (격리 계정)
-- [ ] 헌터 별도 구글 계정에 Gemini 플랜 결제 (NotebookLM + Deep Research용)
+- [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
+- [ ] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜) *(인간 작업)*
+- [ ] Gemini CLI: 캡틴에 2개 계정 인증 설정 *(인간 작업)*
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업)*
 
-### 0-6. 헌터 ↔ 캡틴 통신 구축
+### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
 
-- [ ] 캡틴에 Task API 서버 구축 (Express, Tailscale 내부만 접근)
-  - `POST /tasks` — 캡틴 → 헌터 태스크 전달 (개인정보 제거된 상태)
-  - `GET /tasks/pending` — 헌터가 할당된 태스크 폴링
-  - `POST /tasks/:id/result` — 헌터 → 캡틴 결과 전달
-  - `GET /health` — 헬스체크
-- [ ] 개인정보 산이타이징 레이어: 캡틴에서 헌터로 보내기 전 자동 필터링
-- [ ] 헌터는 캡틴 파일시스템에 직접 접근 불가 (API 통신만 허용)
+- [x] 캡틴에 Task API 서버 구축 (Express, 포트 3100) — `src/gateway/server.ts`
+  - `POST /api/tasks` — 태스크 생성
+  - `GET /api/tasks` — 태스크 목록 (상태 필터)
+  - `GET /api/hunter/tasks/pending` — 헌터 전용 (산이타이징된 태스크)
+  - `POST /api/hunter/tasks/:id/result` — 헌터 결과 제출
+  - `POST /api/hunter/heartbeat` — 헌터 생존 체크
+  - `GET /api/health` — 헬스체크
+- [x] 개인정보 산이타이징 레이어 — `src/gateway/sanitizer.ts`
+- [x] SQLite 태스크 저장소 — `src/gateway/task_store.ts`
+- [x] 헌터는 캡틴 파일시스템에 직접 접근 불가 (API 통신만 허용)
 
 ---
 
 ## Phase 1: 단일 에이전트 자동화
 
-### 1-1. Claude Code 상시 실행 체계 (캡틴)
+### 1-1. Claude Code 상시 실행 체계 (캡틴) ✅
 
-- [ ] tmux 세션 자동 시작 스크립트 (launchd)
-- [ ] Claude Code 출력 감시 → Telegram/Slack 전송 스크립트
+- [x] tmux 세션 자동 시작 스크립트 (launchd) — `scripts/setup/com.fas.captain.plist`
+- [x] Claude Code 출력 감시 → Telegram/Slack 전송 스크립트 — `src/watchdog/output_watcher.ts`
   - 승인 요청 패턴 감지: `[APPROVAL_NEEDED]`, `[BLOCKED]`
-  - 마일스톤 완료 패턴: `[MILESTONE]`, `[DONE]`
-- [ ] 자동 재시작 (크래시 복구): `while true; do claude; sleep 5; done` 래퍼
-- [ ] CLAUDE.md에 자율 실행 범위 명시
+  - 마일스톤 완료 패턴: `[MILESTONE]`, `[DONE]`, `[ERROR]`
+- [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
+- [x] CLAUDE.md에 자율 실행 범위 명시
 
 ### 1-2. Gemini CLI 상시 실행 체계 (캡틴)
 
