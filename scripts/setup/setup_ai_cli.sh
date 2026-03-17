@@ -28,7 +28,7 @@ if command -v gemini &>/dev/null; then
   echo "  ✅ Gemini CLI installed"
 else
   echo "  ❌ Gemini CLI not installed"
-  echo "  📋 Install: npm install -g @anthropic-ai/gemini-cli (or Google's official CLI)"
+  echo "  📋 Install: npm install -g @google/gemini-cli"
 fi
 echo ""
 echo "  Account A (Research): Set GEMINI_API_KEY_A in .env"
