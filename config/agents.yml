@@ -1,0 +1,92 @@
+agents:
+  claude:
+    display_name: "Claude Code (Max)"
+    device: captain
+    tmux_session: fas-claude
+    execution_mode: interactive     # oneshot | interactive
+    capabilities:
+      - code_generation
+      - code_review
+      - file_write
+      - git_commit
+      - git_push
+      - documentation
+      - architecture_design
+      - test_writing
+      - textbook_generation
+      - test_paper_generation
+      - parent_message_draft
+      - idea_analysis
+      - project_documentation
+    max_concurrent_tasks: 1
+    allowed_modes: [sleep, awake]
+    priority_weight: 10
+    can_access_personal_info: true
+    restart_policy:
+      max_retries: 3
+      retry_delay_seconds: 5
+      escalate_after: 3
+
+  gemini_a:
+    display_name: "Gemini CLI (Research)"
+    device: captain
+    tmux_session: fas-gemini-a
+    execution_mode: oneshot
+    capabilities:
+      - web_search
+      - research
+      - trend_analysis
+      - fact_checking
+      - crawling
+      - job_search
+      - startup_program_search
+      - market_analysis
+    max_concurrent_tasks: 2
+    allowed_modes: [sleep, awake, recurring]
+    priority_weight: 7
+    can_access_personal_info: true
+    restart_policy:
+      max_retries: 3
+      retry_delay_seconds: 5
+      escalate_after: 3
+
+  gemini_b:
+    display_name: "Gemini CLI (Validator)"
+    device: captain
+    tmux_session: fas-gemini-b
+    execution_mode: oneshot
+    capabilities:
+      - cross_validation
+      - fact_checking
+      - code_review
+      - report_review
+    max_concurrent_tasks: 2
+    allowed_modes: [sleep, awake]
+    priority_weight: 5
+    can_access_personal_info: true
+    restart_policy:
+      max_retries: 3
+      retry_delay_seconds: 5
+      escalate_after: 3
+
+  openclaw:
+    display_name: "OpenClaw (ChatGPT Pro)"
+    device: hunter
+    tmux_session: fas-openclaw
+    execution_mode: oneshot
+    communication: task_api          # task_api (직접 제어 아님)
+    capabilities:
+      - autonomous_browsing
+      - web_automation
+      - crawl_code_generation
+      - notebooklm_verification
+      - deep_research_execution
+      - abstract_task_execution
+    max_concurrent_tasks: 1
+    allowed_modes: [sleep, awake, recurring]
+    priority_weight: 8
+    can_access_personal_info: false   # 절대 개인정보 접근 금지
+    restart_policy:
+      max_retries: 3
+      retry_delay_seconds: 10
+      escalate_after: 3

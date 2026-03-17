@@ -1,0 +1,100 @@
+schedules:
+  # === 정보 수집 (SLEEP / RECURRING) ===
+
+  startup_crawl:
+    title: "창업지원사업 크롤링 (정부+민간)"
+    type: every_3_days
+    time: "02:00"
+    mode: sleep
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: true
+    notification:
+      on_complete: slack
+      report_format: notion_page
+      slack_channel: "#crawl-results"
+
+  housing_crawl:
+    title: "로또 청약 모니터링"
+    type: every_3_days
+    time: "02:30"
+    mode: sleep
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: true
+    notification:
+      on_complete: slack
+      report_format: notion_page
+      slack_channel: "#crawl-results"
+
+  blind_monitor:
+    title: "블라인드 네이버 인기글 감지"
+    type: daily
+    time: "03:00"
+    mode: recurring
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: false
+    notification:
+      on_complete: slack
+      slack_channel: "#crawl-results"
+
+  ai_trends:
+    title: "AI 트렌드 리서치"
+    type: daily
+    time: "01:00"
+    mode: sleep
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: false
+    notification:
+      on_complete: slack
+      report_format: notion_page
+      slack_channel: "#reports"
+
+  job_openings:
+    title: "글로벌 빅테크 채용 체크"
+    type: every_3_days
+    time: "03:30"
+    mode: sleep
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: true
+    notification:
+      on_complete: slack
+      report_format: notion_page
+      slack_channel: "#crawl-results"
+
+  grad_school:
+    title: "대학원/원격학위 일정 체크"
+    type: weekly
+    day: monday
+    time: "04:00"
+    mode: sleep
+    agent: gemini_a
+    risk_level: low
+    requires_personal_info: false
+    notification:
+      on_complete: slack
+      slack_channel: "#crawl-results"
+
+  # === 시스템 ===
+
+  morning_briefing:
+    title: "모닝 브리핑"
+    type: daily
+    time: "07:30"
+    mode: awake
+    workflow: WF-4
+
+  mode_sleep:
+    title: "SLEEP 모드 전환"
+    type: daily
+    time: "23:00"
+    workflow: WF-3
+
+  mode_awake:
+    title: "AWAKE 모드 전환"
+    type: daily
+    time: "07:30"
+    workflow: WF-3
