@@ -39,7 +39,11 @@
     │ 별도 iCloud     │ │ │ Agent      │ │
     │ 개인정보 차단    │ │ │ Wrappers   │ │
     │                  │ │ ├────────────┤ │
-    │ ┌──────────────┐ │ │ │ Crawlers   │ │
+    │ ※NotebookLM/    │ │ │ NotebookLM │ │
+    │  DeepResearch는  │ │ │ DeepRsch   │ │
+    │  양쪽 모두 사용  │ │ │ (구글 x2)  │ │
+    │  (구글계정 2개)  │ │ ├────────────┤ │
+    │                  │ │ │ Crawlers   │ │
     │ │ Agent        │ │ │ │ (Node.js)  │ │
     │ │ Wrapper      │ │ │ ├────────────┤ │
     │ │ (폴링+실행)  │ │ │ │ Watchdog   │ │

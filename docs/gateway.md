@@ -223,9 +223,25 @@ async function request_human_approval(
 
 import { sanitize_task } from './sanitizer'
 
+// 파일 큐 ↔ Task API 브릿지
+// Gateway가 tasks/pending/ 디렉토리를 fs.watch로 감시하여
+// openclaw에 배정된 태스크를 메모리에 로드 → API로 제공
+const hunter_task_cache: Map<string, any> = new Map()
+
+function start_file_watcher() {
+  const pending_dir = join(process.cwd(), 'tasks/pending')
+  fs.watch(pending_dir, async (event, filename) => {
+    if (!filename?.endsWith('.yml')) return
+    const task = yaml_parse(await readFile(join(pending_dir, filename), 'utf-8'))
+    if (task.assigned_to === 'openclaw') {
+      hunter_task_cache.set(task.id, sanitize_task(task))
+    }
+  })
+}
+
 // 헌터가 폴링하는 엔드포인트
 async function get_hunter_pending_tasks(req: Request, res: Response) {
-  const pending = await load_tasks_for_agent('openclaw')
+  const pending = Array.from(hunter_task_cache.values())
 
   // 개인정보 제거 (산이타이징)
   const sanitized = pending.map(task => sanitize_task(task))
@@ -303,14 +319,32 @@ function sanitize_task(task: any): any {
 }
 
 function sanitize_text(text: string): string {
+  // Stage 1: 규칙 기반 필터링 (정규식)
   let result = text
-
   for (const pattern of filter_config.patterns) {
     const regex = new RegExp(pattern.regex, 'gi')
     result = result.replace(regex, pattern.replacement ?? '[REDACTED]')
   }
 
+  // Stage 2: LLM 기반 2차 필터링 (문맥적 개인정보 감지)
+  // 규칙만으로 잡히지 않는 간접 식별 정보를 AI가 추가 마스킹
+  result = await llm_sanitize(result)
+
   return result
+}
+
+async function llm_sanitize(text: string): Promise<string> {
+  // Gemini API (저비용)로 문맥적 개인정보 감지
+  const prompt = `다음 텍스트에서 개인을 특정할 수 있는 정보를 [REDACTED]로 치환해줘.
+이름, 학교명, 구체적 주소, 금융 정보, 직장 내 직급+부서 조합 등.
+일반적인 기술 용어나 공개 정보는 유지해.
+원문만 반환하되 개인정보 부분만 치환:\n\n${text}`
+
+  const result = await execute_gemini_oneshot(prompt, {
+    account: 'b',
+    timeout_ms: 10_000,
+  })
+  return result.stdout || text  // 실패 시 원문 반환 (Stage 1 결과)
 }
 ```
 

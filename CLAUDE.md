@@ -6,9 +6,9 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 
 ## 기술 스택
 
-- 언어: TypeScript (strict mode)
-- 런타임: Node.js 20+
-- 패키지 매니저: pnpm
+- 언어 우선순위: **TypeScript (최우선)** > Python (필요 시) > Bash (최소한)
+- 런타임: Node.js 20+ / Python 3.11+
+- 패키지 매니저: pnpm (TS) / uv (Python)
 - 코딩 스타일: snake_case, 함수형 프로그래밍, 가독성 최우선
 - 주석: 많이 달 것
 - 테스트: vitest, TDD 방향
