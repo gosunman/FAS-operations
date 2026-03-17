@@ -19,43 +19,57 @@
               │                   │                   │
     ┌─────────▼────────┐ ┌───────▼────────┐ ┌────────▼───────┐
     │ 헌터 (Hunter)    │ │ 캡틴 (Captain) │ │  External APIs │
-    │ Mac Studio #1    │ │ Mac Studio #2  │ │                │
-    │ M1 Ultra / 32GB  │ │ M4 Ultra / 36GB│ │ - Telegram     │
-    │ macOS user: user │ │ macOS user:user│ │ - Slack        │
-    │                  │ │                │ │ - Notion       │
-    │ ┌──────────────┐ │ │ ┌────────────┐ │ │ - 크롤링 대상  │
-    │ │ OpenClaw     │ │ │ │ n8n        │ │ └────────────────┘
+    │ 자율 정찰병      │ │ 신뢰받는 집사  │ │                │
+    │ Mac Studio #1    │ │ Mac Studio #2  │ │ - Telegram     │
+    │ M1 Ultra / 32GB  │ │ M4 Ultra / 36GB│ │ - Slack        │
+    │ macOS user: user │ │ macOS user:user│ │ - Notion       │
+    │                  │ │                │ │ - 크롤링 대상  │
+    │ ┌──────────────┐ │ │ ┌────────────┐ │ └────────────────┘
+    │ │ OpenClaw     │ │ │ │ n8n        │ │
     │ │ (ChatGPT Pro)│ │ │ │ (Colima)   │ │
+    │ ├──────────────┤ │ │ ├────────────┤ │
+    │ │ Claude Code  │ │ │ │ Claude Code│ │
+    │ │ Max x20      │ │ │ │ (Max)      │ │
+    │ │ (계정 B)     │ │ │ │ (계정 A)   │ │
+    │ ├──────────────┤ │ │ ├────────────┤ │
+    │ │ NotebookLM   │ │ │ │ Gemini CLI │ │
+    │ │ (웹 자동화)  │ │ │ │ (Acc A+B)  │ │
+    │ ├──────────────┤ │ │ ├────────────┤ │
+    │ │ Deep Research│ │ │ │ Gateway +  │ │
+    │ │ (웹 자동화)  │ │ │ │ Task API   │ │
     │ └──────────────┘ │ │ ├────────────┤ │
-    │ ┌──────────────┐ │ │ │ Claude Code│ │
-    │ │ NotebookLM   │ │ │ │ (Max)      │ │
-    │ │ (웹 자동화)  │ │ │ ├────────────┤ │
-    │ ├──────────────┤ │ │ │ Gemini CLI │ │
-    │ │ Deep Research│ │ │ │ (Acc A+B)  │ │
-    │ │ (웹 자동화)  │ │ │ ├────────────┤ │
-    │ └──────────────┘ │ │ │ Gateway +  │ │
-    │                  │ │ │ Task API   │ │
-    │ 별도 구글 계정   │ │ ├────────────┤ │
-    │ 별도 iCloud     │ │ │ Agent      │ │
-    │ 개인정보 차단    │ │ │ Wrappers   │ │
+    │                  │ │ │ Agent      │ │
+    │ 별도 구글 계정   │ │ │ Wrappers   │ │
+    │ 별도 iCloud     │ │ ├────────────┤ │
+    │ 개인정보 차단    │ │ │ NotebookLM │ │
+    │                  │ │ │ DeepRsch   │ │
+    │ ※NotebookLM/    │ │ │ (구글 x2)  │ │
+    │  DeepResearch는  │ │ ├────────────┤ │
+    │  양쪽 모두 사용  │ │ │ Crawlers   │ │
+    │  (구글계정 2개)  │ │ │ (Node.js)  │ │
     │                  │ │ ├────────────┤ │
-    │ ※NotebookLM/    │ │ │ NotebookLM │ │
-    │  DeepResearch는  │ │ │ DeepRsch   │ │
-    │  양쪽 모두 사용  │ │ │ (구글 x2)  │ │
-    │  (구글계정 2개)  │ │ ├────────────┤ │
-    │                  │ │ │ Crawlers   │ │
-    │ │ Agent        │ │ │ │ (Node.js)  │ │
-    │ │ Wrapper      │ │ │ ├────────────┤ │
-    │ │ (폴링+실행)  │ │ │ │ Watchdog   │ │
-    │ └──────────────┘ │ │ └────────────┘ │
-    └──────────────────┘ └────────────────┘
+    │ ┌──────────────┐ │ │ │ Watchdog   │ │
+    │ │ Agent        │ │ │ └────────────┘ │
+    │ │ Wrapper      │ │ │                │
+    │ │ (폴링+실행)  │ │ │                │
+    │ └──────────────┘ │ │                │
+    │ ┌──────────────┐ │ └────────────────┘
+    │ │ Watchdog     │ │
+    │ └──────────────┘ │
+    └──────────────────┘
+
+주인님 ↔ 헌터 직접 소통 (Telegram/Slack):
+  - 주인님 → 헌터: 막연한 아이디어, 비구체적 업무
+  - 헌터 → 주인님: 크리티컬 이슈 직접 보고
 ```
 
 ## 하드웨어 상세
 
 ### 캡틴 (Mac Studio #2, M4 Ultra / 36GB)
 
-메인 워커 + 오케스트레이터. 모든 AI 에이전트와 시스템 서비스가 여기서 실행.
+신뢰받는 집사. 메인 워커 + 오케스트레이터. 모든 AI 에이전트와 시스템 서비스가 여기서 실행.
+주인님의 개인정보를 보유한 유일한 AI 에이전트.
+상세 정의: [docs/agents-charter.md](agents-charter.md)
 
 | 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
 | --- | --- | --- | --- |
@@ -75,17 +89,20 @@
 
 ### 헌터 (Mac Studio #1, M1 Ultra / 32GB)
 
-격리 워커. OpenClaw + 웹 자동화 전용. **개인정보 접근 불가.**
+자율 정찰병. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
+주인님과 Telegram/Slack을 통해 직접 소통 가능 (크리티컬 이슈 보고, 막연한 업무 수신).
+상세 정의: [docs/agents-charter.md](agents-charter.md)
 
 | 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
 | --- | --- | --- | --- |
 | macOS 시스템 | — | ~5GB | — |
 | OpenClaw | ChatGPT Pro 브라우저 | ~2GB | `fas-openclaw` |
+| Claude Code Max x20 | OAuth CLI (계정 B) | ~500MB | `fas-claude-hunter` |
 | 브라우저 (NotebookLM/Deep Research) | Chrome | ~2GB | OpenClaw 내 |
 | Agent Wrapper | Node.js | ~200MB | `fas-wrapper` |
 | Watchdog | Node.js | ~200MB | `fas-watchdog` |
-| **합계** | | **~9.4GB** | |
-| **여유** | | **~22.6GB** | |
+| **합계** | | **~9.9GB** | |
+| **여유** | | **~22.1GB** | |
 
 ### MacBook Pro (M1 Pro / 32GB) — owner 전용
 
@@ -129,6 +146,7 @@ fully-automation-system/
 ├── .env.example                   # 환경변수 템플릿
 │
 ├── docs/                          # 상세 기술 문서
+│   ├── agents-charter.md          # 에이전트 체계 원천 문서 (Source of Truth)
 │   ├── architecture.md            # (이 파일)
 │   ├── agent-control.md           # 에이전트 제어 프로토콜
 │   ├── task-system.md             # 태스크 큐 & 스케줄링
@@ -155,6 +173,15 @@ fully-automation-system/
 │   ├── watchdog/                  # 감시 데몬
 │   ├── validation/                # 할루시네이션 방지
 │   └── shared/                    # 공유 유틸리티
+│
+├── hunter/                        # 헌터 전용 설정 & 배포 패키지
+│   ├── CLAUDE.md                  # 헌터 Claude Code 규칙
+│   └── openclaw/
+│       ├── system_prompt.md       # OpenClaw 초기 지시문
+│       └── browsing_rules.md      # 브라우징 규칙
+│
+├── shadow/                        # 그림자(주인님 디바이스) 설정
+│   └── CLAUDE.md                  # 그림자 Claude Code 규칙
 │
 ├── config/                        # 설정 파일
 │   ├── agents.yml

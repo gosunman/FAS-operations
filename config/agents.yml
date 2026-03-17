@@ -1,9 +1,14 @@
+# Source of truth for agent identities/roles: docs/agents-charter.md
+
 agents:
   claude:
-    display_name: "Claude Code (Max)"
+    display_name: "Claude Code (Max) — Captain"
+    identity: "신뢰받는 집사 (Trusted Butler)"
     device: captain
+    account: A                        # owner's account
+    autonomy: medium                  # follows defined workflows
     tmux_session: fas-claude
-    execution_mode: interactive     # oneshot | interactive
+    execution_mode: interactive       # oneshot | interactive
     capabilities:
       - code_generation
       - code_review
@@ -28,8 +33,11 @@ agents:
       escalate_after: 3
 
   gemini_a:
-    display_name: "Gemini CLI (Research)"
+    display_name: "Gemini CLI (Research) — Captain"
+    identity: "캡틴의 리서치 도구"
     device: captain
+    account: A
+    autonomy: medium
     tmux_session: fas-gemini-a
     execution_mode: oneshot
     capabilities:
@@ -51,8 +59,11 @@ agents:
       escalate_after: 3
 
   gemini_b:
-    display_name: "Gemini CLI (Validator)"
+    display_name: "Gemini CLI (Validator) — Captain"
+    identity: "캡틴의 교차 검증 도구 + 비크리티컬 결정 프록시"
     device: captain
+    account: B
+    autonomy: medium
     tmux_session: fas-gemini-b
     execution_mode: oneshot
     capabilities:
@@ -70,11 +81,14 @@ agents:
       escalate_after: 3
 
   openclaw:
-    display_name: "OpenClaw (ChatGPT Pro)"
+    display_name: "OpenClaw (ChatGPT Pro) — Hunter Engine"
+    identity: "자율 정찰병 (Autonomous Scout) — main browser engine"
     device: hunter
+    account: B                        # hunter-dedicated isolated account
+    autonomy: high                    # proactively reads owner's intent
     tmux_session: fas-openclaw
     execution_mode: oneshot
-    communication: task_api          # task_api (직접 제어 아님)
+    communication: task_api           # task_api (직접 제어 아님)
     capabilities:
       - autonomous_browsing
       - web_automation
@@ -82,11 +96,44 @@ agents:
       - notebooklm_verification
       - deep_research_execution
       - abstract_task_execution
+      - trend_exploration
+      - vague_task_interpretation
     max_concurrent_tasks: 1
     allowed_modes: [sleep, awake, recurring]
     priority_weight: 8
     can_access_personal_info: false   # 절대 개인정보 접근 금지
+    report_to:
+      non_critical: captain           # via Task API
+      critical: owner                 # via Telegram/Slack directly
     restart_policy:
       max_retries: 3
       retry_delay_seconds: 10
+      escalate_after: 3
+
+  claude_hunter:
+    display_name: "Claude Code (Max x20) — Hunter"
+    identity: "자율 정찰병 (Autonomous Scout) — coding/high-intelligence engine"
+    device: hunter
+    account: B                        # hunter-dedicated isolated account
+    autonomy: high
+    tmux_session: fas-claude-hunter
+    execution_mode: interactive
+    communication: task_api
+    capabilities:
+      - code_generation
+      - code_review
+      - code_analysis
+      - research_synthesis
+      - complex_reasoning
+      - data_analysis
+    max_concurrent_tasks: 1
+    allowed_modes: [sleep, awake]
+    priority_weight: 9
+    can_access_personal_info: false   # 절대 개인정보 접근 금지
+    report_to:
+      non_critical: captain
+      critical: owner
+    restart_policy:
+      max_retries: 3
+      retry_delay_seconds: 5
       escalate_after: 3

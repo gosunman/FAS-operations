@@ -4,16 +4,18 @@
 
 ```
 캡틴 (Mac Studio M4 Ultra)                    헌터 (Mac Studio M1 Ultra)
+"신뢰받는 집사" — 계정 A                     "자율 정찰병" — 계정 B
 ┌────────────────────────────┐              ┌────────────────────────┐
 │ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
 │   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
 │       ├ Task CRUD API      │  (Tailscale) │                        │
-│       ├ Hunter API (sanitized)             │ tmux: fas-watchdog     │
-│       └ Health check       │              │   └ heartbeat sender   │
+│       ├ Hunter API (sanitized)             │ tmux: fas-claude-hunter│
+│       └ Health check       │              │   └ Claude Code x20   │
+│                            │              │     (계정 B)           │
+│ tmux: fas-claude           │              │                        │
+│   └ agent_wrapper.sh claude│              │ tmux: fas-watchdog     │
+│     (계정 A)               │              │   └ heartbeat sender   │
 │                            │              └────────────────────────┘
-│ tmux: fas-claude           │
-│   └ agent_wrapper.sh claude│
-│                            │
 │ tmux: fas-gemini-a         │    ┌──────────────────────┐
 │   └ Gemini CLI (research)  │    │ External Services    │
 │                            │    │  Telegram Bot API    │
@@ -21,11 +23,12 @@
 │   └ Gemini CLI (validator) │    │  Notion API          │
 │                            │    └──────────────────────┘
 │ tmux: fas-watchdog         │
-│   └ output_watcher.ts      │
-│                            │
-│ tmux: fas-n8n              │
+│   └ output_watcher.ts      │    주인님 ↔ 헌터 직접 소통:
+│                            │    Telegram/Slack (막연한 업무,
+│ tmux: fas-n8n              │     크리티컬 이슈 보고)
 │   └ docker compose (n8n)   │
 └────────────────────────────┘
+에이전트 체계 원천 문서: docs/agents-charter.md
 ```
 
 ## 기술 스택
