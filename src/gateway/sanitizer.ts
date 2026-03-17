@@ -45,6 +45,18 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[시도]?\s+[가-힣]+[시군구]/g,
     replacement: '[주소 제거됨]',
   },
+  // Credit card numbers (4 groups of 4 digits) — must be before bank_account
+  {
+    name: 'credit_card',
+    regex: /\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b/g,
+    replacement: '[카드번호 제거됨]',
+  },
+  // IP addresses (private/Tailscale ranges) — must be before bank_account
+  {
+    name: 'ip_address',
+    regex: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[0-2]\d)\.\d{1,3}\.\d{1,3})\b/g,
+    replacement: '[IP 제거됨]',
+  },
   // Bank account numbers (3-4 digit groups with hyphens)
   {
     name: 'bank_account',
@@ -69,23 +81,30 @@ export const sanitize_text = (text: string): string => {
   return result;
 };
 
-// === Sanitize a task for Hunter ===
+// === Sanitize a task for Hunter (whitelist approach) ===
+// Only explicitly safe fields are included. New fields are excluded by default.
 
-export const sanitize_task = (task: Task): Task => {
-  // Deep clone to avoid mutation
-  const sanitized = structuredClone(task);
-
-  // Sanitize text fields
-  sanitized.title = sanitize_text(sanitized.title);
-  if (sanitized.description) {
-    sanitized.description = sanitize_text(sanitized.description);
-  }
-
-  // Remove PII-related metadata
-  sanitized.requires_personal_info = false;
-
-  return sanitized;
+export type HunterSafeTask = {
+  id: string;
+  title: string;
+  description?: string;
+  priority: Task['priority'];
+  mode: Task['mode'];
+  risk_level: Task['risk_level'];
+  status: Task['status'];
+  deadline: string | null;
 };
+
+export const sanitize_task = (task: Task): HunterSafeTask => ({
+  id: task.id,
+  title: sanitize_text(task.title),
+  description: task.description ? sanitize_text(task.description) : undefined,
+  priority: task.priority,
+  mode: task.mode,
+  risk_level: task.risk_level,
+  status: task.status,
+  deadline: task.deadline,
+});
 
 // === Check if text contains PII ===
 

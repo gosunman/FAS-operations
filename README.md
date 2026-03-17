@@ -17,7 +17,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    HUMAN (sunman)                     │
+│                    HUMAN (owner)                     │
 │  MacBook Pro — SSH 접속 & 모니터링 전용               │
 │  Galaxy Watch (텔레그램 긴급 알림)                     │
 │  Galaxy Fold (슬랙/노션/텔레그램 상세 확인)            │

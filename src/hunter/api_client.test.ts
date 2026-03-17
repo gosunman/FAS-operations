@@ -9,7 +9,7 @@ const mock_logger: Logger = {
   error: vi.fn(),
 };
 
-const BASE_URL = 'http://100.64.0.1:3100';
+const BASE_URL = 'http://localhost:3100';
 
 describe('api_client', () => {
   beforeEach(() => {

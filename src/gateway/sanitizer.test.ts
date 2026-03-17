@@ -1,6 +1,6 @@
 // TDD tests for PII sanitizer
 import { describe, it, expect } from 'vitest';
-import { sanitize_text, sanitize_task, contains_pii, detect_pii_types } from './sanitizer.js';
+import { sanitize_text, sanitize_task, contains_pii, detect_pii_types, type HunterSafeTask } from './sanitizer.js';
 import type { Task } from '../shared/types.js';
 
 describe('Sanitizer', () => {
@@ -38,6 +38,22 @@ describe('Sanitizer', () => {
     it('should remove labeled Korean names', () => {
       expect(sanitize_text('이름: 홍길동')).toContain('[이름 제거됨]');
       expect(sanitize_text('성명：김철수')).toContain('[이름 제거됨]');
+    });
+
+    it('should remove credit card numbers', () => {
+      expect(sanitize_text('카드 1234-5678-9012-3456')).toBe('카드 [카드번호 제거됨]');
+      expect(sanitize_text('카드 1234 5678 9012 3456')).toBe('카드 [카드번호 제거됨]');
+    });
+
+    it('should remove internal IP addresses', () => {
+      expect(sanitize_text('서버 100.64.0.1에 접속')).toBe('서버 [IP 제거됨]에 접속');
+      expect(sanitize_text('http://192.168.1.100:3100')).toBe('http://[IP 제거됨]:3100');
+      expect(sanitize_text('10.0.0.5 연결')).toBe('[IP 제거됨] 연결');
+    });
+
+    it('should not remove public IP addresses', () => {
+      // 8.8.8.8 is a public IP — should not match private/Tailscale ranges
+      expect(sanitize_text('DNS: 8.8.8.8')).toBe('DNS: 8.8.8.8');
     });
 
     it('should not modify text without PII', () => {
@@ -89,11 +105,24 @@ describe('Sanitizer', () => {
       expect(sanitized.description).toContain('[전화번호 제거됨]');
     });
 
-    it('should set requires_personal_info to false', () => {
-      const task = make_task({ requires_personal_info: true });
-      const sanitized = sanitize_task(task);
+    it('should only include whitelisted fields', () => {
+      const task = make_task({
+        title: 'Test',
+        requires_personal_info: true,
+        assigned_to: 'openclaw',
+      });
+      const sanitized = sanitize_task(task) as Record<string, unknown>;
 
-      expect(sanitized.requires_personal_info).toBe(false);
+      // Whitelisted fields should exist
+      expect(sanitized.id).toBeDefined();
+      expect(sanitized.title).toBeDefined();
+      expect(sanitized.priority).toBeDefined();
+
+      // Non-whitelisted fields should NOT exist
+      expect(sanitized).not.toHaveProperty('requires_personal_info');
+      expect(sanitized).not.toHaveProperty('assigned_to');
+      expect(sanitized).not.toHaveProperty('depends_on');
+      expect(sanitized).not.toHaveProperty('output');
     });
 
     it('should not mutate the original task', () => {

@@ -12,7 +12,7 @@ const mock_logger: Logger = {
 };
 
 const mock_config: HunterConfig = {
-  captain_api_url: 'http://100.64.0.1:3100',
+  captain_api_url: 'http://localhost:3100',
   poll_interval_ms: 1000,
   log_dir: './logs',
   device_name: 'hunter',

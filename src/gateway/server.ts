@@ -18,7 +18,7 @@
 
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
-import { sanitize_task } from './sanitizer.js';
+import { sanitize_task, contains_pii, sanitize_text } from './sanitizer.js';
 import type { TaskStatus } from '../shared/types.js';
 
 // === Create Express app ===
@@ -142,17 +142,24 @@ export const create_app = (store: TaskStore) => {
     }
   });
 
-  // Submit hunter task result
+  // Submit hunter task result (with reverse PII check)
   app.post('/api/hunter/tasks/:id/result', (req, res) => {
     const { status: result_status, output, files } = req.body;
 
+    // Reverse PII check: sanitize any personal info in hunter's output
+    let safe_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
+    if (contains_pii(safe_output)) {
+      console.warn(`[SECURITY] Hunter task ${req.params.id} output contains PII — sanitizing`);
+      safe_output = sanitize_text(safe_output);
+    }
+
     if (result_status === 'success') {
       store.complete_task(req.params.id, {
-        summary: output || 'Completed',
+        summary: safe_output,
         files_created: files ?? [],
       });
     } else {
-      store.block_task(req.params.id, output || 'Failed');
+      store.block_task(req.params.id, safe_output);
     }
 
     res.json({ ok: true });

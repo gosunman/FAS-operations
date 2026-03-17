@@ -4,7 +4,7 @@
 
 ```text
                          ┌──────────────────┐
-                         │   Human (sunman) │
+                         │   Human (owner)  │
                          │  Galaxy Watch    │
                          │  Galaxy Fold     │
                          │  MacBook Pro     │
@@ -87,7 +87,7 @@
 | **합계** | | **~9.4GB** | |
 | **여유** | | **~22.6GB** | |
 
-### MacBook Pro (M1 Pro / 32GB) — sunman 전용
+### MacBook Pro (M1 Pro / 32GB) — owner 전용
 
 - AI 자동 실행 **없음**
 - SSH로 캡틴/헌터에 접속하여 작업
@@ -101,7 +101,7 @@
 │              Tailscale VPN Mesh              │
 │                                             │
 │  MacBook Pro ←──SSH──→ 캡틴 ←──SSH──→ 헌터  │
-│  (sunman)              (user)        (user) │
+│  (owner)               (user)        (user) │
 │                          │                  │
 │                    Task API (HTTP)           │
 │                    :3100 포트                │

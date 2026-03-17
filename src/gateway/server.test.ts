@@ -185,6 +185,28 @@ describe('Gateway Server', () => {
       expect(res.body.tasks[0].title).not.toContain('홍길동');
     });
 
+    it('should only include whitelisted fields (no assigned_to, depends_on, etc.)', async () => {
+      await request(app).post('/api/tasks').send({
+        title: 'Safe crawl task',
+        assigned_to: 'openclaw',
+        requires_personal_info: false,
+      });
+
+      const res = await request(app).get('/api/hunter/tasks/pending');
+
+      expect(res.body.count).toBe(1);
+      const task = res.body.tasks[0];
+      expect(task.id).toBeDefined();
+      expect(task.title).toBeDefined();
+      expect(task.priority).toBeDefined();
+      // Non-whitelisted fields must not be present
+      expect(task).not.toHaveProperty('assigned_to');
+      expect(task).not.toHaveProperty('requires_personal_info');
+      expect(task).not.toHaveProperty('depends_on');
+      expect(task).not.toHaveProperty('output');
+      expect(task).not.toHaveProperty('created_at');
+    });
+
     it('should filter out tasks requiring personal info', async () => {
       await request(app).post('/api/tasks').send({
         title: 'Safe task',
@@ -220,6 +242,23 @@ describe('Gateway Server', () => {
       // Verify task was completed
       const task_res = await request(app).get(`/api/tasks/${create_res.body.id}`);
       expect(task_res.body.status).toBe('done');
+    });
+
+    it('should sanitize PII in hunter result output (reverse check)', async () => {
+      const create_res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Crawl task', assigned_to: 'openclaw' });
+
+      await request(app)
+        .post(`/api/hunter/tasks/${create_res.body.id}/result`)
+        .send({ status: 'success', output: '결과: 이름: 홍길동, 전화 010-1234-5678' });
+
+      const task_res = await request(app).get(`/api/tasks/${create_res.body.id}`);
+      expect(task_res.body.status).toBe('done');
+      expect(task_res.body.output.summary).not.toContain('홍길동');
+      expect(task_res.body.output.summary).not.toContain('010-1234-5678');
+      expect(task_res.body.output.summary).toContain('[이름 제거됨]');
+      expect(task_res.body.output.summary).toContain('[전화번호 제거됨]');
     });
 
     it('should mark task as blocked on failure', async () => {

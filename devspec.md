@@ -66,7 +66,7 @@
 ### Gateway (`src/gateway/`)
 - **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check
 - **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
-- **sanitizer.ts**: 개인정보 제거 (한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보)
+- **sanitizer.ts**: 개인정보 제거 (한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
 
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
