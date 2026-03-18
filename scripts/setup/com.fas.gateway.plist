@@ -1,0 +1,50 @@
+<!-- FAS Gateway launchd plist
+     Auto-starts the Gateway Express server in a tmux session on login.
+
+     Install:
+       cp scripts/setup/com.fas.gateway.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.fas.gateway.plist
+
+     Uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.fas.gateway.plist
+       rm ~/Library/LaunchAgents/com.fas.gateway.plist
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fas.gateway</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>/Users/user/FAS-operations/scripts/gateway_wrapper.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/user/FAS-operations</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/user/FAS-operations/logs/gateway-launch.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/user/FAS-operations/logs/gateway-launch.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/user</string>
+    </dict>
+</dict>
+</plist>
