@@ -51,6 +51,32 @@ describe('Output Watcher', () => {
       expect(result!.description).toBe('Database connection failed');
     });
 
+    it('should detect [LOGIN_REQUIRED] pattern from hunter', () => {
+      const result = scan_line(
+        '[LOGIN_REQUIRED] Google OAuth session expired on hunter',
+        'fas-hunter',
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.pattern_name).toBe('LOGIN_REQUIRED');
+      expect(result!.description).toBe('Google OAuth session expired on hunter');
+      expect(result!.session).toBe('fas-hunter');
+    });
+
+    it('should detect [GEMINI_BLOCKED] pattern', () => {
+      const result = scan_line(
+        "[GEMINI_BLOCKED] Gemini 'gemini-a' crashed 3 times in succession. Manual intervention needed.",
+        'fas-gemini-a',
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.pattern_name).toBe('GEMINI_BLOCKED');
+      expect(result!.description).toBe(
+        "Gemini 'gemini-a' crashed 3 times in succession. Manual intervention needed.",
+      );
+      expect(result!.session).toBe('fas-gemini-a');
+    });
+
     it('should return null for non-matching lines', () => {
       expect(scan_line('Normal log output', 'fas-claude')).toBeNull();
       expect(scan_line('', 'fas-claude')).toBeNull();

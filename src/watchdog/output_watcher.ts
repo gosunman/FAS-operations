@@ -5,6 +5,8 @@
 // Patterns detected:
 //   [APPROVAL_NEEDED] → Telegram urgent
 //   [BLOCKED]         → Telegram urgent
+//   [LOGIN_REQUIRED]  → Telegram urgent (hunter Google login expiry)
+//   [GEMINI_BLOCKED]  → Telegram alert (Gemini CLI crashed after retries)
 //   [MILESTONE]       → Slack #fas-general
 //   [DONE]            → Slack #captain-logs
 //   [ERROR]           → Slack #alerts
@@ -53,6 +55,18 @@ const WATCH_PATTERNS: WatchPattern[] = [
   {
     name: 'ERROR',
     regex: /\[ERROR\]\s*(.*)/,
+    extract: (m) => m[1]?.trim() ?? '',
+  },
+  // Hunter reports Google login session expired — needs manual re-auth
+  {
+    name: 'LOGIN_REQUIRED',
+    regex: /\[LOGIN_REQUIRED\]\s*(.*)/,
+    extract: (m) => m[1]?.trim() ?? '',
+  },
+  // Gemini CLI crashed after max retries — session needs attention
+  {
+    name: 'GEMINI_BLOCKED',
+    regex: /\[GEMINI_BLOCKED\]\s*(.*)/,
     extract: (m) => m[1]?.trim() ?? '',
   },
 ];
