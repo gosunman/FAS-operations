@@ -7,6 +7,7 @@
 import type { ApiClient } from './api_client.js';
 import type { Logger } from './logger.js';
 import type { HunterConfig } from './config.js';
+import type { HunterNotify } from './notify.js';
 
 type TaskExecutor = {
   execute: (task: import('../shared/types.js').Task) => Promise<import('../shared/types.js').HunterTaskResult>;
@@ -17,6 +18,7 @@ export type PollLoopDeps = {
   executor: TaskExecutor;
   logger: Logger;
   config: HunterConfig;
+  notify?: HunterNotify;
 };
 
 export type PollLoopState = {
@@ -29,7 +31,7 @@ export type PollLoopState = {
 const MAX_BACKOFF_MS = 300_000; // 5 minutes
 
 export const create_poll_loop = (deps: PollLoopDeps) => {
-  const { api, executor, logger, config } = deps;
+  const { api, executor, logger, config, notify } = deps;
 
   const state: PollLoopState = {
     running: false,
@@ -76,6 +78,14 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
       if (submitted) {
         state.total_tasks_processed += 1;
         logger.info(`Task ${task.id} completed: ${result.status}`);
+
+        // Notify owner of task completion
+        await notify?.report(`Task completed: ${task.title} — ${result.status}`);
+
+        // Alert if login is required (Google session expired)
+        if (result.status === 'failure' && result.output?.includes('[LOGIN_REQUIRED]')) {
+          await notify?.alert('[LOGIN_REQUIRED] Google session expired — manual re-login needed');
+        }
       } else {
         logger.warn(`Task ${task.id} result submission failed — will retry`);
       }
@@ -86,6 +96,11 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
       state.consecutive_failures += 1;
       const error_msg = err instanceof Error ? err.message : String(err);
       logger.error(`Poll cycle error (failures: ${state.consecutive_failures}): ${error_msg}`);
+
+      // Alert owner when failures pile up
+      if (state.consecutive_failures >= 3) {
+        await notify?.alert(`[BLOCKED] Hunter poll loop failing (${state.consecutive_failures}x): ${error_msg}`);
+      }
     }
   };
 
