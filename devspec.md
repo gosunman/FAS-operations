@@ -80,12 +80,13 @@
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
 
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. 4개 핸들러 모두 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. **주의**: 코드는 완성이나 헌터 머신 실제 배포는 미완료 (SA-001 보안 이슈 해결 후 진행).
+- **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenAI API를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. URL 없는 태스크는 자동으로 `chatgpt_task`로 라우팅 (ChatGPT 미설정 시 `browser_task` 폴백).
+- ChatGPT 핸들러(`chatgpt_task`)는 task_executor.ts 내 Playwright 브라우저 자동화로 구현. ChatGPT Pro 웹 UI를 Google OAuth(계정 B) persistent 프로필로 자동화. Gemini/NotebookLM과 동일한 브라우저 프로필 공유.
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
 - **notify.ts**: 헌터 전용 Telegram + Slack 알림 (캡틴 봇과 격리된 별도 토큰). `alert()` → 양쪽, `report()` → Slack만. Fire-and-forget.
@@ -93,7 +94,7 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행.
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
 
@@ -102,8 +103,8 @@
 - 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export.
-- **hunter_monitor.ts**: 헌터 heartbeat 모니터. Gateway `/api/agents/health` 주기적 폴링으로 헌터 생존 감시. 2분 경과 → Slack WARNING, 5분 경과 → Telegram ALERT, 복구 시 → RECOVERY 알림. `start_hunter_monitor(config)`, `stop_hunter_monitor()` export.
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export. **Crash rate limiting**: tmux 세션 unreachable 시 최초 threshold(3회) 도달 시 1회 알림, 이후 ~5분 간격으로만 재알림 (Telegram 폭주 방지).
+- **hunter_monitor.ts**: 헌터 heartbeat 모니터. Gateway `/api/agents/health` 주기적 폴링으로 헌터 생존 감시. 2분 경과 → Slack WARNING, 5분 경과 → Telegram ALERT, 복구 시 → RECOVERY 알림. State transition 기반 — 동일 상태 유지 시 재알림하지 않음. `start_hunter_monitor(config)`, `stop_hunter_monitor()` export.
 
 ### Mode Switching (`scripts/`)
 - **mode_switch.sh**: SLEEP/AWAKE 모드 전환 스크립트. Gateway API 호출 + 로그 기록. `pnpm mode:sleep`, `pnpm mode:awake`로 실행.

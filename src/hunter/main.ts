@@ -56,6 +56,7 @@ if (is_main) {
     google_profile_dir: config.google_profile_dir,
     deep_research_timeout_ms: config.deep_research_timeout_ms,
     notebooklm_timeout_ms: config.notebooklm_timeout_ms,
+    chatgpt_timeout_ms: config.chatgpt_timeout_ms,
   });
 
   const loop = create_poll_loop({ api, executor, logger, config, notify });

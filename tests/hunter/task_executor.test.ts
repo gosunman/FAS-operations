@@ -432,10 +432,25 @@ describe('resolve_action', () => {
     expect(resolve_action(task)).toBe('web_crawl');
   });
 
-  it('should default to browser_task', async () => {
+  it('should default to chatgpt_task when no URL present', async () => {
     const { resolve_action } = await import('../../src/hunter/task_executor.js');
 
     const task = create_mock_task({ title: 'Navigate to page' });
+    expect(resolve_action(task)).toBe('chatgpt_task');
+  });
+
+  it('should default to browser_task when URL is present', async () => {
+    const { resolve_action } = await import('../../src/hunter/task_executor.js');
+
+    const task = create_mock_task({ title: 'Check https://example.com status' });
     expect(resolve_action(task)).toBe('browser_task');
+  });
+
+  it('should resolve chatgpt_task for analysis keywords', async () => {
+    const { resolve_action } = await import('../../src/hunter/task_executor.js');
+
+    expect(resolve_action(create_mock_task({ title: '트렌드 분석 해줘' }))).toBe('chatgpt_task');
+    expect(resolve_action(create_mock_task({ title: 'AI 리서치 진행' }))).toBe('chatgpt_task');
+    expect(resolve_action(create_mock_task({ title: 'Explore startup trends' }))).toBe('chatgpt_task');
   });
 });

@@ -18,37 +18,28 @@ echo ""
 # ===== Step 0: Account isolation check (SA-001) =====
 echo "[0/8] SECURITY: Verifying account isolation..."
 
-if command -v claude &>/dev/null; then
-  CLAUDE_USER=$(claude whoami 2>/dev/null || echo "not_logged_in")
-  if echo "$CLAUDE_USER" | grep -qi "not_logged_in\|error"; then
-    echo "  ✓ Claude Code not logged in — will need Account B login"
-  else
-    echo ""
-    echo "  ⚠️  WARNING: Claude Code is already logged in as:"
-    echo "     $CLAUDE_USER"
-    echo ""
-    echo "  ╔══════════════════════════════════════════════════════════════╗"
-    echo "  ║  SECURITY CRITICAL (SA-001)                                 ║"
-    echo "  ║  헌터는 반드시 계정 B(별도 격리 계정)를 사용해야 합니다.      ║"
-    echo "  ║  주인님 개인 계정(계정 A)으로 로그인되어 있으면 보안 위반!     ║"
-    echo "  ║                                                             ║"
-    echo "  ║  계정 A(주인님 개인)라면:                                     ║"
-    echo "  ║    1. claude logout                                         ║"
-    echo "  ║    2. 계정 B로 claude login                                  ║"
-    echo "  ║                                                             ║"
-    echo "  ║  이미 계정 B라면 Enter를 눌러 계속 진행하세요.               ║"
-    echo "  ╚══════════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "  계정 B가 맞습니까? (y/N): "
-    read -r CONFIRM
-    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-      echo "  → 먼저 계정 B로 전환 후 이 스크립트를 다시 실행하세요."
-      echo "    claude logout && claude login"
-      exit 1
-    fi
+# Check Gemini CLI (primary AI tool for hunter)
+if command -v gemini &>/dev/null; then
+  echo "  ✓ Gemini CLI installed: $(gemini --version 2>/dev/null || echo 'version unknown')"
+  echo "  → 반드시 계정 B(헌터 전용 격리 계정)로 인증되어 있어야 합니다."
+  echo "  계정 B가 맞습니까? (y/N): "
+  read -r CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "  → 계정 B로 인증 후 이 스크립트를 다시 실행하세요."
+    echo "    gemini auth login"
+    exit 1
   fi
 else
-  echo "  ✓ Claude Code not installed yet — will set up with Account B"
+  echo "  ⚠️  Gemini CLI not installed — install with: npm install -g @anthropic-ai/gemini-cli"
+  echo "  → 설치 후 계정 B로 인증: gemini auth login"
+fi
+
+# Warn if Claude Code is present (should NOT be on hunter)
+if command -v claude &>/dev/null; then
+  echo ""
+  echo "  ⚠️  WARNING: Claude Code detected on hunter machine."
+  echo "  헌터에서 Claude Code는 사용하지 않습니다 (전화번호 인증 요건으로 계정 B 생성 불가)."
+  echo "  제거를 권장합니다: npm uninstall -g @anthropic-ai/claude-code"
 fi
 echo ""
 
@@ -106,10 +97,11 @@ fi
 echo ""
 echo "[4/8] Launching Chrome for manual Google login..."
 echo "  → A Chrome window will open. Please:"
-echo "    1. Sign in to your Google account"
+echo "    1. Sign in to your Google account (Account B)"
 echo "    2. Visit https://gemini.google.com/ and accept any terms"
 echo "    3. Visit https://notebooklm.google.com/ and accept any terms"
-echo "    4. Close the browser window when done"
+echo "    4. Visit https://chatgpt.com/ and log in via Google OAuth (Account B)"
+echo "    5. Close the browser window when done"
 echo ""
 echo "  Press Enter to open Chrome..."
 read -r
@@ -136,7 +128,8 @@ if [ -n "$CHROMIUM_PATH" ]; then
   "$CHROMIUM_PATH" --user-data-dir="$PROFILE_DIR" \
     "https://accounts.google.com" \
     "https://gemini.google.com/" \
-    "https://notebooklm.google.com/" &
+    "https://notebooklm.google.com/" \
+    "https://chatgpt.com/" &
   CHROME_PID=$!
   echo "  Chrome launched (PID: $CHROME_PID). Close it when login is complete."
   echo "  Press Enter after closing Chrome..."
@@ -201,17 +194,18 @@ fi
 echo ""
 echo "[8/8] Final security check..."
 
-if command -v claude &>/dev/null; then
-  echo "  Claude Code account verification:"
-  claude whoami 2>/dev/null || echo "  (not logged in — run: claude login with Account B)"
+if command -v gemini &>/dev/null; then
+  echo "  Gemini CLI: ✓ installed"
+else
+  echo "  Gemini CLI: ✗ NOT installed — install before starting hunter"
 fi
 
 echo ""
 echo "  ╔══════════════════════════════════════════════════════════╗"
 echo "  ║  CHECKLIST (셋업 완료 전 확인)                           ║"
-echo "  ║  □ Claude Code = 계정 B (별도 격리 계정)                  ║"
+echo "  ║  □ Gemini CLI = 계정 B (별도 격리 계정)                  ║"
 echo "  ║  □ Google Chrome 프로필 = 별도 구글 계정 (계정 A 아님)    ║"
-echo "  ║  □ ChatGPT Pro = 별도 계정                               ║"
+echo "  ║  □ ChatGPT Pro = 별도 계정 (OPENAI_API_KEY 설정 완료)    ║"
 echo "  ║  □ 주인님 개인정보가 이 머신에 저장되지 않았는지 확인     ║"
 echo "  ╚══════════════════════════════════════════════════════════╝"
 

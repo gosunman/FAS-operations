@@ -13,6 +13,8 @@ export type HunterConfig = {
   deep_research_timeout_ms: number;
   // Timeout for NotebookLM verification automation
   notebooklm_timeout_ms: number;
+  // OpenClaw ChatGPT browser automation timeout (response wait)
+  chatgpt_timeout_ms: number;
   // Notification config — hunter's own tokens, separate from captain
   telegram_bot_token?: string;
   telegram_chat_id?: string;
@@ -39,6 +41,8 @@ export const load_hunter_config = (): HunterConfig => {
     google_profile_dir: process.env.GOOGLE_PROFILE_DIR ?? './fas-google-profile-hunter',
     deep_research_timeout_ms: parseInt(process.env.DEEP_RESEARCH_TIMEOUT_MS ?? '300000', 10),
     notebooklm_timeout_ms: parseInt(process.env.NOTEBOOKLM_TIMEOUT_MS ?? '180000', 10),
+    // OpenClaw ChatGPT browser automation wait time
+    chatgpt_timeout_ms: parseInt(process.env.CHATGPT_TIMEOUT_MS ?? '180000', 10),
     // Notification — all optional, hunter works without them (just logs)
     telegram_bot_token: process.env.HUNTER_TELEGRAM_BOT_TOKEN,
     telegram_chat_id: process.env.HUNTER_TELEGRAM_CHAT_ID,

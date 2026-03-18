@@ -131,7 +131,8 @@ export type HunterActionType =
   | 'notebooklm_verify'
   | 'deep_research'
   | 'web_crawl'
-  | 'browser_task';
+  | 'browser_task'
+  | 'chatgpt_task';
 
 export type HunterTaskResult = {
   status: 'success' | 'failure';
