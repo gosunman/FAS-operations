@@ -34,6 +34,7 @@
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
 import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
+import { create_local_queue, type LocalQueue } from '../watchdog/local_queue.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import { create_cross_approval, type CrossApproval } from './cross_approval.js';
 import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
@@ -79,59 +80,82 @@ export type NotionBackupConfig = {
 // === Create Express app ===
 
 // Fire-and-forget Notion backup for completed task results
-// Uses dynamic import to avoid hard dependency on @notionhq/client
+// PII is sanitized before leaving the machine; requests are queued locally
+// so network outages never lose backup data.
 const create_notion_backup = (config: NotionBackupConfig) => {
-  // Use raw fetch to Notion API — minimal, no property assumptions
-  const backup_task_result = async (task_id: string, title: string, output: string) => {
-    try {
-      const body = {
-        parent: { database_id: config.database_id },
-        properties: {
-          Name: { title: [{ text: { content: `📋 [Task Result] ${title}`.slice(0, 100) } }] },
-        },
-        children: [
-          {
-            object: 'block',
-            type: 'paragraph',
-            paragraph: {
-              rich_text: [{ type: 'text', text: { content: `Task ID: ${task_id}\nCompleted: ${new Date().toISOString()}` } }],
-            },
+  // Local queue — buffers Notion API calls and retries on failure
+  const queue = create_local_queue({
+    db_path: './state/notion_backup_queue.db',
+    on_flush: async (request) => {
+      try {
+        const res = await fetch(request.endpoint, {
+          method: request.method,
+          headers: {
+            'Authorization': `Bearer ${config.api_key}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json',
           },
-          // Split output into 2000-char chunks (Notion block limit)
-          ...chunk_text(output, 2000).map((chunk: string) => ({
-            object: 'block',
-            type: 'paragraph',
-            paragraph: {
-              rich_text: [{ type: 'text', text: { content: chunk } }],
-            },
-          })),
-        ],
-      };
-
-      const res = await fetch('https://api.notion.com/v1/pages', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.api_key}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Notion API ${res.status}: ${err}`);
+          body: JSON.stringify(request.body),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          console.warn(`[Notion Backup] API ${res.status}: ${err}`);
+          return false;
+        }
+        console.log(`[Notion Backup] Flushed queued request ${request.id}`);
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Notion Backup] Flush failed: ${msg}`);
+        return false;
       }
+    },
+  });
 
-      console.log(`[Notion Backup] Task ${task_id} backed up successfully`);
-    } catch (err) {
-      // Fire-and-forget: log warning but never block main flow
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[Notion Backup] Failed for task ${task_id}: ${msg}`);
-    }
+  // Periodically flush the queue (every 30 seconds)
+  const flush_interval = setInterval(() => {
+    queue.flush().catch(() => {});
+  }, 30_000);
+  // Allow the process to exit without waiting for the interval
+  if (flush_interval.unref) flush_interval.unref();
+
+  const backup_task_result = async (task_id: string, title: string, output: string) => {
+    // PII masking — never send plaintext PII to external service
+    const safe_output = sanitize_text(output);
+
+    const body = {
+      parent: { database_id: config.database_id },
+      properties: {
+        Name: { title: [{ text: { content: `📋 [Task Result] ${title}`.slice(0, 100) } }] },
+      },
+      children: [
+        {
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [{ type: 'text', text: { content: `Task ID: ${task_id}\nCompleted: ${new Date().toISOString()}` } }],
+          },
+        },
+        // Split output into 2000-char chunks (Notion block limit)
+        ...chunk_text(safe_output, 2000).map((chunk: string) => ({
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [{ type: 'text', text: { content: chunk } }],
+          },
+        })),
+      ],
+    };
+
+    // Enqueue instead of direct fetch — survives network outages
+    queue.enqueue('https://api.notion.com/v1/pages', 'POST', body);
+    console.log(`[Notion Backup] Task ${task_id} enqueued for backup`);
+
+    // Attempt immediate flush (best-effort, non-blocking)
+    queue.flush().catch(() => {});
   };
 
-  return { backup_task_result };
+  return { backup_task_result, _queue: queue };
 };
 
 // Helper: split text into chunks for Notion block limit

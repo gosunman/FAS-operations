@@ -21,7 +21,7 @@ rules:
       - slack_message
       - notion_page_create
     approval: ai_cross_review
-    reviewer: gemini_b
+    reviewer: gemini_a
     timeout_minutes: 10
     log: true
 

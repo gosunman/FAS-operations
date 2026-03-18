@@ -342,7 +342,7 @@ describe('PlanningLoop', () => {
 
       const suggestions = [
         { title: '스타트업 펀딩 상세 조사', description: 'Investigate funding details', agent: 'gemini_a', priority: 'high' },
-        { title: '관련 채용공고 확인', description: 'Check related job postings', agent: 'gemini_b', priority: 'medium' },
+        { title: '관련 채용공고 확인', description: 'Check related job postings', agent: 'gemini_a', priority: 'medium' },
       ];
       mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
 
@@ -375,7 +375,7 @@ describe('PlanningLoop', () => {
 
       const suggestions = [
         { title: '기존 태스크', description: 'Already exists', agent: 'gemini_a', priority: 'low' },
-        { title: '새 태스크', description: 'Brand new', agent: 'gemini_b', priority: 'medium' },
+        { title: '새 태스크', description: 'Brand new', agent: 'gemini_a', priority: 'medium' },
       ];
       mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
 
@@ -460,7 +460,7 @@ describe('PlanningLoop', () => {
 
       const suggestions = [
         { title: 'Task 1', description: 'D1', agent: 'gemini_a', priority: 'low' },
-        { title: 'Task 2', description: 'D2', agent: 'gemini_b', priority: 'medium' },
+        { title: 'Task 2', description: 'D2', agent: 'gemini_a', priority: 'medium' },
         { title: 'Task 3', description: 'D3', agent: 'claude', priority: 'high' },
         { title: 'Task 4', description: 'D4', agent: 'openclaw', priority: 'low' },
         { title: 'Task 5', description: 'D5', agent: 'gemini_a', priority: 'medium' },

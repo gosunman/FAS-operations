@@ -68,7 +68,7 @@ rules:
       - slack_message
       - notion_page_create
     approval: ai_cross_review
-    reviewer: gemini_b    # 기본 리뷰어
+    reviewer: gemini_a    # 기본 리뷰어
     log: true
 
   high:
@@ -165,7 +165,7 @@ async function ai_cross_review(
   ].filter(Boolean).join('\n')
 
   const result = await execute_gemini_oneshot(review_prompt, {
-    account: reviewer_id === 'gemini_b' ? 'b' : 'a',
+    account: 'a',
     timeout_ms: 60_000,
   })
 

@@ -222,7 +222,6 @@ if (is_main) {
   const WATCHED_SESSIONS = [
     'fas-claude',
     'fas-gemini-a',
-    'fas-gemini-b',
     'fas-gateway',
   ];
 

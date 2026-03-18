@@ -42,10 +42,9 @@ risk_level: low            # low | mid | high | critical
 requires_personal_info: true   # true면 헌터 배정 불가
 
 # 배정
-assigned_to: gemini_a      # claude | gemini_a | gemini_b | openclaw
+assigned_to: gemini_a      # claude | gemini_a | openclaw
 preferred_agents:
   - gemini_a
-  - gemini_b
 
 # 스케줄 (반복 태스크용)
 schedule:

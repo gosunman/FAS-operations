@@ -103,7 +103,7 @@ describe('Activity Logger', () => {
         action: 'deploy to staging',
         risk_level: 'high',
         decision: 'timeout',
-        reviewer: 'gemini_b',
+        reviewer: 'gemini_a',
         reason: 'No response within timeout window',
         duration_ms: 600_000,
       });
@@ -195,7 +195,7 @@ describe('Activity Logger', () => {
         action: 'deploy',
         risk_level: 'critical',
         decision: 'rejected',
-        reviewer: 'gemini_b',
+        reviewer: 'gemini_a',
         reason: 'PII detected in payload',
         duration_ms: 1500,
       });

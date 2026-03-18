@@ -1,7 +1,7 @@
 // Local type definitions for Gemini CLI module
 // Kept separate from src/shared/types.ts to avoid cross-session conflicts
 
-export type GeminiAccount = 'a' | 'b';
+export type GeminiAccount = 'a';
 
 export type GeminiConfig = {
   account: GeminiAccount;
@@ -23,6 +23,6 @@ export type GeminiSessionStatus = 'running' | 'stopped' | 'crashed';
 export type GeminiSessionInfo = {
   account: GeminiAccount;
   status: GeminiSessionStatus;
-  session_name: string;          // tmux session name (fas-gemini-a, fas-gemini-b)
+  session_name: string;          // tmux session name (fas-gemini-a)
   pid?: number;
 };

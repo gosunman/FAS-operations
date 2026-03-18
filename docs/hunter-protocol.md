@@ -24,7 +24,8 @@
 | iCloud | 주인님 계정 | 별도 계정 | X |
 | Google | 주인님 계정 | 별도 계정 | X |
 | ChatGPT | — | 별도 계정 (Pro) | X |
-| Claude Code | 주인님 OAuth (계정 A, Max) | 계정 B (Stage 1: Pro → Stage 3: Max x20) | X (별도 계정) |
+| Claude Code | 주인님 OAuth (계정 A, Max) | ❌ 사용 불가 (전화번호 인증 요건 — 계정 B 미생성) | — |
+| Gemini CLI | 계정 A | 계정 B (임시 코딩 대체) | X (별도 계정) |
 | Tailscale | 같은 네트워크 | 같은 네트워크 | O (VPN만 공유) |
 | 파일시스템 | 직접 접근 불가 | 직접 접근 불가 | X |
 | 통신 | Task API 서버 | Task API 클라이언트 | API만 |
@@ -202,19 +203,24 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 |------|------|------|
 | Tailscale 연결 | ✅ | 캡틴과 VPN 연결 완료 |
 | SSH 키 교환 | ✅ | MacBook ↔ 캡틴 ↔ 헌터 |
-| Claude Code OAuth | ⚠️ **보안 위반** | 주인님 개인 Google ID(계정 A)로 인증됨 → 계정 B로 재인증 필요 (SA-001) |
-| 계정 B 생성 | ❌ | 별도 Anthropic 계정 미생성 |
+| Claude Code OAuth | ❌ **사용 불가** | 가입 시 전화번호 인증 필수 → 헌터 전용 계정 B 생성 불가. 임시 대체: Gemini CLI 사용 (아래 참조) |
+| 계정 B 생성 | ❌ | Anthropic 가입 프로세스의 전화번호 인증 요건으로 인해 미생성 |
 | 구글 프로필 설정 | ❌ | 별도 구글 계정으로 수동 로그인 필요 |
 | OpenClaw (ChatGPT Pro) | ❌ | 미설치 |
 | Node.js / pnpm | ❓ | 확인 필요 |
 | Playwright | ❌ | 미설치 |
 | FAS Operations 코드 배포 | ❌ | git clone 필요 |
 
-### 보안 감사 SA-001: 계정 격리 위반
+### Claude Code 사용 불가 사유 및 임시 대체 방안
 
-**현재**: 헌터의 Claude Code가 주인님 개인 Google ID(계정 A)로 OAuth 인증됨.
-**Doctrine 규정**: 헌터는 반드시 계정 B(별도 격리 계정)를 사용해야 함.
-**조치**: [docs/security.md#SA-001](security.md) 참조.
+**사유**: Anthropic 계정 신규 가입 시 전화번호 인증이 필수로 요구된다. 헌터 격리 원칙상 주인님의 개인 전화번호를 헌터 전용 계정(계정 B)에 연결할 수 없으므로, 헌터 머신에서 Claude Code를 독립 계정으로 운용하는 것이 현재 불가능하다.
+
+**임시 대체**: 헌터의 코딩·고지능 작업은 **Gemini CLI(계정 B)**로 임시 대행한다.
+- 브라우저 자동화(OpenClaw), 크롤링, 리서치는 기존 계획대로 유지
+- 코드 생성·분석·태스크 실행 등 Claude Code가 담당했던 지능 작업 → Gemini CLI로 처리
+- 향후 Anthropic이 전화번호 없이 가입 가능한 방법을 제공하거나, 별도 해결책이 마련되면 계정 B를 생성하고 Claude Code로 전환한다
+
+**주의**: 이 대체는 임시(interim) 조치이며, 헌터의 Claude Code 도입 계획 자체는 유효하다.
 
 ---
 

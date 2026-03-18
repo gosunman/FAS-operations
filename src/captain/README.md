@@ -26,7 +26,7 @@
 - 최근 3일간 완료된 크롤링/리서치 태스크의 결과를 Gemini CLI로 분석
 - 크롤링 관련 키워드: `crawl`, `크롤링`, `scrape`, `research`
 - Gemini가 최대 3개의 추가 조사/행동 아이템을 제안
-- 허용 에이전트: `gemini_a`, `gemini_b`, `openclaw`, `claude`
+- 허용 에이전트: `gemini_a`, `openclaw`, `claude`
 - 기존 pending/in_progress 태스크와 중복 방지
 - Fire-and-forget: Gemini 실패 시 경고 로그만 남기고 계속 (나이트 플래닝 차단하지 않음)
 - SLEEP 모드(야간)에 `run_night()` 내에서 자동 실행

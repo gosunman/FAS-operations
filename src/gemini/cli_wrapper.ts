@@ -13,18 +13,12 @@ const DEFAULT_GEMINI_COMMAND = 'gemini';
 
 const SESSION_NAMES: Record<GeminiAccount, string> = {
   a: 'fas-gemini-a',
-  b: 'fas-gemini-b',
 };
 
 // === Get CLI command for a specific account ===
 
 export const get_gemini_command = (account: GeminiAccount, base_command?: string): string => {
   const cmd = base_command ?? DEFAULT_GEMINI_COMMAND;
-  // Account-specific config directories allow multiple Gemini accounts
-  // Account A uses default config, Account B uses alternate config dir
-  if (account === 'b') {
-    return `GEMINI_CONFIG_DIR=$HOME/.gemini-b ${cmd}`;
-  }
   return cmd;
 };
 
@@ -61,11 +55,7 @@ export const spawn_gemini = (config: GeminiConfig, prompt: string): Promise<Gemi
       args.unshift('--model', config.model);
     }
 
-    // For account B, set alternate config directory
     const env = { ...process.env };
-    if (config.account === 'b') {
-      env.GEMINI_CONFIG_DIR = `${process.env.HOME}/.gemini-b`;
-    }
 
     const proc = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -128,7 +128,7 @@ Stage 5: 기술 문서 (Claude Code)
 3. 구현 (Claude Code, SLEEP/AWAKE)
    - TDD: 테스트 먼저 → 구현
    - 마일스톤별 진행 → 각 마일스톤 완료 시 보고
-   - 교차 검증: Gemini B가 코드 리뷰
+   - 교차 검증: Gemini A가 코드 리뷰
    - git commit은 자동, push는 승인 후
 
 4. 배포 (AWAKE, 인간 승인 필수)

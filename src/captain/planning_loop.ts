@@ -56,7 +56,7 @@ const is_due_today = (entry: ScheduleEntry, today: Date, epoch: Date): boolean =
 
 // === Valid agents for discovered tasks ===
 
-const VALID_AGENTS = ['gemini_a', 'gemini_b', 'openclaw', 'claude'] as const;
+const VALID_AGENTS = ['gemini_a', 'openclaw', 'claude'] as const;
 
 // === Crawl-related keywords for filtering completed tasks ===
 

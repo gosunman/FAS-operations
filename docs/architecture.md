@@ -28,8 +28,8 @@
     │ │ OpenClaw     │ │ │ │ n8n        │ │
     │ │ (ChatGPT Pro)│ │ │ │ (Colima)   │ │
     │ ├──────────────┤ │ │ ├────────────┤ │
-    │ │ Claude Code  │ │ │ │ Claude Code│ │
-    │ │ Max x20      │ │ │ │ (Max)      │ │
+    │ │ Gemini CLI   │ │ │ │ Claude Code│ │
+    │ │ (임시 대체)  │ │ │ │ (Max)      │ │
     │ │ (계정 B)     │ │ │ │ (계정 A)   │ │
     │ ├──────────────┤ │ │ ├────────────┤ │
     │ │ NotebookLM   │ │ │ │ Gemini CLI │ │
@@ -98,10 +98,12 @@
 | --- | --- | --- | --- | --- |
 | macOS 시스템 | — | ~5GB | ~5GB | — |
 | ChatGPT | 브라우저 자동화 | Plus (~$20) | Pro ($200) | `fas-openclaw` |
-| Claude Code | OAuth CLI (계정 B) | Pro ($20) | Max x20 ($200) | `fas-claude-hunter` |
 | 브라우저 (NotebookLM/Deep Research) | Playwright Chrome | ~2GB | ~2GB | 핸들러 내 |
+| Gemini CLI (계정 B) | CLI | ~500MB | ~500MB | `fas-gemini-b` |
 | Agent Wrapper | Node.js | ~200MB | ~200MB | `fas-wrapper` |
 | Watchdog | Node.js | ~200MB | ~200MB | `fas-watchdog` |
+
+> **참고 — Claude Code 미설치**: 헌터에 Claude Code Max x20(계정 B) 탑재 계획이 있었으나, Anthropic 가입 시 전화번호 인증이 필수로 요구되어 현재 사용 불가. 코딩·고지능 작업은 **Gemini CLI (계정 B)**가 임시 대행한다. 상세: [hunter-protocol.md](hunter-protocol.md)
 
 ### MacBook Pro (M1 Pro / 32GB) — owner 전용
 

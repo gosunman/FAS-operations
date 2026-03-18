@@ -62,8 +62,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
 - [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
 - [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
-- [ ] **⚠️ SA-001**: 헌터 Claude Code 세션 로그아웃 (`claude logout`) *(인간 작업, CRITICAL)*
-- [ ] 계정 B (별도 Anthropic 계정) 생성 *(인간 작업)*
+- [x] ~~**⚠️ SA-001**: 헌터 Claude Code 세션 로그아웃~~ — Claude Code 가입 시 전화번호 인증 필수로 별도 계정 B 생성 불가. 헌터의 코딩/고지능 분석 작업은 Gemini CLI로 임시 대체.
 - [ ] 헌터 AI 플랜 단계별 확장 (아래 "AI 플랜 확장 로드맵" 참조)
 - [ ] 헌터 머신 초기 세팅 — `scripts/setup/setup_hunter.sh` 실행 *(인간 작업)*
 
@@ -466,12 +465,11 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 캡틴 Claude Code | Max (계정 A) | $100 | 이미 사용 중 |
 | 캡틴 Gemini CLI | 계정 A (무료 or 기존 플랜) | $0 | 이미 사용 중 |
 | 헌터 Google AI | **계정 B Google AI ~$20 플랜 (보유)** | $20 | Gemini CLI, NotebookLM, Deep Research, Antigravity 사용 가능 |
-| 헌터 Claude Code | 미결제 (세팅 검증 후 결제) | $0 | `claude logout` 후 계정 B 준비만 |
+| 헌터 Claude Code | ~~미결제~~ — 계정 B 생성 불가 (전화번호 인증 필수). 코딩 태스크는 Gemini CLI로 임시 대체 | $0 | — |
 | 헌터 ChatGPT | 미결제 | $0 | Playwright 기반 핸들러만 테스트 |
 | **월 합계** | | **~$120** | |
 
 **이 단계의 목표:**
-- SA-001 해소: 헌터에서 계정 A 로그아웃 + 개인정보 잔존 확인
 - 헌터 ↔ 캡틴 Task API 통신 안정성 확인
 - Playwright 기반 web_crawl, browser_task 정상 실행 확인
 - 헌터 Google B 계정으로 NotebookLM, Deep Research 기본 동작 확인
@@ -487,9 +485,9 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
 | 캡틴 Gemini CLI | 유지 | $0 | 유지 |
 | 헌터 Google AI | 계정 B (~$20 플랜) | $20 | 유지 |
-| 헌터 Claude Code | **Pro** (계정 B, ~$20) | **$20** | 코딩/분석 태스크 |
+| 헌터 Claude Code | ~~Pro (계정 B)~~ — 계정 B 생성 불가. Gemini CLI로 임시 대체 | $0 | — |
 | 헌터 ChatGPT | **Plus** (~$20) | **$20** | 브라우저 자동화 |
-| **월 합계** | | **~$160** | |
+| **월 합계** | | **~$140** (Claude Code 항목 제외) | |
 
 **이 단계의 목표:**
 - SLEEP 모드 야간 자동 크롤링 실운영
@@ -508,9 +506,9 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
 | 캡틴 Gemini CLI | 유지 | $0 | 유지 |
 | 헌터 Google AI | 계정 B (유지 or 업그레이드) | $20+ | 유지 |
-| 헌터 Claude Code | **Max x20** (계정 B) | **$200** | 병렬 20세션 |
+| 헌터 Claude Code | ~~Max x20 (계정 B)~~ — 계정 B 생성 불가. 대안 검토 필요 | TBD | — |
 | 헌터 ChatGPT | **Pro** ($200) | **$200** | Deep Research 무제한 |
-| **월 합계** | | **~$520** | |
+| **월 합계** | | **~$320+** (Claude Code TBD 별도) | |
 
 **이 단계의 목표:**
 - 24시간 무중단 멀티 에이전트 풀 가동

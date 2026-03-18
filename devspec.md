@@ -9,9 +9,8 @@
 │ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
 │   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
 │       ├ Task CRUD API      │  (Tailscale) │                        │
-│       ├ Hunter API (sanitized)             │ tmux: fas-claude-hunter│
-│       └ Health check       │              │   └ Claude Code x20   │
-│                            │              │     (계정 B)           │
+│       ├ Hunter API (sanitized)             │                        │
+│       └ Health check       │              │                        │
 │ tmux: fas-claude           │              │                        │
 │   └ agent_wrapper.sh claude│              │ tmux: fas-watchdog     │
 │     (계정 A)               │              │   └ heartbeat sender   │

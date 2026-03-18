@@ -156,7 +156,7 @@ export type CrossApprovalDecision = 'approved' | 'rejected';
 export type CrossApprovalResult = {
   decision: CrossApprovalDecision;
   reason: string;
-  reviewed_by: string;   // e.g. 'gemini_a', 'gemini_b'
+  reviewed_by: string;   // e.g. 'gemini_a'
   reviewed_at: string;   // ISO 8601
 };
 
@@ -168,7 +168,7 @@ export type CrossApprovalConfig = {
 
 // === Agent Healthcheck Types ===
 
-export type AgentName = 'claude' | 'gemini_a' | 'gemini_b' | 'openclaw' | 'gateway' | 'watchdog';
+export type AgentName = 'claude' | 'gemini_a' | 'openclaw' | 'gateway' | 'watchdog';
 
 export type AgentStatus = 'running' | 'stopped' | 'crashed';
 

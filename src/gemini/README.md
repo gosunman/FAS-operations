@@ -31,5 +31,4 @@ const status = check_session_status('a'); // 'running' | 'stopped' | 'crashed'
 
 ## Account Convention
 
-- **Account A** (`fas-gemini-a`): 리서치, 정보 수집
-- **Account B** (`fas-gemini-b`): 교차 검증, 팩트체킹
+- **Account A** (`fas-gemini-a`): 리서치, 정보 수집, 교차 검증

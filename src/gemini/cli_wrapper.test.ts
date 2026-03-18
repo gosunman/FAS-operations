@@ -165,20 +165,6 @@ describe('Gemini CLI Wrapper', () => {
       expect(result.error).toContain('Failed to spawn');
     });
 
-    it('should use account B config directory', async () => {
-      // Given: account B config
-      const config: GeminiConfig = { account: 'b', timeout_ms: 5000 };
-      const { spawn } = await import('node:child_process');
-
-      // When: spawn_gemini is called
-      await spawn_gemini(config, 'test prompt');
-
-      // Then: env includes GEMINI_CONFIG_DIR for account B
-      const call_args = vi.mocked(spawn).mock.calls[0];
-      const options = call_args[2] as { env: Record<string, string> };
-      expect(options.env.GEMINI_CONFIG_DIR).toContain('.gemini-b');
-    });
-
     it('should pass model flag when specified', async () => {
       // Given: config with model
       const config: GeminiConfig = { account: 'a', model: 'gemini-2.0-flash' };
@@ -206,15 +192,6 @@ describe('Gemini CLI Wrapper', () => {
       expect(cmd).toBe('gemini');
     });
 
-    it('should set GEMINI_CONFIG_DIR for account B', () => {
-      // When: get command for account B
-      const cmd = get_gemini_command('b');
-
-      // Then: includes config dir override
-      expect(cmd).toContain('GEMINI_CONFIG_DIR');
-      expect(cmd).toContain('.gemini-b');
-    });
-
     it('should use custom base command', () => {
       // When: custom command provided
       const cmd = get_gemini_command('a', '/usr/local/bin/gemini');
@@ -231,9 +208,6 @@ describe('Gemini CLI Wrapper', () => {
       expect(get_session_name('a')).toBe('fas-gemini-a');
     });
 
-    it('should return fas-gemini-b for account B', () => {
-      expect(get_session_name('b')).toBe('fas-gemini-b');
-    });
   });
 
   // === check_session_status() tests ===

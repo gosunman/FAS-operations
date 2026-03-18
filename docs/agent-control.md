@@ -221,7 +221,7 @@ import { join } from 'path'
 import { parse as yaml_parse } from 'yaml'
 
 interface agent_wrapper_config {
-  agent_id: string                    // 'claude' | 'gemini_a' | 'gemini_b'
+  agent_id: string                    // 'claude' | 'gemini_a'
   tmux_session: string
   mode: 'oneshot' | 'interactive'
   poll_interval_ms: number            // 기본 5_000 (5초)

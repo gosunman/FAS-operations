@@ -136,7 +136,7 @@ async function restart_agent(agent_id: string, session: string): Promise<boolean
 // src/watchdog/token_tracker.ts
 
 interface token_usage {
-  service: 'claude' | 'gemini_a' | 'gemini_b' | 'chatgpt'
+  service: 'claude' | 'gemini_a' | 'chatgpt'
   date: string
   tasks_executed: number
   estimated_tokens_used: number

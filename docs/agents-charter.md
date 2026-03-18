@@ -53,7 +53,7 @@ All agents (Captain, Hunter) MUST follow these principles at all times:
 | **Identity** | The owner's **eyes** (👁️). Information search, crawling, and research. Proactively ventures into the external world to find things beneficial for the owner |
 | **Always-on** | Yes — 24/7 non-stop |
 | **Role** | Autonomously explore latest information/trends, independently interpret and execute vague or unstructured tasks from the owner |
-| **Tools** | OpenClaw (ChatGPT Pro OAuth, main engine), Claude Code Max x20 (Account B, coding/high-intelligence tasks), browser (bot-detection bypass) |
+| **Tools** | OpenClaw (ChatGPT Pro OAuth, main engine), **Gemini CLI (Account B, interim coding/high-intelligence tasks — see note)**, browser (bot-detection bypass) |
 | **Autonomy** | **High** — rather than direct instructions, proactively reads the owner's intent and acts. Handles vague tasks independently |
 | **Personal data** | **NO** — completely blocked. Cannot access personal information |
 | **Relationship with Captain** | Reports non-critical matters to Captain and receives instructions |
@@ -63,19 +63,22 @@ All agents (Captain, Hunter) MUST follow these principles at all times:
 | **Verification** | Gemini for small verifications. For non-critical decisions, Gemini answers on behalf of the owner |
 | **Characteristics** | Uses OpenClaw for bot-detection bypass, can use browser with virtually no restrictions |
 
+> **Note — Claude Code 제거 (임시)**: Anthropic 계정 신규 가입 시 전화번호 인증이 필수이므로, 헌터 전용 독립 계정(Account B)을 생성할 수 없다. 따라서 원래 계획했던 `Claude Code Max x20 (Account B)`는 현재 사용 불가 상태이며, 코딩·고지능 작업은 **Gemini CLI (Account B)**가 임시로 대행한다. 향후 전화번호 인증 없이 계정 생성이 가능해지면 Claude Code로 전환할 예정이다.
+
 ---
 
 ## Account Allocation
 
 | Service | Captain | Shadow | Hunter |
 |---------|---------|--------|--------|
-| Claude Code | Account A (Max) | Account A (shared) | Account B (Max x20, separate) |
-| Gemini CLI | Account A | Account A (shared) | Account B (separate) |
+| Claude Code | Account A (Max) | Account A (shared) | ~~Account B (Max x20)~~ **N/A** — phone auth required |
+| Gemini CLI | Account A | Account A (shared) | Account B (separate) — **interim coding engine** |
 | ChatGPT/OpenClaw | — | — | Account B (separate) |
 | Google (NotebookLM etc.) | Account A | Account A (shared) | Account B (separate) |
 
 - Account A = Owner's account
 - Account B = Hunter-dedicated isolated account
+- Hunter의 Claude Code는 Anthropic 가입 시 전화번호 인증 요건으로 인해 현재 비활성화. Gemini CLI가 임시 대행.
 
 ---
 
