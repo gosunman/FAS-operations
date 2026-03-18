@@ -7,6 +7,12 @@ export type HunterConfig = {
   poll_interval_ms: number;
   log_dir: string;
   device_name: string;
+  // Google Chrome profile directory for persistent login sessions
+  google_profile_dir: string;
+  // Timeout for Gemini Deep Research automation (research can take 1-5 min)
+  deep_research_timeout_ms: number;
+  // Timeout for NotebookLM verification automation
+  notebooklm_timeout_ms: number;
 };
 
 export const load_hunter_config = (): HunterConfig => {
@@ -26,5 +32,8 @@ export const load_hunter_config = (): HunterConfig => {
     poll_interval_ms: parseInt(process.env.HUNTER_POLL_INTERVAL ?? '10000', 10),
     log_dir: process.env.HUNTER_LOG_DIR ?? './logs',
     device_name: 'hunter',
+    google_profile_dir: process.env.GOOGLE_PROFILE_DIR ?? './fas-google-profile-hunter',
+    deep_research_timeout_ms: parseInt(process.env.DEEP_RESEARCH_TIMEOUT_MS ?? '300000', 10),
+    notebooklm_timeout_ms: parseInt(process.env.NOTEBOOKLM_TIMEOUT_MS ?? '180000', 10),
   };
 };
