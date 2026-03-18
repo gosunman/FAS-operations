@@ -21,7 +21,7 @@
         <string>/bin/bash</string>
         <string>-l</string>
         <string>-c</string>
-        <string>/Users/user/fully-automation-system/scripts/start_captain_sessions.sh</string>
+        <string>/Users/user/FAS-operations/scripts/start_captain_sessions.sh</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -31,10 +31,10 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Users/user/fully-automation-system/logs/launchd_captain.log</string>
+    <string>/Users/user/FAS-operations/logs/launchd_captain.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/user/fully-automation-system/logs/launchd_captain_error.log</string>
+    <string>/Users/user/FAS-operations/logs/launchd_captain_error.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

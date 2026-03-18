@@ -1,4 +1,4 @@
-# PLAN.md — Fully Automation System 구축 계획
+# PLAN.md — FAS Operations 구축 계획
 
 ## 전체 로드맵
 

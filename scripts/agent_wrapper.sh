@@ -12,7 +12,7 @@ set -euo pipefail
 
 MAX_RETRIES="${FAS_MAX_RETRIES:-3}"
 BASE_DELAY="${FAS_RETRY_DELAY:-5}"
-LOG_DIR="${FAS_LOG_DIR:-$HOME/fully-automation-system/logs}"
+LOG_DIR="${FAS_LOG_DIR:-$HOME/FAS-operations/logs}"
 
 if [ $# -eq 0 ]; then
   echo "Usage: agent_wrapper.sh <command> [args...]"

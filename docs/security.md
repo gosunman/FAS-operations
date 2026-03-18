@@ -37,7 +37,7 @@ SMS_USER_ID=
 SMS_SENDER_NUMBER=
 
 # 프로젝트 경로
-PROJECT_DIR=/Users/user/fully-automation-system
+PROJECT_DIR=/Users/user/FAS-operations
 ```
 
 ### 헌터 시크릿

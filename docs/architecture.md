@@ -19,7 +19,7 @@
               │                   │                   │
     ┌─────────▼────────┐ ┌───────▼────────┐ ┌────────▼───────┐
     │ 헌터 (Hunter)    │ │ 캡틴 (Captain) │ │  External APIs │
-    │ 자율 정찰병      │ │ 신뢰받는 집사  │ │                │
+    │ 주인님의 눈 👁️   │ │ 주인님의 뇌 🧠 │ │                │
     │ Mac Studio #1    │ │ Mac Studio #2  │ │ - Telegram     │
     │ M1 Ultra / 32GB  │ │ M4 Ultra / 36GB│ │ - Slack        │
     │ macOS user: user │ │ macOS user:user│ │ - Notion       │
@@ -67,7 +67,7 @@
 
 ### 캡틴 (Mac Studio #2, M4 Ultra / 36GB)
 
-신뢰받는 집사. 메인 워커 + 오케스트레이터. 모든 AI 에이전트와 시스템 서비스가 여기서 실행.
+주인님의 뇌 🧠. 판단, 전략, 오케스트레이션. 모든 AI 에이전트와 시스템 서비스가 여기서 실행.
 주인님의 개인정보를 보유한 유일한 AI 에이전트.
 상세 정의: [docs/agents-charter.md](agents-charter.md)
 
@@ -89,7 +89,7 @@
 
 ### 헌터 (Mac Studio #1, M1 Ultra / 32GB)
 
-자율 정찰병. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
+주인님의 눈 👁️. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
 주인님과 Telegram/Slack을 통해 직접 소통 가능 (크리티컬 이슈 보고, 막연한 업무 수신).
 상세 정의: [docs/agents-charter.md](agents-charter.md)
 
@@ -136,7 +136,7 @@
 ## 디렉토리 구조
 
 ```text
-fully-automation-system/
+FAS-operations/
 ├── README.md                      # 프로젝트 소개
 ├── PLAN.md                        # 구축 순서
 ├── CLAUDE.md                      # Claude Code 자율 실행 규칙

@@ -1,7 +1,7 @@
 # 보안 감사 보고서 — 헌터 머신 배포 전 점검
 
 > 감사일: 2026-03-17
-> 대상: fully-automation-system 전체 코드베이스
+> 대상: FAS-operations 전체 코드베이스
 > 목적: 헌터(격리 머신)에 코드 배포 시 개인정보/시크릿 유출 위험 평가
 
 ---
@@ -63,7 +63,7 @@
 
 **위치**:
 - `docs/hunter-protocol.md:172-173` — `/Users/user/fas-google-profile-hunter/`
-- `scripts/setup/com.fas.captain.plist` — `/Users/user/fully-automation-system/...`
+- `scripts/setup/com.fas.captain.plist` — `/Users/user/FAS-operations/...`
 
 **위험**: macOS 유저명, 디렉토리 구조, Google 프로필 경로 노출
 

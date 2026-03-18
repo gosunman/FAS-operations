@@ -33,7 +33,7 @@ TMUX_CONF="$HOME/.tmux.conf"
 FAS_CONF_LINE="source-file $PROJECT_ROOT/config/tmux.conf"
 
 if [ -f "$TMUX_CONF" ]; then
-  if ! grep -q "fully-automation-system" "$TMUX_CONF"; then
+  if ! grep -q "FAS-operations" "$TMUX_CONF"; then
     echo "" >> "$TMUX_CONF"
     echo "# FAS tmux configuration" >> "$TMUX_CONF"
     echo "$FAS_CONF_LINE" >> "$TMUX_CONF"
