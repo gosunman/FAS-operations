@@ -7,10 +7,13 @@
 //   pnpm run hunter
 //
 // Env vars:
-//   CAPTAIN_API_URL      — Captain Task API (default: http://100.64.0.1:3100)
-//   HUNTER_POLL_INTERVAL — Poll interval in ms (default: 10000)
-//   HUNTER_LOG_DIR       — Log directory (default: ./logs)
-//   HUNTER_HEADLESS      — Headless browser mode (default: true)
+//   CAPTAIN_API_URL          — Captain Task API (default: http://100.64.0.1:3100)
+//   HUNTER_POLL_INTERVAL     — Poll interval in ms (default: 10000)
+//   HUNTER_LOG_DIR           — Log directory (default: ./logs)
+//   HUNTER_HEADLESS          — Headless browser mode (default: true)
+//   GOOGLE_PROFILE_DIR       — Chrome profile for Google login (default: ./fas-google-profile-hunter)
+//   DEEP_RESEARCH_TIMEOUT_MS — Gemini Deep Research timeout (default: 300000)
+//   NOTEBOOKLM_TIMEOUT_MS    — NotebookLM timeout (default: 180000)
 
 import { load_hunter_config } from './config.js';
 import { create_api_client } from './api_client.js';
@@ -30,11 +33,19 @@ if (is_main) {
   const browser = create_browser_manager({ headless });
 
   const api = create_api_client({ base_url: config.captain_api_url }, logger);
-  const executor = create_task_executor(logger, browser);
+
+  // Pass Google profile and timeout config to task executor
+  const executor = create_task_executor(logger, browser, {
+    google_profile_dir: config.google_profile_dir,
+    deep_research_timeout_ms: config.deep_research_timeout_ms,
+    notebooklm_timeout_ms: config.notebooklm_timeout_ms,
+  });
+
   const loop = create_poll_loop({ api, executor, logger, config });
 
   logger.info(`Hunter agent starting — polling ${config.captain_api_url} every ${config.poll_interval_ms}ms`);
   logger.info(`Browser mode: ${headless ? 'headless' : 'headed'}`);
+  logger.info(`Google profile: ${config.google_profile_dir}`);
   loop.start();
 
   // Graceful shutdown — close browser and stop polling

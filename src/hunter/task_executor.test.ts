@@ -10,6 +10,19 @@ const mock_logger: Logger = {
   error: vi.fn(),
 };
 
+// Mock locator object for Playwright page.locator() calls
+const create_mock_locator = () => ({
+  first: vi.fn().mockReturnThis(),
+  last: vi.fn().mockReturnThis(),
+  count: vi.fn().mockResolvedValue(0),
+  isVisible: vi.fn().mockResolvedValue(false),
+  waitFor: vi.fn().mockResolvedValue(undefined),
+  click: vi.fn().mockResolvedValue(undefined),
+  fill: vi.fn().mockResolvedValue(undefined),
+  press: vi.fn().mockResolvedValue(undefined),
+  textContent: vi.fn().mockResolvedValue(''),
+});
+
 // Mock page object returned by Playwright
 const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
   goto: vi.fn().mockResolvedValue(undefined),
@@ -18,6 +31,10 @@ const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
   screenshot: vi.fn().mockResolvedValue(undefined),
   setDefaultTimeout: vi.fn(),
   setDefaultNavigationTimeout: vi.fn(),
+  url: vi.fn().mockReturnValue('https://example.com'),
+  waitForTimeout: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+  locator: vi.fn().mockReturnValue(create_mock_locator()),
   context: vi.fn().mockReturnValue({
     close: vi.fn().mockResolvedValue(undefined),
   }),
@@ -29,6 +46,8 @@ const create_mock_browser = (page_overrides: Record<string, unknown> = {}): Brow
   const mock_page = create_mock_page(page_overrides);
   return {
     get_page: vi.fn().mockResolvedValue(mock_page),
+    get_persistent_page: vi.fn().mockResolvedValue(mock_page),
+    close_persistent: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
   };
 };
@@ -278,9 +297,11 @@ describe('browser_task handler', () => {
 
 // ===== deep_research handler tests =====
 describe('deep_research handler', () => {
-  it('should return failure with NOT_IMPLEMENTED message', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
+  it('should detect login wall and return LOGIN_REQUIRED', async () => {
+    // Given — page URL is Google login
+    const mock_browser = create_mock_browser({
+      url: vi.fn().mockReturnValue('https://accounts.google.com/signin'),
+    });
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'AI trends deep research',
@@ -292,18 +313,36 @@ describe('deep_research handler', () => {
 
     // Then
     expect(result.status).toBe('failure');
-    expect(result.output).toContain('NOT_IMPLEMENTED');
-    expect(result.output).toContain('Gemini web UI');
-    expect(result.output).toContain('pending OpenClaw integration');
+    expect(result.output).toContain('[LOGIN_REQUIRED]');
     expect(result.files).toEqual([]);
+  });
+
+  it('should use persistent browser page for Google login session', async () => {
+    // Given
+    const mock_browser = create_mock_browser({
+      url: vi.fn().mockReturnValue('https://accounts.google.com/v3'),
+    });
+    const executor = create_task_executor(mock_logger, mock_browser);
+    const task = make_task({
+      title: 'deep research on AI',
+      description: 'Run deep research on latest AI developments',
+    });
+
+    // When
+    await executor.execute(task);
+
+    // Then — persistent page should be called, not regular get_page
+    expect(mock_browser.get_persistent_page).toHaveBeenCalled();
   });
 });
 
 // ===== notebooklm_verify handler tests =====
 describe('notebooklm_verify handler', () => {
-  it('should return failure with NOT_IMPLEMENTED message', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
+  it('should detect login wall and return LOGIN_REQUIRED', async () => {
+    // Given — page URL is Google login
+    const mock_browser = create_mock_browser({
+      url: vi.fn().mockReturnValue('https://accounts.google.com/signin'),
+    });
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'NotebookLM verify analysis results',
@@ -315,9 +354,25 @@ describe('notebooklm_verify handler', () => {
 
     // Then
     expect(result.status).toBe('failure');
-    expect(result.output).toContain('NOT_IMPLEMENTED');
-    expect(result.output).toContain('NotebookLM');
-    expect(result.output).toContain('pending OpenClaw integration');
+    expect(result.output).toContain('[LOGIN_REQUIRED]');
     expect(result.files).toEqual([]);
+  });
+
+  it('should use persistent browser page for Google login session', async () => {
+    // Given
+    const mock_browser = create_mock_browser({
+      url: vi.fn().mockReturnValue('https://accounts.google.com/v3'),
+    });
+    const executor = create_task_executor(mock_logger, mock_browser);
+    const task = make_task({
+      title: 'NotebookLM verify analysis results',
+      description: 'Verify hallucination in research output',
+    });
+
+    // When
+    await executor.execute(task);
+
+    // Then — persistent page should be called, not regular get_page
+    expect(mock_browser.get_persistent_page).toHaveBeenCalled();
   });
 });
