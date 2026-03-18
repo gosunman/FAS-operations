@@ -3,10 +3,9 @@
 # Idempotent: skips sessions that already exist
 #
 # Services:
-#   fas-gateway   - Express Gateway + Task API (port 3100)
+#   fas-captain   - Unified captain (Gateway + Watcher + Planning + Monitors)
 #   fas-claude    - Claude Code interactive session
-#   fas-gemini-a  - Gemini CLI Account A (research)
-#   fas-watchdog  - System watchdog daemon
+#   fas-gemini-a  - Gemini CLI Account A (research + cross-approval)
 
 set -euo pipefail
 
@@ -14,8 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load environment variables
-# shellcheck source=env_loader.sh
-source "$SCRIPT_DIR/env_loader.sh"
+if [ -f "$SCRIPT_DIR/env_loader.sh" ]; then
+  # shellcheck source=env_loader.sh
+  source "$SCRIPT_DIR/env_loader.sh"
+fi
 
 HEALTH_URL="http://localhost:3100/api/health"
 HEALTH_TIMEOUT=2
@@ -44,29 +45,17 @@ create_session() {
   echo "[FAS] Created session '$session_name'"
 }
 
-# === 1. Gateway (start first — other services depend on it) ===
-echo "[1/6] Gateway..."
-create_session "fas-gateway" "bash $SCRIPT_DIR/gateway_wrapper.sh" "$PROJECT_ROOT"
+# === 1. Captain (unified: Gateway + Watcher + Planning + Monitors) ===
+echo "[1/3] Captain (unified)..."
+create_session "fas-captain" "pnpm captain" "$PROJECT_ROOT"
 
 # === 2. Claude Code (interactive session, no auto-command) ===
-echo "[2/6] Claude Code..."
+echo "[2/3] Claude Code..."
 create_session "fas-claude" "" "$PROJECT_ROOT"
 
 # === 3. Gemini CLI A ===
-echo "[3/6] Gemini CLI A..."
+echo "[3/3] Gemini CLI A..."
 create_session "fas-gemini-a" "bash $SCRIPT_DIR/gemini_wrapper.sh" "$PROJECT_ROOT"
-
-# === 4. Watchdog ===
-echo "[4/5] Watchdog..."
-create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
-
-# === 6. n8n (Docker/Colima) — optional ===
-echo "[5/5] n8n (optional)..."
-if command -v colima &>/dev/null; then
-  create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
-else
-  echo "[FAS] Colima not installed, skipping fas-n8n session."
-fi
 
 echo ""
 
@@ -80,7 +69,7 @@ for i in $(seq 1 "$HEALTH_RETRIES"); do
     break
   fi
   if [ "$i" -eq "$HEALTH_RETRIES" ]; then
-    echo "[FAS] WARNING: Gateway not responding after $((HEALTH_RETRIES * 2))s. Check fas-gateway session."
+    echo "[FAS] WARNING: Gateway not responding after $((HEALTH_RETRIES * 2))s. Check fas-captain session."
   else
     echo "[FAS] Attempt $i/$HEALTH_RETRIES — Gateway not ready yet..."
   fi
@@ -92,5 +81,7 @@ echo " FAS Captain — All Services Started"
 echo "=========================================="
 echo ""
 echo "  tmux list-sessions | grep fas-"
-echo "  tmux attach -t fas-claude"
+echo "  tmux attach -t fas-captain     # Gateway + monitors"
+echo "  tmux attach -t fas-claude      # Claude Code"
+echo "  tmux attach -t fas-gemini-a    # Gemini CLI"
 echo ""

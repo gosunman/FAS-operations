@@ -6,9 +6,11 @@ import 'dotenv/config';
 import { resolve } from 'node:path';
 import { create_app } from '../gateway/server.js';
 import { create_task_store } from '../gateway/task_store.js';
-import { create_planning_loop } from './planning_loop.js';
+import { create_planning_loop, type PlanningLoop } from './planning_loop.js';
 import { create_routed_watcher, create_watcher_router } from '../watchdog/output_watcher.js';
 import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_monitor.js';
+import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
+import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resource_monitor.js';
 import { create_telegram_client } from '../notification/telegram.js';
 import { create_slack_client } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
@@ -21,11 +23,20 @@ const GATEWAY_HOST = process.env.GATEWAY_HOST ?? '0.0.0.0';
 const SCHEDULES_PATH = resolve(process.cwd(), 'config/schedules.yml');
 const DB_PATH = resolve(process.cwd(), 'state/tasks.sqlite');
 
+const ACTIVITY_DB_PATH = resolve(process.cwd(), 'state/activity.sqlite');
+
 const WATCHED_SESSIONS = [
   'fas-claude',
   'fas-gemini-a',
-  'fas-gateway',
+  'fas-captain',
 ];
+
+// Planning schedule — hours to run morning (07:30) and night (22:50)
+const MORNING_HOUR = 7;
+const MORNING_MINUTE = 30;
+const NIGHT_HOUR = 22;
+const NIGHT_MINUTE = 50;
+const SCHEDULE_CHECK_INTERVAL_MS = 60_000; // check every minute
 
 // === Build notification router from env vars ===
 
@@ -110,7 +121,60 @@ const main = async () => {
   });
   console.log('[Captain] Hunter monitor started');
 
-  // 7. Status summary
+  // 7. Activity logger (audit trail)
+  const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
+  console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
+
+  // 8. Resource monitor (CPU/memory/disk alerts)
+  const resource_monitor = create_resource_monitor({
+    check_interval_ms: 120_000, // every 2 minutes
+    on_alert: async (metric, value, threshold) => {
+      const msg = `[RESOURCE] ${metric} at ${value.toFixed(1)}% (threshold: ${threshold}%)`;
+      console.warn(msg);
+      await router.route({ type: 'alert', message: msg, device: 'captain' });
+    },
+  });
+  resource_monitor.start();
+  console.log('[Captain] Resource monitor started (2min interval)');
+
+  // 9. Daily planning scheduler — runs morning/night planning automatically
+  let last_morning_date = '';
+  let last_night_date = '';
+
+  const schedule_timer = setInterval(async () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const today = now.toISOString().slice(0, 10);
+
+    // Morning planning at 07:30 (once per day)
+    if (h === MORNING_HOUR && m === MORNING_MINUTE && last_morning_date !== today) {
+      last_morning_date = today;
+      try {
+        const result = await planning.run_morning(now);
+        console.log(`[Captain] Scheduled morning planning: ${result.created.length} tasks created`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Captain] Scheduled morning planning failed: ${msg}`);
+      }
+    }
+
+    // Night planning at 22:50 (once per day)
+    if (h === NIGHT_HOUR && m === NIGHT_MINUTE && last_night_date !== today) {
+      last_night_date = today;
+      try {
+        const result = await planning.run_night();
+        console.log(`[Captain] Scheduled night planning: done=${result.summary.done}, blocked=${result.summary.blocked}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Captain] Scheduled night planning failed: ${msg}`);
+      }
+    }
+  }, SCHEDULE_CHECK_INTERVAL_MS);
+  if (schedule_timer.unref) schedule_timer.unref();
+  console.log(`[Captain] Daily scheduler started (morning ${MORNING_HOUR}:${String(MORNING_MINUTE).padStart(2, '0')}, night ${NIGHT_HOUR}:${String(NIGHT_MINUTE).padStart(2, '0')})`);
+
+  // 10. Status summary
   const stats = store.get_stats();
   console.log('======================================');
   console.log('[Captain] All services started');
@@ -118,12 +182,15 @@ const main = async () => {
   console.log(`[Captain] Mode: ${dev_mode ? 'DEV' : 'PRODUCTION'}`);
   console.log('======================================');
 
-  // 8. Graceful shutdown
+  // 11. Graceful shutdown
   const shutdown = () => {
     console.log('[Captain] Shutting down...');
+    clearInterval(schedule_timer);
+    resource_monitor.stop();
     stop_hunter_monitor();
     watcher.stop();
     server.close();
+    activity_logger.close();
     store.close();
     console.log('[Captain] Shutdown complete');
     process.exit(0);
