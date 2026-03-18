@@ -39,3 +39,6 @@ coverage/
 
 # Docker volumes
 .n8n/
+
+# Security review outputs (Doctrine isolation — must never reach hunter)
+reviews/
