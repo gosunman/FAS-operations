@@ -56,7 +56,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
 - [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
 - [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
-- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 별도 진행)*
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 `scripts/setup/setup_hunter.sh` 실행)*
 
 ### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
 
@@ -84,19 +84,23 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
 - [x] CLAUDE.md에 자율 실행 범위 명시
 
-### 1-2. Gemini CLI 상시 실행 체계 (캡틴)
+### 1-2. Gemini CLI 상시 실행 체계 (캡틴) ✅
 
-- [ ] 계정 A: 리서치 전용 세션
-- [ ] 계정 B: 교차 검증 전용 세션
-- [ ] 출력 로깅 + Telegram/Slack 연동
+- [x] 계정 A: 리서치 전용 세션 — `scripts/setup/com.fas.gemini-a.plist`
+- [x] 계정 B: 교차 검증 전용 세션 — `scripts/setup/com.fas.gemini-b.plist`
+- [x] 자동 재시작 래퍼 — `scripts/gemini_wrapper.sh` (지수 백오프, 최대 3회)
+- [x] 출력 로깅 + Telegram/Slack 연동 — `[GEMINI_BLOCKED]` 패턴 감지
+- [ ] 실제 계정 인증 실행 *(인간 작업 — `scripts/setup/setup_gemini_cli.sh` 실행)*
 
 ### 1-3. OpenClaw 안정화 (헌터)
 
-- [ ] ChatGPT Pro 연동 완료
-- [ ] 개인정보 유입 방지 확인
+- [ ] ChatGPT Pro 연동 완료 *(인간 작업)*
+- [x] 개인정보 유입 방지 확인 — Quarantine 로직 구현 완료
 - [ ] 기본 태스크 실행 테스트
-- [ ] NotebookLM 웹 자동화 테스트
-- [ ] Gemini Deep Research 웹 자동화 테스트
+- [x] NotebookLM 웹 자동화 코드 — `handle_notebooklm_verify` (Playwright + 구글 프로필)
+- [x] Gemini Deep Research 웹 자동화 코드 — `handle_deep_research` (Playwright + 구글 프로필)
+- [x] 구글 로그인 감지 → `[LOGIN_REQUIRED]` → Telegram 긴급 알림
+- [ ] 헌터 머신 초기 세팅 *(인간 작업 — `scripts/setup/setup_hunter.sh` 실행)*
 
 ### 1-4. 작업 큐 시스템 (간이)
 
