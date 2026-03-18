@@ -81,18 +81,48 @@ export type NotionBackupConfig = {
 // Fire-and-forget Notion backup for completed task results
 // Uses dynamic import to avoid hard dependency on @notionhq/client
 const create_notion_backup = (config: NotionBackupConfig) => {
+  // Use raw fetch to Notion API — minimal, no property assumptions
   const backup_task_result = async (task_id: string, title: string, output: string) => {
     try {
-      const { create_notion_client } = await import('../notification/notion.js');
-      const notion = create_notion_client({
-        api_key: config.api_key,
-        database_id: config.database_id,
+      const body = {
+        parent: { database_id: config.database_id },
+        properties: {
+          Name: { title: [{ text: { content: `📋 [Task Result] ${title}`.slice(0, 100) } }] },
+        },
+        children: [
+          {
+            object: 'block',
+            type: 'paragraph',
+            paragraph: {
+              rich_text: [{ type: 'text', text: { content: `Task ID: ${task_id}\nCompleted: ${new Date().toISOString()}` } }],
+            },
+          },
+          // Split output into 2000-char chunks (Notion block limit)
+          ...chunk_text(output, 2000).map((chunk: string) => ({
+            object: 'block',
+            type: 'paragraph',
+            paragraph: {
+              rich_text: [{ type: 'text', text: { content: chunk } }],
+            },
+          })),
+        ],
+      };
+
+      const res = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.api_key}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       });
-      await notion.create_page({
-        title: `📋 [Task Result] ${title}`,
-        content: `Task ID: ${task_id}\nCompleted: ${new Date().toISOString()}\n\n${output}`,
-        database_id: config.database_id,
-      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Notion API ${res.status}: ${err}`);
+      }
+
       console.log(`[Notion Backup] Task ${task_id} backed up successfully`);
     } catch (err) {
       // Fire-and-forget: log warning but never block main flow
@@ -102,6 +132,19 @@ const create_notion_backup = (config: NotionBackupConfig) => {
   };
 
   return { backup_task_result };
+};
+
+// Helper: split text into chunks for Notion block limit
+const chunk_text = (text: string, max: number): string[] => {
+  if (text.length <= max) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    const cut = remaining.length <= max ? remaining.length : (remaining.lastIndexOf('\n', max) > 0 ? remaining.lastIndexOf('\n', max) + 1 : max);
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut);
+  }
+  return chunks;
 };
 
 export const create_app = (store: TaskStore, options: AppOptions = {}) => {
