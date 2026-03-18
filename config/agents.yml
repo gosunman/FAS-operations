@@ -3,7 +3,7 @@
 agents:
   claude:
     display_name: "Claude Code (Max) — Captain"
-    identity: "신뢰받는 집사 (Trusted Butler)"
+    identity: "주인님의 뇌 🧠 — 판단, 전략, 오케스트레이션"
     device: captain
     account: A                        # owner's account
     autonomy: medium                  # follows defined workflows
@@ -82,7 +82,7 @@ agents:
 
   openclaw:
     display_name: "OpenClaw (ChatGPT Pro) — Hunter Engine"
-    identity: "자율 정찰병 (Autonomous Scout) — main browser engine"
+    identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (main browser engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
     autonomy: high                    # proactively reads owner's intent
@@ -112,7 +112,7 @@ agents:
 
   claude_hunter:
     display_name: "Claude Code (Max x20) — Hunter"
-    identity: "자율 정찰병 (Autonomous Scout) — coding/high-intelligence engine"
+    identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (coding/high-intelligence engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
     autonomy: high

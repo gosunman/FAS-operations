@@ -1,10 +1,21 @@
-# Fully Automation System (FAS)
+# FAS Operations
 
-> 24시간 무중단 AI 워커 시스템 — 잠자는 동안에도 일하는 디지털 분신
+> Fully Automation System의 운영 계층 — Doctrine(원칙/정체성)을 실현하는 코드, 스크립트, 인프라
 
 ## 한 줄 요약
 
 2대의 Mac Studio + 다종 AI 모델(Claude, Gemini, OpenClaw)을 조합하여, **사람 개입 최소화**로 24시간 자동 운영되는 멀티 에이전트 시스템.
+
+## Doctrine / Operations 구조
+
+FAS는 두 계층으로 분리된다:
+
+| 계층 | 위치 | 성격 | 변경 빈도 |
+|------|------|------|-----------|
+| **Doctrine** | `~/Library/Mobile Documents/com~apple~CloudDocs/claude-config/` | 정신, 원칙, 정체성, 보안 설계 — Source of Truth | 낮음 |
+| **Operations** | 이 레포 (`~/FAS-operations/`) | Doctrine을 실현하는 코드, 스크립트, 인프라 | 높음 |
+
+> 에이전트 정체성, 톤, 절대원칙의 원천은 Doctrine. 이 레포는 그것을 코드로 구현한다.
 
 ## 왜 만드는가
 
@@ -50,9 +61,9 @@
 
 | 기기          | 칩 / RAM        | 별명                  | 정체성               | 역할                                               |
 | ------------- | --------------- | --------------------- | -------------------- | -------------------------------------------------- |
-| Mac Studio #2 | M4 Ultra / 36GB | **캡틴(Captain)**     | 신뢰받는 집사        | 메인 워커 + n8n 오케스트레이터 (계정 A)             |
-| Mac Studio #1 | M1 Ultra / 32GB | **헌터(Hunter)**      | 자율 정찰병          | OpenClaw + Claude Code x20 자율 탐색 워커 (계정 B) |
-| MacBook Pro   | M1 Pro / 32GB   | **그림자(Shadow)**    | 주인님의 보좌관      | SSH 감독 & NotebookLM 검증 (주인님 직접 사용)      |
+| Mac Studio #2 | M4 Ultra / 36GB | **캡틴(Captain)** 🧠 | 주인님의 뇌          | 판단, 전략, 오케스트레이션 + 메인 워커 (계정 A)     |
+| Mac Studio #1 | M1 Ultra / 32GB | **헌터(Hunter)** 👁️  | 주인님의 눈          | 정보 탐색, 크롤링, 리서치 + 자율 탐색 워커 (계정 B) |
+| MacBook Pro   | M1 Pro / 32GB   | **그림자(Shadow)** ✍️ | 주인님의 손          | 곁에서 직접 실행 + SSH 감독 (주인님 직접 사용)      |
 
 > 에이전트 체계 상세: [docs/agents-charter.md](docs/agents-charter.md)
 
@@ -137,7 +148,7 @@
 ## 프로젝트 구조
 
 ```
-fully-automation-system/
+FAS-operations/
 ├── src/
 │   ├── gateway/          # Task API 서버 (Express, SQLite)
 │   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)

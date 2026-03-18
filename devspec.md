@@ -1,10 +1,10 @@
-# devspec.md — FAS 개발자 & AI 에이전트 기술 명세
+# devspec.md — FAS Operations 개발자 & AI 에이전트 기술 명세
 
 ## 시스템 아키텍처
 
 ```
 캡틴 (Mac Studio M4 Ultra)                    헌터 (Mac Studio M1 Ultra)
-"신뢰받는 집사" — 계정 A                     "자율 정찰병" — 계정 B
+"주인님의 뇌" — 계정 A                     "주인님의 눈" — 계정 B
 ┌────────────────────────────┐              ┌────────────────────────┐
 │ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
 │   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
