@@ -58,6 +58,14 @@ HUNTER_POLL_INTERVAL=10000
 
 # Browser
 HUNTER_HEADLESS=true
+
+# === Notification (Optional — hunter works without these) ===
+# Hunter's own Telegram bot token (separate from captain)
+HUNTER_TELEGRAM_BOT_TOKEN=
+# Owner's Telegram chat ID
+HUNTER_TELEGRAM_CHAT_ID=
+# Hunter's own Slack incoming webhook URL
+HUNTER_SLACK_WEBHOOK_URL=
 ENV
 
 # Hunter-specific package.json (strip captain-only scripts)

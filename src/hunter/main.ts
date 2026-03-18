@@ -21,12 +21,25 @@ import { create_browser_manager } from './browser.js';
 import { create_task_executor } from './task_executor.js';
 import { create_poll_loop } from './poll_loop.js';
 import { create_logger } from './logger.js';
+import { create_hunter_notify } from './notify.js';
 
 const is_main = import.meta.url === `file://${process.argv[1]}`;
 
 if (is_main) {
   const config = load_hunter_config();
   const logger = create_logger(config.log_dir);
+
+  // Initialize notification module (fire-and-forget, optional)
+  const notify = create_hunter_notify({
+    telegram_bot_token: config.telegram_bot_token,
+    telegram_chat_id: config.telegram_chat_id,
+    slack_webhook_url: config.slack_webhook_url,
+  });
+  if (notify.is_configured()) {
+    logger.info('Notification channels configured');
+  } else {
+    logger.warn('No notification channels configured — alerts will only be logged');
+  }
 
   // Initialize browser manager with optional headless config
   const headless = process.env.HUNTER_HEADLESS !== 'false';
@@ -44,7 +57,7 @@ if (is_main) {
     notebooklm_timeout_ms: config.notebooklm_timeout_ms,
   });
 
-  const loop = create_poll_loop({ api, executor, logger, config });
+  const loop = create_poll_loop({ api, executor, logger, config, notify });
 
   logger.info(`Hunter agent starting — polling ${config.captain_api_url} every ${config.poll_interval_ms}ms`);
   logger.info(`Browser mode: ${headless ? 'headless' : 'headed'}`);
