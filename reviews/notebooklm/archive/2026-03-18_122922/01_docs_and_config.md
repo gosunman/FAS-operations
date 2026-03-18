@@ -135,7 +135,6 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [docs/hunter-protocol.md](docs/hunter-protocol.md) — 헌터 격리 & 통신 프로토콜
 - [PLAN.md](PLAN.md) — 구축 계획
 
-
 ---
 
 ## 파일: PLAN.md
@@ -585,7 +584,6 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 디바이스 리소스 부족                | 성능   | 모니터링 + 주인님에게 구매 제안       |
 | AI 토큰 사용량 한도 초과            | 생산성 | 모니터링 + 플랜 업그레이드 제안       |
 
-
 ---
 
 ## 파일: README.md
@@ -792,7 +790,6 @@ pnpm run gateway
 - **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)
 - **인프라**: Docker/Colima (n8n, 각종 서비스 격리)
 
-
 ---
 
 ## 파일: SPEC.md
@@ -827,7 +824,6 @@ pnpm run gateway
 | [config/schedules.yml](config/schedules.yml)             | 반복 태스크 스케줄                      |
 | [config/risk_rules.yml](config/risk_rules.yml)           | 위험도 분류 규칙                        |
 | [config/personal_filter.yml](config/personal_filter.yml) | 개인정보 필터링 패턴 (gateway.md 참조)  |
-
 
 ---
 
@@ -987,7 +983,6 @@ pnpm run hunter    # Hunter Agent (on hunter machine)
 - launchd plist로 부팅 시 자동 시작 (`com.fas.captain.plist`)
 - 에이전트 크래시 시 `agent_wrapper.sh`가 지수 백오프로 최대 3회 재시작
 
-
 ---
 
 ## 파일: package.json
@@ -1040,13 +1035,11 @@ pnpm run hunter    # Hunter Agent (on hunter machine)
   }
 }
 
-
 ---
 
 ## 파일: pnpm-workspace.yaml
 
 approveBuilds: better-sqlite3
-
 
 ---
 
@@ -1078,7 +1071,6 @@ approveBuilds: better-sqlite3
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
 
-
 ---
 
 ## 파일: vitest.config.ts
@@ -1102,7 +1094,6 @@ export default defineConfig({
     },
   },
 });
-
 
 ---
 
@@ -1149,7 +1140,6 @@ coverage/
 # Docker volumes
 .n8n/
 
-
 ---
 
 ## 파일: .env.example
@@ -1186,7 +1176,6 @@ FAS_MODE=awake
 FAS_DEVICE=captain
 NODE_ENV=development
 
-
 ---
 
 ## 파일: .env
@@ -1217,7 +1206,6 @@ GATEWAY_HOST=0.0.0.0
 FAS_MODE=awake
 FAS_DEVICE=captain
 NODE_ENV=development
-
 
 ---
 
@@ -1257,7 +1245,6 @@ services:
 volumes:
   n8n_data:
     driver: local
-
 
 ---
 
@@ -1403,7 +1390,6 @@ agents:
       retry_delay_seconds: 5
       escalate_after: 3
 
-
 ---
 
 ## 파일: config/risk_rules.yml
@@ -1460,7 +1446,6 @@ rules:
     timeout_minutes: null
     on_timeout: reject
     log: true
-
 
 ---
 
@@ -1566,7 +1551,6 @@ schedules:
     type: daily
     time: "07:30"
     workflow: WF-3
-
 
 ---
 
@@ -1839,7 +1823,6 @@ function build_test_prompt(request: TestRequest): string {
 5. PDF/LaTeX 포매팅
 6. 인쇄
 ```
-
 
 ---
 
@@ -2319,7 +2302,6 @@ if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
 fi
 ```
 
-
 ---
 
 ## 파일: docs/agents-charter.md
@@ -2496,7 +2478,6 @@ Gemini (proxy role)
 ```
 
 Both Captain and Hunter emit these patterns. The Watchdog on each machine captures and routes them appropriately.
-
 
 ---
 
@@ -2742,7 +2723,6 @@ fully-automation-system/
 3. Wrapper가 캡틴의 Task API에 heartbeat 전송 시작
 ```
 
-
 ---
 
 ## 파일: docs/cost.md
@@ -2808,7 +2788,6 @@ Telegram 알림 조건:
 - 특정 서비스 rate limit 반복 도달
 - 디바이스 리소스 임계치 초과
 ```
-
 
 ---
 
@@ -3127,7 +3106,6 @@ rate_limits:
 
   # AI 방식 크롤러는 rate limit 불필요 (검색 엔진 경유)
 ```
-
 
 ---
 
@@ -3518,7 +3496,6 @@ patterns:
     replacement: "[금융정보 제거됨]"
 ```
 
-
 ---
 
 ## 파일: docs/hunter-protocol.md
@@ -3762,7 +3739,6 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 - 헌터 → 캡틴 3100 포트만 (Task API)
 - 캡틴 → 헌터 22 포트만 (SSH, 긴급 관리용)
 - 헌터 → 캡틴 파일시스템 접근 불가
-
 
 ---
 
@@ -4041,7 +4017,6 @@ log_rotation:
   max_size: 100MB       # 파일당 최대 크기
   compress: true        # 오래된 로그 gzip 압축
 ```
-
 
 ---
 
@@ -4333,7 +4308,6 @@ schedules:
     time: "07:30"
     workflow: WF-3
 ```
-
 
 ---
 
@@ -4650,7 +4624,6 @@ async function create_report_page(
 | 아이디어 분석 완료 | X | #ideas | O |
 | Deep Research 완료 | X | #reports | O |
 
-
 ---
 
 ## 파일: docs/pipeline.md
@@ -4915,7 +4888,6 @@ ideas_backlog:
     - "멘토링/강연 사업화"
 ```
 
-
 ---
 
 ## 파일: docs/security-audit.md
@@ -5122,7 +5094,6 @@ fas-hunter/
 3. 헌터 배포 패키지 구성이 적절한가? 누락된 위험 요소는?
 4. 역방향 PII 검사(헌터→캡틴) 전략의 적절성
 5. 네트워크 레벨 보안 (Tailscale ACL만으로 충분한가?)
-
 
 ---
 
@@ -5355,7 +5326,6 @@ dist/
 # Colima/Docker
 .colima/
 ```
-
 
 ---
 
@@ -5660,7 +5630,6 @@ n8n 크론 트리거 (schedules.yml 기반)
 
 상세 워크플로우는 [n8n-workflows.md](n8n-workflows.md) 참조.
 
-
 ---
 
 ## 파일: hunter/CLAUDE.md
@@ -5791,7 +5760,6 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [hunter/openclaw/system_prompt.md](openclaw/system_prompt.md) — OpenClaw 초기 지시문
 - [hunter/openclaw/browsing_rules.md](openclaw/browsing_rules.md) — 브라우징 규칙
 
-
 ---
 
 ## 파일: hunter/README.md
@@ -5832,7 +5800,6 @@ hunter/
 
 상세: [docs/agents-charter.md](../docs/agents-charter.md)
 
-
 ---
 
 ## 파일: hunter/openclaw/README.md
@@ -5852,7 +5819,6 @@ hunter/
 
 이 파일들은 헌터 배포 시 OpenClaw의 시스템 프롬프트와 설정으로 주입된다.
 헌터 초기화 후 재배포 시에도 함께 전달된다.
-
 
 ---
 
@@ -5965,7 +5931,6 @@ hunter/
 3. Wait for owner to manually re-login via VNC
 4. Resume operations after session is restored
 
-
 ---
 
 ## 파일: hunter/openclaw/system_prompt.md
@@ -6060,7 +6025,6 @@ When receiving tasks via Task API:
 4. Report structured results back via Task API
 5. Flag any issues that emerged during execution
 
-
 ---
 
 ## 파일: shadow/CLAUDE.md
@@ -6118,7 +6082,6 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [docs/agents-charter.md](../docs/agents-charter.md) — **에이전트 체계 원천 문서 (Source of Truth)**
 - [docs/architecture.md](../docs/architecture.md) — 시스템 아키텍처
 
-
 ---
 
 ## 파일: shadow/README.md
@@ -6148,7 +6111,6 @@ shadow/
 
 상세: [docs/agents-charter.md](../docs/agents-charter.md)
 
-
 ---
 
 ## 파일: scripts/README.md
@@ -6172,7 +6134,6 @@ shadow/
 | `setup_colima.sh` | Colima + Docker 설치 (brew) |
 | `setup_ai_cli.sh` | AI CLI 인증 상태 확인 가이드 |
 | `com.fas.captain.plist` | launchd 자동 시작 설정 |
-
 
 ---
 
@@ -6226,7 +6187,6 @@ shadow/
 </dict>
 </plist>
 
-
 ---
 
 ## 파일: .claude/settings.local.json
@@ -6251,11 +6211,9 @@ shadow/
       "Bash(find /Users/[MASKED_USER]/fully-automation-system/memory -type f -name *.md)",
       "Bash(find /Users/[MASKED_USER]/fully-automation-system/src -type f \\\\\\(-name *.ts -o -name *.js \\\\\\))",
       "Bash(find . -type f -not -path ./.git/* -not -path ./node_modules/* -not -path ./reviews/* -not -path ./pnpm-lock.yaml -not -path ./dist/* -not -path ./logs/* -not -path ./state/* -not -path ./.env -not -name *.lock -not -name .DS_Store -exec wc -l {} +)",
-      "Bash(bash /Users/[MASKED_USER]/.claude/statusline-command.sh)",
-      "Bash(ls:*)"
+      "Bash(bash /Users/[MASKED_USER]/.claude/statusline-command.sh)"
     ]
   }
 }
-
 
 ---

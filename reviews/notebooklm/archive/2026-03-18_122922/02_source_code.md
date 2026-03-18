@@ -140,7 +140,6 @@ export type HealthCheckResponse = {
   timestamp: string;
 };
 
-
 ---
 
 ## 파일: src/gateway/rate_limiter.ts
@@ -193,7 +192,6 @@ export const create_rate_limiter = (config: RateLimiterConfig) => {
 };
 
 export type RateLimiter = ReturnType<typeof create_rate_limiter>;
-
 
 ---
 
@@ -330,7 +328,6 @@ export const detect_pii_types = (text: string): string[] => {
     })
     .map((pattern) => pattern.name);
 };
-
 
 ---
 
@@ -728,7 +725,6 @@ if (is_main) {
   });
 }
 
-
 ---
 
 ## 파일: src/gateway/task_store.ts
@@ -940,7 +936,6 @@ export const create_task_store = (config: TaskStoreConfig) => {
 
 export type TaskStore = ReturnType<typeof create_task_store>;
 
-
 ---
 
 ## 파일: src/hunter/api_client.ts
@@ -1060,7 +1055,6 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
   return { fetch_pending_tasks, submit_result, send_heartbeat };
 };
 
-
 ---
 
 ## 파일: src/hunter/config.ts
@@ -1096,7 +1090,6 @@ export const load_hunter_config = (): HunterConfig => {
   };
 };
 
-
 ---
 
 ## 파일: src/hunter/index.ts
@@ -1108,7 +1101,6 @@ export { create_api_client, type ApiClient, type ApiClientConfig } from './api_c
 export { create_task_executor, resolve_action } from './task_executor.js';
 export { create_poll_loop, type PollLoopDeps, type PollLoopState } from './poll_loop.js';
 export { create_logger, type Logger } from './logger.js';
-
 
 ---
 
@@ -1166,7 +1158,6 @@ export const create_logger = (log_dir: string): Logger => {
   };
 };
 
-
 ---
 
 ## 파일: src/hunter/main.ts
@@ -1212,7 +1203,6 @@ if (is_main) {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
-
 
 ---
 
@@ -1347,7 +1337,6 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
   return { start, stop, get_state, run_cycle, get_current_interval };
 };
 
-
 ---
 
 ## 파일: src/hunter/task_executor.ts
@@ -1440,7 +1429,6 @@ export const create_task_executor = (logger: Logger) => {
   return { execute, resolve_action };
 };
 
-
 ---
 
 ## 파일: src/notification/index.ts
@@ -1449,7 +1437,6 @@ export const create_task_executor = (logger: Logger) => {
 export { create_telegram_client, type TelegramClient, type TelegramConfig } from './telegram.js';
 export { create_slack_client, type SlackClient, type SlackConfig } from './slack.js';
 export { create_notification_router, type NotificationRouter, type NotificationRouterDeps } from './router.js';
-
 
 ---
 
@@ -1547,7 +1534,6 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
 };
 
 export type NotificationRouter = ReturnType<typeof create_notification_router>;
-
 
 ---
 
@@ -1662,7 +1648,6 @@ export const create_slack_client = (config: SlackConfig) => {
 };
 
 export type SlackClient = ReturnType<typeof create_slack_client>;
-
 
 ---
 
@@ -1819,7 +1804,6 @@ export const create_telegram_client = (config: TelegramConfig) => {
 };
 
 export type TelegramClient = ReturnType<typeof create_telegram_client>;
-
 
 ---
 
@@ -2047,6 +2031,5 @@ if (is_main) {
     process.exit(0);
   });
 }
-
 
 ---

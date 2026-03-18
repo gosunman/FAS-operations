@@ -80,7 +80,6 @@ describe('RateLimiter', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/gateway/sanitizer.test.ts
@@ -271,7 +270,6 @@ describe('Sanitizer', () => {
     });
   });
 });
-
 
 ---
 
@@ -885,7 +883,6 @@ describe('Gateway Server', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/gateway/task_store.test.ts
@@ -1092,7 +1089,6 @@ describe('TaskStore', () => {
     });
   });
 });
-
 
 ---
 
@@ -1372,7 +1368,6 @@ describe('api_client', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/hunter/poll_loop.test.ts
@@ -1547,7 +1542,6 @@ describe('poll_loop', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/hunter/task_executor.test.ts
@@ -1653,7 +1647,6 @@ describe('create_task_executor', () => {
     expect(result.output).toContain('NotebookLM');
   });
 });
-
 
 ---
 
@@ -1886,7 +1879,6 @@ describe('Notification Router', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/notification/slack.test.ts
@@ -2101,7 +2093,6 @@ describe('Slack Client', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/notification/telegram.test.ts
@@ -2306,7 +2297,6 @@ describe('Telegram Client', () => {
   });
 });
 
-
 ---
 
 ## 파일: src/watchdog/output_watcher.test.ts
@@ -2447,7 +2437,6 @@ describe('Output Watcher', () => {
   });
 });
 
-
 ---
 
 ## 파일: scripts/agent_wrapper.sh
@@ -2524,7 +2513,6 @@ while true; do
   echo "[Wrapper] Restarting in ${DELAY}s..."
   sleep "$DELAY"
 done
-
 
 ---
 
@@ -2831,7 +2819,6 @@ const main = () => {
 
 main();
 
-
 ---
 
 ## 파일: scripts/test_notifications.ts
@@ -2882,7 +2869,6 @@ const run = async () => {
 };
 
 run();
-
 
 ---
 
@@ -2975,7 +2961,6 @@ echo "  3. Copy .env.example to .env and fill in values"
 echo "  4. Run 'claude' to complete OAuth login"
 echo "=========================================="
 
-
 ---
 
 ## 파일: scripts/setup/setup_colima.sh
@@ -3033,7 +3018,6 @@ docker info --format '  Memory: {{.MemTotal}}'
 echo ""
 echo "[FAS] Colima + Docker setup complete!"
 echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
-
 
 ---
 
@@ -3096,7 +3080,6 @@ fi
 
 echo "[FAS] tmux setup complete!"
 echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
-
 
 ---
 
@@ -3164,7 +3147,6 @@ echo ""
 echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
 echo "[FAS] Attach to a session: tmux attach -t fas-claude"
 
-
 ---
 
 ## 파일: scripts/status.sh
@@ -3224,7 +3206,6 @@ echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
 echo ""
 echo "=========================================="
 
-
 ---
 
 ## 파일: scripts/stop_all.sh
@@ -3250,6 +3231,5 @@ for session in "${FAS_SESSIONS[@]}"; do
 done
 
 echo "[FAS] All FAS sessions stopped."
-
 
 ---
