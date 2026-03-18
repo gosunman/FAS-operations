@@ -4,11 +4,13 @@
 
 import type { Task, HunterTaskResult, HunterHeartbeatResponse } from '../shared/types.js';
 import type { Logger } from './logger.js';
+import type { LocalQueue } from '../watchdog/local_queue.js';
 
 export type ApiClientConfig = {
   base_url: string;
   api_key?: string;       // Optional API key for captain authentication
   timeout_ms?: number;
+  local_queue?: LocalQueue;  // Optional queue for network disconnect resilience
 };
 
 export type ApiClient = {
@@ -21,7 +23,7 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const API_KEY_HEADER = 'x-hunter-api-key';
 
 export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiClient => {
-  const { base_url, api_key, timeout_ms = DEFAULT_TIMEOUT_MS } = config;
+  const { base_url, api_key, timeout_ms = DEFAULT_TIMEOUT_MS, local_queue } = config;
 
   const make_url = (path: string): string => `${base_url}${path}`;
 
@@ -81,6 +83,11 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
       return true;
     } catch (err) {
       logger.error(`submit_result(${task_id}) failed: ${err instanceof Error ? err.message : String(err)}`);
+      // Queue failed submission for later retry
+      if (local_queue) {
+        local_queue.enqueue(`/api/hunter/tasks/${task_id}/result`, 'POST', result);
+        logger.info(`submit_result(${task_id}): queued for retry`);
+      }
       return false;
     }
   };
@@ -106,6 +113,10 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
       return await res.json() as HunterHeartbeatResponse;
     } catch (err) {
       logger.error(`send_heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+      // Queue failed heartbeat for later retry
+      if (local_queue) {
+        local_queue.enqueue('/api/hunter/heartbeat', 'POST', { agent: 'openclaw', timestamp: new Date().toISOString() });
+      }
       return null;
     }
   };

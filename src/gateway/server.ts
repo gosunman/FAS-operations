@@ -38,6 +38,7 @@ import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import { create_cross_approval, type CrossApproval } from './cross_approval.js';
 import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
 import type { Request, Response, NextFunction } from 'express';
+import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
 import { FASError } from '../shared/types.js';
 import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel } from '../shared/types.js';
 
@@ -67,6 +68,7 @@ export type AppOptions = {
   max_files_count?: number;         // Max files per result (default: 20)
   cross_approval_config?: CrossApprovalConfig;  // Gemini CLI cross-approval config
   mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
+  activity_log_db_path?: string;                // SQLite path for activity logs
 };
 
 // === Create Express app ===
@@ -96,6 +98,11 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   // Cross-approval — Gemini CLI for MID risk actions
   const cross_approval = options.cross_approval_config
     ? create_cross_approval(options.cross_approval_config)
+    : null;
+
+  // Activity logger — structured logging for actions and approvals
+  const activity_logger = options.activity_log_db_path
+    ? create_activity_logger({ db_path: options.activity_log_db_path })
     : null;
 
   // Rate limiter for hunter endpoints
@@ -467,25 +474,32 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
     // LOW risk → auto-approve
     if (risk_level === 'low') {
+      activity_logger?.log_activity({ agent: 'system', action, risk_level: 'low', approval_decision: 'approved', details: { auto: true } });
       res.json({ decision: 'approved', reason: 'Low risk — auto-approved', reviewed_by: 'system' });
       return;
     }
 
     // HIGH/CRITICAL → needs human approval
     if (risk_level === 'high' || risk_level === 'critical') {
+      activity_logger?.log_activity({ agent: 'system', action, risk_level, details: { needs_human: true } });
       res.json({ decision: 'needs_human_approval', reason: `${risk_level} risk requires human approval via Telegram` });
       return;
     }
 
     // MID risk → Gemini cross-approval
     if (!cross_approval) {
-      // No Gemini configured — auto-approve with warning
+      activity_logger?.log_activity({ agent: 'system', action, risk_level: 'mid', approval_decision: 'approved', details: { no_cross_approval: true } });
       res.json({ decision: 'approved', reason: 'Mid risk — auto-approved (no cross-approval configured)', reviewed_by: 'system' });
       return;
     }
 
     try {
+      const start_ms = Date.now();
       const result = await cross_approval.request_approval(action, context ?? '');
+      const duration_ms = Date.now() - start_ms;
+
+      activity_logger?.log_approval({ requester: 'captain', action, risk_level: 'mid', decision: result.decision, reviewer: result.reviewed_by, reason: result.reason, duration_ms });
+
       if (result.decision === 'rejected') {
         res.status(403).json(new FASError('CROSS_APPROVAL_REJECTED', result.reason, 403, {
           reviewed_by: result.reviewed_by,
@@ -526,6 +540,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     _hunter_rate_limiter: hunter_rate_limiter,
     _mode_manager: mode_manager,
     _agent_heartbeats: agent_heartbeats,
+    _activity_logger: activity_logger,
   });
 };
 
@@ -552,6 +567,7 @@ if (is_main) {
   const app = create_app(store, {
     hunter_api_key: process.env.HUNTER_API_KEY,
     dev_mode,
+    activity_log_db_path: './state/activity.sqlite',
   });
 
   app.listen(port, host, () => {

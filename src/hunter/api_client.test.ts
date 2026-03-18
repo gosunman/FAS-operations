@@ -170,6 +170,47 @@ describe('api_client', () => {
     });
   });
 
+  // === Local queue integration ===
+
+  describe('local_queue integration', () => {
+    it('should queue failed result submission when local_queue is provided', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+      const mock_queue = { enqueue: vi.fn().mockReturnValue('q1'), flush: vi.fn(), pending_count: vi.fn(), close: vi.fn(), _db: {} as never };
+      const client = create_api_client({ base_url: BASE_URL, local_queue: mock_queue as never }, mock_logger);
+
+      await client.submit_result('task_1', { status: 'success', output: 'Done', files: [] });
+
+      expect(mock_queue.enqueue).toHaveBeenCalledWith(
+        '/api/hunter/tasks/task_1/result', 'POST',
+        { status: 'success', output: 'Done', files: [] },
+      );
+    });
+
+    it('should queue failed heartbeat when local_queue is provided', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+      const mock_queue = { enqueue: vi.fn().mockReturnValue('q1'), flush: vi.fn(), pending_count: vi.fn(), close: vi.fn(), _db: {} as never };
+      const client = create_api_client({ base_url: BASE_URL, local_queue: mock_queue as never }, mock_logger);
+
+      await client.send_heartbeat();
+
+      expect(mock_queue.enqueue).toHaveBeenCalledWith(
+        '/api/hunter/heartbeat', 'POST',
+        expect.objectContaining({ agent: 'openclaw' }),
+      );
+    });
+
+    it('should not queue when local_queue is not provided', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+      const client = create_api_client({ base_url: BASE_URL }, mock_logger);
+      await client.submit_result('task_1', { status: 'success', output: 'Done', files: [] });
+
+      // No error — just returns false without queueing
+    });
+  });
+
   // === API key authentication ===
 
   describe('API key header', () => {

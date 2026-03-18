@@ -154,7 +154,7 @@ FAS-operations/
 │   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
 │   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
-│   ├── watchdog/         # 출력 감시 데몬
+│   ├── watchdog/         # 출력 감시 + 리소스 모니터링 + 활동 로깅
 │   └── shared/           # 공유 타입 정의
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트

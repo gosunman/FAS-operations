@@ -98,24 +98,10 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] NotebookLM 웹 자동화 테스트
 - [ ] Gemini Deep Research 웹 자동화 테스트
 
-### 1-4. 작업 큐 시스템 (간이)
+### 1-4. 작업 큐 시스템 ✅
 
-- [ ] `tasks/` 디렉토리 기반 파일 큐
-  - `tasks/pending/`, `tasks/in_progress/`, `tasks/done/`, `tasks/blocked/`
-- [ ] 태스크 파일 포맷:
-  ```yaml
-  id: task_001
-  title: "창업지원사업 정보 수집 자동화"
-  priority: high
-  assigned_to: gemini_a
-  mode: sleep # sleep | awake | recurring
-  risk_level: low # low | mid | high
-  requires_personal_info: false # true면 헌터 배정 금지
-  created_at: 2026-03-17
-  deadline: null
-  depends_on: []
-  ```
-- [ ] 에이전트별 태스크 폴링 스크립트
+- [x] SQLite 기반 태스크 큐 (`task_store.ts`) — 파일 큐 대신 SQLite로 구현
+- [x] 에이전트별 태스크 폴링 — `hunter/poll_loop.ts` (API 기반)
 
 ---
 
@@ -137,7 +123,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 ### 2-2. n8n 워크플로우 설계
 
 - [ ] 마스터 오케스트레이션 워크플로우
-- [ ] 에이전트 헬스체크 워크플로우 (5분마다)
+- [x] 에이전트 헬스체크 API — `GET /api/agents/health` (n8n 워크플로우는 세션 C)
 - [ ] 리소스 모니터링 워크플로우 (CPU/RAM/디스크)
 - [ ] AI 토큰 사용량 추적 워크플로우
 
@@ -200,8 +186,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 3-3. 모드 전환 자동화
 
-- [ ] n8n 크론 트리거: 23:00 → SLEEP, 07:30 → AWAKE
-- [ ] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프
+- [x] 모드 전환 API (`POST /api/mode`) — n8n 크론 연동은 세션 C
+- [x] ModeManager — SLEEP 시 위험 액션 자동 차단 (`mode_manager.ts`)
 
 ---
 
@@ -375,14 +361,14 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 7-1. 로깅 & 감사
 
-- [ ] 모든 에이전트 활동 로그: `logs/{agent}/{date}.log`
-- [ ] 승인 이력: `logs/approvals/{date}.json`
+- [x] 구조화된 활동 로그 — SQLite `activity_logger.ts` (에이전트/날짜별 조회)
+- [x] 승인 이력 — SQLite `approval_history` 테이블 (`activity_logger.ts`)
 - [ ] Slack 채널별 자동 로그 전송
 
 ### 7-2. 리소스 모니터링
 
-- [ ] **디바이스 리소스**: CPU/RAM/디스크 사용량 추적
-  - 리소스 부족 시 → Telegram 알림 + 구매 제안
+- [x] 디바이스 리소스 모니터링 — `resource_monitor.ts` (CPU/RAM/디스크, 임계값 알림)
+  - [ ] 리소스 부족 시 → Telegram 알림 + 구매 제안
 - [ ] **AI 토큰 사용량**: 구독별 사용량 대비 잔여량 추적
   - 토큰을 최대한 활용하도록 태스크 배분 최적화
   - 사용량 부족 시 → 추가 태스크 자동 배정
@@ -390,9 +376,9 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 7-3. 장애 대응
 
-- [ ] 에이전트 크래시 → 자동 재시작 (3회까지)
+- [x] 크래시 감지 — `output_watcher.ts` crash detection + `POST /api/agents/:name/crash`
 - [ ] 3회 실패 → 인간 알림 + 해당 에이전트 격리
-- [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
+- [x] 네트워크 단절 → `local_queue.ts` (SQLite, 자동 재시도 + flush)
 
 ### 7-4. 보안
 

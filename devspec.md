@@ -73,6 +73,7 @@
 - **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
 - **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
 - **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
+- **mode_manager.ts**: SLEEP/AWAKE 모드 상태 머신 (`is_action_allowed()`로 SLEEP 시 위험 액션 자동 차단)
 
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
@@ -96,7 +97,10 @@
 - 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림, 크래시 감지)
+- **activity_logger.ts**: 구조화된 활동 로그 + 승인 이력 (SQLite, 에이전트/날짜별 조회)
+- **resource_monitor.ts**: macOS 시스템 리소스 모니터링 (CPU/RAM/디스크, 임계값 초과 알림)
+- **local_queue.ts**: 네트워크 단절 시 요청 큐잉 (SQLite, 자동 재시도 + flush)
 
 ## API 엔드포인트
 
@@ -111,6 +115,12 @@
 | GET | `/api/hunter/tasks/pending` | 헌터 전용 (PII 제거됨, 인증+속도제한) |
 | POST | `/api/hunter/tasks/:id/result` | 헌터 결과 제출 (스키마 검증+PII 격리) |
 | POST | `/api/hunter/heartbeat` | 헌터 생존 신호 (인증+속도제한) |
+| POST | `/api/agents/:name/heartbeat` | 에이전트 하트비트 (범용) |
+| GET | `/api/agents/health` | 전체 에이전트 상태 |
+| POST | `/api/agents/:name/crash` | 에이전트 크래시 보고 |
+| GET | `/api/mode` | 현재 SLEEP/AWAKE 모드 |
+| POST | `/api/mode` | 모드 전환 |
+| POST | `/api/approval/request` | 교차 승인 요청 (LOW→자동, MID→Gemini, HIGH→인간) |
 | GET | `/api/health` | 시스템 상태 |
 | GET | `/api/stats` | 태스크 통계 |
 
