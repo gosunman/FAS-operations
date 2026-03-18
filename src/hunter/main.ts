@@ -15,6 +15,7 @@
 //   DEEP_RESEARCH_TIMEOUT_MS — Gemini Deep Research timeout (default: 300000)
 //   NOTEBOOKLM_TIMEOUT_MS    — NotebookLM timeout (default: 180000)
 
+import 'dotenv/config';
 import { load_hunter_config } from './config.js';
 import { create_api_client } from './api_client.js';
 import { create_browser_manager } from './browser.js';
