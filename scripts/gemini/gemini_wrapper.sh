@@ -6,7 +6,7 @@
 #   - Restarts up to MAX_RETRIES times on crash
 #   - Exponential backoff between retries
 #   - Logs crash events
-#   - Escalates to [BLOCKED] after max retries
+#   - Escalates to [GEMINI_BLOCKED] after max retries (detected by output_watcher)
 
 set -euo pipefail
 
@@ -70,8 +70,8 @@ while true; do
 
   # Check max retries
   if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-    echo "[BLOCKED] Gemini '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
-    echo "$TIMESTAMP [BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
+    echo "[GEMINI_BLOCKED] Gemini '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
+    echo "$TIMESTAMP [GEMINI_BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
 
     echo "[Wrapper] Waiting 300 seconds before final retry..."
     sleep 300
