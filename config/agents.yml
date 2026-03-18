@@ -81,7 +81,7 @@ agents:
       escalate_after: 3
 
   openclaw:
-    display_name: "OpenClaw (ChatGPT Pro) — Hunter Engine"
+    display_name: "OpenClaw (ChatGPT) — Hunter Engine"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (main browser engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
@@ -89,6 +89,7 @@ agents:
     tmux_session: fas-openclaw
     execution_mode: oneshot
     communication: task_api           # task_api (직접 제어 아님)
+    # Plan tier: Stage 1 → Plus ($20), Stage 3 → Pro ($200)
     capabilities:
       - autonomous_browsing
       - web_automation
@@ -111,10 +112,11 @@ agents:
       escalate_after: 3
 
   claude_hunter:
-    display_name: "Claude Code (Max x20) — Hunter"
+    display_name: "Claude Code — Hunter"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (coding/high-intelligence engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
+    # Plan tier: Stage 1 → Pro ($20), Stage 3 → Max x20 ($200)
     autonomy: high
     tmux_session: fas-claude-hunter
     execution_mode: interactive

@@ -89,20 +89,20 @@
 
 ### 헌터 (Mac Studio #1, M1 Ultra / 32GB)
 
-주인님의 눈 👁️. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
+주인님의 눈 👁️. 브라우저 자동화 + AI 에이전트 전용. **개인정보 접근 불가.**
 주인님과 Telegram/Slack을 통해 직접 소통 가능 (크리티컬 이슈 보고, 막연한 업무 수신).
 상세 정의: [docs/agents-charter.md](agents-charter.md)
 
-| 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
-| --- | --- | --- | --- |
-| macOS 시스템 | — | ~5GB | — |
-| OpenClaw | ChatGPT Pro 브라우저 | ~2GB | `fas-openclaw` |
-| Claude Code Max x20 | OAuth CLI (계정 B) | ~500MB | `fas-claude-hunter` |
-| 브라우저 (NotebookLM/Deep Research) | Chrome | ~2GB | OpenClaw 내 |
-| Agent Wrapper | Node.js | ~200MB | `fas-wrapper` |
-| Watchdog | Node.js | ~200MB | `fas-watchdog` |
-| **합계** | | **~9.9GB** | |
-| **여유** | | **~22.1GB** | |
+> AI 플랜은 단계적으로 확장한다. 상세: [PLAN.md "AI 플랜 확장 로드맵"](../PLAN.md)
+
+| 서비스 | 실행 방식 | Stage 1 (검증) | Stage 3 (풀 스케일) | tmux 세션 |
+| --- | --- | --- | --- | --- |
+| macOS 시스템 | — | ~5GB | ~5GB | — |
+| ChatGPT | 브라우저 자동화 | Plus (~$20) | Pro ($200) | `fas-openclaw` |
+| Claude Code | OAuth CLI (계정 B) | Pro ($20) | Max x20 ($200) | `fas-claude-hunter` |
+| 브라우저 (NotebookLM/Deep Research) | Playwright Chrome | ~2GB | ~2GB | 핸들러 내 |
+| Agent Wrapper | Node.js | ~200MB | ~200MB | `fas-wrapper` |
+| Watchdog | Node.js | ~200MB | ~200MB | `fas-watchdog` |
 
 ### MacBook Pro (M1 Pro / 32GB) — owner 전용
 

@@ -24,7 +24,7 @@
 | iCloud | 주인님 계정 | 별도 계정 | X |
 | Google | 주인님 계정 | 별도 계정 | X |
 | ChatGPT | — | 별도 계정 (Pro) | X |
-| Claude Code | 주인님 OAuth (계정 A) | 계정 B (Max x20) | X (별도 계정) |
+| Claude Code | 주인님 OAuth (계정 A, Max) | 계정 B (Stage 1: Pro → Stage 3: Max x20) | X (별도 계정) |
 | Tailscale | 같은 네트워크 | 같은 네트워크 | O (VPN만 공유) |
 | 파일시스템 | 직접 접근 불가 | 직접 접근 불가 | X |
 | 통신 | Task API 서버 | Task API 클라이언트 | API만 |
