@@ -370,588 +370,6 @@ agents:
 
 ---
 
-## 파일: [OPS] config/n8n/health_check.json
-
-{
-  "name": "FAS Health Check",
-  "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
-        }
-      },
-      "id": "schedule-trigger",
-      "name": "Every 5 Minutes",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/health",
-        "options": {
-          "timeout": 10000
-        }
-      },
-      "id": "http-health",
-      "name": "Check Gateway Health",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [460, 300],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "string": [
-            {
-              "value1": "={{ $json.status }}",
-              "operation": "equals",
-              "value2": "ok"
-            }
-          ]
-        }
-      },
-      "id": "if-healthy",
-      "name": "Is Healthy?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Track consecutive failures in static data\nconst staticData = $getWorkflowStaticData('global');\nstaticData.failCount = (staticData.failCount || 0) + 1;\nstaticData.lastFailure = new Date().toISOString();\n\nconst failCount = staticData.failCount;\nconst isCritical = failCount >= 3;\n\nreturn [{\n  json: {\n    failCount,\n    isCritical,\n    lastFailure: staticData.lastFailure,\n    message: isCritical\n      ? `🔴 CRITICAL: Gateway health check failed ${failCount} times in a row!`\n      : `⚠️ Gateway health check failed (attempt ${failCount}/3)`\n  }\n}];"
-      },
-      "id": "track-failures",
-      "name": "Track Failures",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [900, 400]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Reset failure counter on success\nconst staticData = $getWorkflowStaticData('global');\nstaticData.failCount = 0;\nreturn [{ json: { status: 'healthy', resetAt: new Date().toISOString() } }];"
-      },
-      "id": "reset-counter",
-      "name": "Reset Counter",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [900, 200]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.isCritical }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "if-critical",
-      "name": "Is Critical?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1120, 400]
-    },
-    {
-      "parameters": {
-        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
-            { "name": "text", "value": "={{ $json.message }}" },
-            { "name": "parse_mode", "value": "Markdown" }
-          ]
-        }
-      },
-      "id": "telegram-alert",
-      "name": "Telegram Alert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1340, 350]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "text", "value": "={{ $json.message }}" }
-          ]
-        }
-      },
-      "id": "slack-warn",
-      "name": "Slack Warning",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1340, 500]
-    }
-  ],
-  "connections": {
-    "Every 5 Minutes": { "main": [[{ "node": "Check Gateway Health", "type": "main", "index": 0 }]] },
-    "Check Gateway Health": { "main": [[{ "node": "Is Healthy?", "type": "main", "index": 0 }]] },
-    "Is Healthy?": {
-      "main": [
-        [{ "node": "Reset Counter", "type": "main", "index": 0 }],
-        [{ "node": "Track Failures", "type": "main", "index": 0 }]
-      ]
-    },
-    "Track Failures": { "main": [[{ "node": "Is Critical?", "type": "main", "index": 0 }]] },
-    "Is Critical?": {
-      "main": [
-        [{ "node": "Telegram Alert", "type": "main", "index": 0 }],
-        [{ "node": "Slack Warning", "type": "main", "index": 0 }]
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
-  "tags": [{ "name": "fas-monitoring" }]
-}
-
----
-
-## 파일: [OPS] config/n8n/master_orchestration.json
-
-{
-  "name": "FAS Master Orchestration",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "new-task",
-        "responseMode": "responseNode"
-      },
-      "id": "webhook-trigger",
-      "name": "Webhook: New Task",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Validate incoming task and determine agent assignment\nconst body = $input.first().json.body || $input.first().json;\n\nconst title = body.title;\nconst description = body.description || '';\nconst risk_level = body.risk_level || 'low';\nconst requires_personal_info = body.requires_personal_info || false;\nconst priority = body.priority || 'medium';\n\n// Agent assignment logic:\n// - requires_personal_info=true → captain only (never hunter)\n// - risk_level=high/critical → captain\n// - Otherwise → hunter can handle\nlet assigned_to = 'hunter';\nif (requires_personal_info || risk_level === 'high' || risk_level === 'critical') {\n  assigned_to = 'captain';\n}\n\nreturn [{\n  json: {\n    title,\n    description,\n    risk_level,\n    requires_personal_info,\n    priority,\n    assigned_to,\n    mode: 'awake',\n    status: 'pending'\n  }\n}];"
-      },
-      "id": "validate-assign",
-      "name": "Validate & Assign Agent",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [460, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/tasks",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "title", "value": "={{ $json.title }}" },
-            { "name": "description", "value": "={{ $json.description }}" },
-            { "name": "priority", "value": "={{ $json.priority }}" },
-            { "name": "assigned_to", "value": "={{ $json.assigned_to }}" },
-            { "name": "risk_level", "value": "={{ $json.risk_level }}" },
-            { "name": "requires_personal_info", "value": "={{ $json.requires_personal_info }}" },
-            { "name": "mode", "value": "={{ $json.mode }}" }
-          ]
-        },
-        "options": {
-          "timeout": 10000
-        }
-      },
-      "id": "create-task",
-      "name": "Create Task via Gateway",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [680, 300],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "number": [
-            {
-              "value1": "={{ $json.statusCode || 200 }}",
-              "operation": "smallerEqual",
-              "value2": 299
-            }
-          ]
-        }
-      },
-      "id": "if-created",
-      "name": "Task Created?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [900, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            {
-              "name": "text",
-              "value": "=✅ Task created: *{{ $node['Validate & Assign Agent'].json.title }}*\nAssigned to: {{ $node['Validate & Assign Agent'].json.assigned_to }}\nRisk: {{ $node['Validate & Assign Agent'].json.risk_level }}"
-            }
-          ]
-        }
-      },
-      "id": "slack-success",
-      "name": "Slack: Task Created",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 200]
-    },
-    {
-      "parameters": {
-        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
-            {
-              "name": "text",
-              "value": "=❌ Task creation failed: {{ $node['Validate & Assign Agent'].json.title }}\nError: {{ $json.error || 'Unknown error' }}"
-            }
-          ]
-        }
-      },
-      "id": "telegram-fail",
-      "name": "Telegram: Task Failed",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 400]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, task: $node['Create Task via Gateway'].json }) }}"
-      },
-      "id": "respond-success",
-      "name": "Respond Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1340, 200]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: false, error: 'Task creation failed' }) }}",
-        "options": {
-          "responseCode": 500
-        }
-      },
-      "id": "respond-fail",
-      "name": "Respond Failure",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1340, 400]
-    }
-  ],
-  "connections": {
-    "Webhook: New Task": { "main": [[{ "node": "Validate & Assign Agent", "type": "main", "index": 0 }]] },
-    "Validate & Assign Agent": { "main": [[{ "node": "Create Task via Gateway", "type": "main", "index": 0 }]] },
-    "Create Task via Gateway": { "main": [[{ "node": "Task Created?", "type": "main", "index": 0 }]] },
-    "Task Created?": {
-      "main": [
-        [{ "node": "Slack: Task Created", "type": "main", "index": 0 }],
-        [{ "node": "Telegram: Task Failed", "type": "main", "index": 0 }]
-      ]
-    },
-    "Slack: Task Created": { "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]] },
-    "Telegram: Task Failed": { "main": [[{ "node": "Respond Failure", "type": "main", "index": 0 }]] }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
-  "tags": [{ "name": "fas-core" }]
-}
-
----
-
-## 파일: [OPS] config/n8n/README.md
-
-# n8n Workflow Configuration
-
-FAS n8n 워크플로우 JSON 백업 디렉토리.
-
-## Workflows
-
-| File | Purpose | Trigger |
-|------|---------|---------|
-| `master_orchestration.json` | Task 생성 → 에이전트 배정 → 알림 | Webhook (POST /webhook/new-task) |
-| `health_check.json` | Gateway + Hunter 헬스체크 | 5분마다 |
-| `resource_monitor.json` | CPU/RAM/Disk 모니터링 | 10분마다 |
-| `token_usage_tracker.json` | Claude/Gemini 토큰 사용량 추적 | 1시간마다 |
-
-## Import 방법
-
-1. n8n UI 접속: `http://localhost:5678`
-2. 좌측 메뉴 → Workflows → Import from File
-3. JSON 파일 선택
-4. 환경변수 설정 (Settings → Environment Variables):
-   - `GATEWAY_URL`: Gateway API URL (default: `http://host.docker.internal:3100`)
-   - `TELEGRAM_BOT_TOKEN`: Telegram Bot API token
-   - `TELEGRAM_CHAT_ID`: Telegram chat ID
-   - `SLACK_WEBHOOK_URL`: Slack incoming webhook URL
-
-## 환경변수
-
-docker-compose.yml에서 주입되는 변수:
-
-GATEWAY_URL=http://host.docker.internal:3100
-TELEGRAM_BOT_TOKEN=<bot-token>
-TELEGRAM_CHAT_ID=<chat-id>
-SLACK_WEBHOOK_URL=<webhook-url>
-CLAUDE_DAILY_LIMIT=1000
-GEMINI_DAILY_LIMIT=500
-
----
-
-## 파일: [OPS] config/n8n/resource_monitor.json
-
-{
-  "name": "FAS Resource Monitor",
-  "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [{ "field": "minutes", "minutesInterval": 10 }]
-        }
-      },
-      "id": "schedule-trigger",
-      "name": "Every 10 Minutes",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "command": "echo '{' && echo '\"cpu_idle\": '$(top -l 1 | grep 'CPU usage' | awk '{print $7}' | tr -d '%')',' && echo '\"disk_usage_pct\": '$(df -h / | tail -1 | awk '{print $5}' | tr -d '%')',' && echo '\"memory_pressure\": \"'$(memory_pressure | head -1 | awk '{print $NF}')'\",'\n&& echo '\"timestamp\": \"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"' && echo '}'"
-      },
-      "id": "exec-stats",
-      "name": "Collect System Stats",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [460, 300],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "functionCode": "// Parse system stats and check thresholds\nconst raw = $input.first().json.stdout || '{}';\nlet stats;\ntry {\n  stats = JSON.parse(raw);\n} catch {\n  stats = { cpu_idle: 100, disk_usage_pct: 0, memory_pressure: 'normal', timestamp: new Date().toISOString() };\n}\n\nconst cpu_usage = 100 - (parseFloat(stats.cpu_idle) || 0);\nconst disk_pct = parseInt(stats.disk_usage_pct) || 0;\nconst mem_pressure = stats.memory_pressure || 'normal';\n\nconst alerts = [];\nif (cpu_usage > 80) alerts.push(`CPU: ${cpu_usage.toFixed(1)}%`);\nif (disk_pct > 90) alerts.push(`Disk: ${disk_pct}%`);\nif (mem_pressure !== 'normal' && mem_pressure !== 'The system has normal memory') alerts.push(`Memory: ${mem_pressure}`);\n\nconst has_alert = alerts.length > 0;\n\nreturn [{\n  json: {\n    cpu_usage: cpu_usage.toFixed(1),\n    disk_pct,\n    memory_pressure: mem_pressure,\n    timestamp: stats.timestamp,\n    has_alert,\n    alert_message: has_alert ? `⚠️ FAS Resource Alert:\\n${alerts.join('\\n')}` : 'All resources normal'\n  }\n}];"
-      },
-      "id": "analyze-stats",
-      "name": "Analyze Stats",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.has_alert }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "if-alert",
-      "name": "Has Alert?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [900, 300]
-    },
-    {
-      "parameters": {
-        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
-            { "name": "text", "value": "={{ $json.alert_message }}" }
-          ]
-        }
-      },
-      "id": "telegram-alert",
-      "name": "Telegram Alert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 250]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "text", "value": "={{ $json.alert_message }}" }
-          ]
-        }
-      },
-      "id": "slack-alert",
-      "name": "Slack Alert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 400]
-    },
-    {
-      "parameters": {
-        "command": "=mkdir -p /data/reports/resource && echo '{{ JSON.stringify($json) }}' >> /data/reports/resource/$(date +%Y-%m-%d).jsonl"
-      },
-      "id": "log-stats",
-      "name": "Log to File",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [1120, 550]
-    }
-  ],
-  "connections": {
-    "Every 10 Minutes": { "main": [[{ "node": "Collect System Stats", "type": "main", "index": 0 }]] },
-    "Collect System Stats": { "main": [[{ "node": "Analyze Stats", "type": "main", "index": 0 }]] },
-    "Analyze Stats": { "main": [[{ "node": "Has Alert?", "type": "main", "index": 0 }, { "node": "Log to File", "type": "main", "index": 0 }]] },
-    "Has Alert?": {
-      "main": [
-        [{ "node": "Telegram Alert", "type": "main", "index": 0 }, { "node": "Slack Alert", "type": "main", "index": 0 }],
-        []
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
-  "tags": [{ "name": "fas-monitoring" }]
-}
-
----
-
-## 파일: [OPS] config/n8n/token_usage_tracker.json
-
-{
-  "name": "FAS Token Usage Tracker",
-  "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [{ "field": "hours", "hoursInterval": 1 }]
-        }
-      },
-      "id": "schedule-trigger",
-      "name": "Every Hour",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "command": "# Parse Claude Code usage from log files\nCLAUDE_LOG=\"$HOME/FAS-operations/logs/claude-usage.log\"\nGEMINI_LOG=\"$HOME/FAS-operations/logs/gemini-usage.log\"\n\n# Count today's entries\nTODAY=$(date +%Y-%m-%d)\nCLAUDE_COUNT=$(grep -c \"$TODAY\" \"$CLAUDE_LOG\" 2>/dev/null || echo 0)\nGEMINI_COUNT=$(grep -c \"$TODAY\" \"$GEMINI_LOG\" 2>/dev/null || echo 0)\n\necho \"{\\\"date\\\": \\\"$TODAY\\\", \\\"claude_requests\\\": $CLAUDE_COUNT, \\\"gemini_requests\\\": $GEMINI_COUNT, \\\"timestamp\\\": \\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"}\""
-      },
-      "id": "collect-usage",
-      "name": "Collect Token Usage",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [460, 300],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "functionCode": "// Parse usage data and check thresholds\nconst raw = $input.first().json.stdout || '{}';\nlet usage;\ntry {\n  usage = JSON.parse(raw);\n} catch {\n  usage = { date: new Date().toISOString().slice(0, 10), claude_requests: 0, gemini_requests: 0 };\n}\n\n// Daily limits (configurable via env)\nconst CLAUDE_DAILY_LIMIT = parseInt($env.CLAUDE_DAILY_LIMIT || '1000');\nconst GEMINI_DAILY_LIMIT = parseInt($env.GEMINI_DAILY_LIMIT || '500');\n\nconst claude_pct = (usage.claude_requests / CLAUDE_DAILY_LIMIT) * 100;\nconst gemini_pct = (usage.gemini_requests / GEMINI_DAILY_LIMIT) * 100;\n\nconst alerts = [];\nif (claude_pct > 80) alerts.push(`Claude: ${usage.claude_requests}/${CLAUDE_DAILY_LIMIT} (${claude_pct.toFixed(0)}%)`);\nif (gemini_pct > 80) alerts.push(`Gemini: ${usage.gemini_requests}/${GEMINI_DAILY_LIMIT} (${gemini_pct.toFixed(0)}%)`);\n\nreturn [{\n  json: {\n    ...usage,\n    claude_pct: claude_pct.toFixed(1),\n    gemini_pct: gemini_pct.toFixed(1),\n    has_warning: alerts.length > 0,\n    warning_message: alerts.length > 0 ? `⚠️ Token Usage Warning:\\n${alerts.join('\\n')}` : ''\n  }\n}];"
-      },
-      "id": "analyze-usage",
-      "name": "Analyze Usage",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "command": "=mkdir -p /data/reports/token_usage && echo '{{ JSON.stringify($json) }}' >> /data/reports/token_usage/$(date +%Y-%m-%d).jsonl"
-      },
-      "id": "log-usage",
-      "name": "Log Usage",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [900, 200]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.has_warning }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "if-warning",
-      "name": "Over Threshold?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [900, 400]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "text", "value": "={{ $json.warning_message }}" }
-          ]
-        }
-      },
-      "id": "slack-warn",
-      "name": "Slack Warning",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 350]
-    },
-    {
-      "parameters": {
-        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "method": "POST",
-        "bodyParametersUi": {
-          "parameter": [
-            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
-            { "name": "text", "value": "={{ $json.warning_message }}" }
-          ]
-        }
-      },
-      "id": "telegram-warn",
-      "name": "Telegram Warning",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1120, 500]
-    }
-  ],
-  "connections": {
-    "Every Hour": { "main": [[{ "node": "Collect Token Usage", "type": "main", "index": 0 }]] },
-    "Collect Token Usage": { "main": [[{ "node": "Analyze Usage", "type": "main", "index": 0 }]] },
-    "Analyze Usage": { "main": [[{ "node": "Log Usage", "type": "main", "index": 0 }, { "node": "Over Threshold?", "type": "main", "index": 0 }]] },
-    "Over Threshold?": {
-      "main": [
-        [{ "node": "Slack Warning", "type": "main", "index": 0 }, { "node": "Telegram Warning", "type": "main", "index": 0 }],
-        []
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Seoul"
-  },
-  "tags": [{ "name": "fas-monitoring" }]
-}
-
----
-
 ## 파일: [OPS] config/risk_rules.yml
 
 rules:
@@ -1227,7 +645,6 @@ set -g @resurrect-strategy-nvim 'session'
 | `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
 | `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
 | `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
-| `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false) |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
 | `N8N_USER` | N | n8n 관리자 ID |
@@ -1253,14 +670,6 @@ set -g @resurrect-strategy-nvim 'session'
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
 - **main.ts**: 진입점 (`pnpm run hunter`)
-
-### Captain (`src/captain/`)
-- **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지.
-- **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
-
-### Cross-Approval (`src/gateway/cross_approval.ts`)
-- Gemini CLI 교차 승인 모듈. MID 리스크 액션에 대해 Gemini CLI spawn → JSON 파싱 → 승인/거부 결정.
-- 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
 - **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
@@ -1347,13 +756,6 @@ services:
       - N8N_LOG_LEVEL=info
       - N8N_DIAGNOSTICS_ENABLED=false
       - WEBHOOK_URL=http://localhost:5678/
-      # FAS integration environment variables
-      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:3100}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
-      - CLAUDE_DAILY_LIMIT=${CLAUDE_DAILY_LIMIT:-1000}
-      - GEMINI_DAILY_LIMIT=${GEMINI_DAILY_LIMIT:-500}
     volumes:
       - n8n_data:/home/node/.n8n
       # Mount project directories for task file access
@@ -2397,45 +1799,6 @@ Both Captain and Hunter emit these patterns. The Watchdog on each machine captur
   헌터 → 인터넷 (ChatGPT, Google, 크롤링)
   캡틴 ↔ 헌터: Task API만 (Tailscale 내부)
 
-## 교차 승인 플로우 (Cross-Approval)
-
-캡틴 Claude Code
-  │
-  ├── MID 리스크 액션 (git commit, 파일 쓰기 등)
-  │     │
-  │     ▼
-  │   cross_approval.ts
-  │     │
-  │     ├── Gemini CLI 프로세스 spawn
-  │     │     └── "이 액션을 승인하시겠습니까?" (JSON 응답)
-  │     │
-  │     ├── 승인 → 액션 실행
-  │     ├── 거부 → 액션 차단 + 로그
-  │     └── 타임아웃(10분) / 파싱 실패 → 자동 거부 (secure by default)
-  │
-  ├── HIGH 리스크 액션 (git push, 배포, 외부 API)
-  │     └── Telegram → 인간 승인 (기존 approval_high 플로우)
-  │
-  └── LOW 리스크 액션 (파일 읽기, 검색)
-        └── 자동 실행, 로그만 기록
-
-## 자율 활동 엔진 (Planning Loop)
-
-07:30 Morning
-  │
-  ├── planning_loop.run_morning()
-  │     ├── config/schedules.yml 읽기
-  │     ├── 오늘 due인 태스크 산출 (daily / every_3_days / weekly)
-  │     ├── 중복 검사 (이미 pending/in_progress/최근 완료)
-  │     ├── TaskStore에 태스크 주입
-  │     └── [Morning Briefing] 알림 전송 (Telegram + Slack)
-  │
-23:00 Night
-  │
-  └── planning_loop.run_night()
-        ├── 일일 통계 집계 (done / blocked / pending)
-        └── [Night Summary] 알림 전송
-
 ## 디렉토리 구조
 
 FAS-operations/
@@ -2464,8 +1827,7 @@ FAS-operations/
 │   └── cost.md                    # 비용 관리
 │
 ├── src/
-│   ├── gateway/                   # 승인 게이트웨이 + Task API + 교차 승인
-│   ├── captain/                   # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
+│   ├── gateway/                   # 승인 게이트웨이 + Task API
 │   ├── agents/                    # 에이전트 래퍼
 │   ├── orchestrator/              # n8n 커스텀 노드 & 워크플로우
 │   ├── notification/              # 알림 (Telegram + Slack + Notion)
@@ -3273,97 +2635,6 @@ patterns:
 
 ---
 
-## 파일: [OPS] docs/gemini-setup.md
-
-# Gemini CLI Setup Guide
-
-FAS에서 Gemini CLI를 상시 실행하기 위한 설정 가이드.
-
-## 개요
-
-캡틴(Mac Studio #2)에서 Gemini CLI 2개 세션을 상시 운영한다:
-- **Account A** (`fas-gemini-a`): 리서치 전용 — 웹 검색, 트렌드 분석
-- **Account B** (`fas-gemini-b`): 교차 검증 전용 — 팩트체킹, AI 산출물 리뷰
-
-## 사전 요구사항
-
-- Gemini CLI v0.33.2+ 설치
-- Google 계정 2개 인증 완료
-- tmux 설치
-
-## 계정 인증
-
-### Account A (기본)
-gemini auth login
-
-### Account B (별도 config 디렉토리)
-GEMINI_CONFIG_DIR=$HOME/.gemini-b gemini auth login
-
-## 세션 시작
-
-### 전체 시작
-./scripts/gemini/start_gemini_sessions.sh all
-
-### 개별 시작
-./scripts/gemini/start_gemini_sessions.sh a   # Account A만
-./scripts/gemini/start_gemini_sessions.sh b   # Account B만
-
-## 세션 관리
-
-### 상태 확인
-tmux list-sessions | grep gemini
-
-### 세션 접속
-tmux attach -t fas-gemini-a
-tmux attach -t fas-gemini-b
-
-### 세션 종료
-tmux kill-session -t fas-gemini-a
-tmux kill-session -t fas-gemini-b
-
-## TypeScript Wrapper
-
-`src/gemini/cli_wrapper.ts`를 통해 프로그래밍 방식으로 Gemini CLI를 호출할 수 있다:
-
-import { spawn_gemini } from './src/gemini/index.js';
-
-const response = await spawn_gemini(
-  { account: 'a', timeout_ms: 60_000 },
-  'Search for latest TypeScript 5.x features'
-);
-
-if (response.success) {
-  console.log(response.content);
-}
-
-## 자동 재시작
-
-`gemini_wrapper.sh`가 크래시 시 자동 재시작한다:
-- 최대 3회 재시도 (지수 백오프)
-- 60초 이상 실행 후 크래시 → 재시도 카운터 리셋
-- 3회 초과 → `[BLOCKED]` 패턴 출력 → Watchdog가 Telegram 알림
-
-## 로그
-
-- 실행 로그: `logs/gemini-{a|b}.log`
-- 크래시 로그: `logs/crashes_gemini-{a|b}.log`
-
-## 트러블슈팅
-
-### "Command not found"
-which gemini  # PATH 확인
-npm install -g @anthropic-ai/gemini-cli  # 재설치
-
-### Account B 인증 실패
-GEMINI_CONFIG_DIR=$HOME/.gemini-b gemini auth status
-GEMINI_CONFIG_DIR=$HOME/.gemini-b gemini auth login  # 재인증
-
-### tmux 세션이 즉시 종료됨
-크래시 로그 확인:
-tail -20 logs/crashes_gemini-a.log
-
----
-
 ## 파일: [OPS] docs/hunter-protocol.md
 
 # 헌터 격리 & 통신 프로토콜
@@ -3866,78 +3137,274 @@ log_rotation:
 
 ## 파일: [OPS] docs/n8n-workflows.md
 
-# n8n Workflows Documentation
-
-FAS 오케스트레이션을 위한 n8n 워크플로우 설계 문서.
+# n8n 워크플로우 상세
 
 ## 개요
 
-n8n은 FAS의 **오케스트레이션 엔진**으로, 다음을 담당한다:
-- Task 생성 및 에이전트 배정
-- 시스템 헬스체크 및 장애 감지
-- 리소스 모니터링
-- AI 토큰 사용량 추적
+n8n은 캡틴에서 Colima(Docker)로 실행. 태스크 생성, 스케줄링, 모드 관리, 알림 라우팅의 **중앙 허브**.
+
+n8n은 에이전트를 직접 제어하지 않는다. 대신:
+1. 태스크 파일을 `tasks/pending/`에 생성
+2. Agent Wrapper가 태스크를 폴링하여 실행
+3. 완료 시 `tasks/done/`에 결과 저장
+4. n8n이 `done/` 디렉토리를 감시하여 후속 처리
+
+## docker-compose.yml
+
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"     # Tailscale 내부에서만 접근
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - GENERIC_TIMEZONE=Asia/Seoul
+      - TZ=Asia/Seoul
+      - N8N_LOG_LEVEL=info
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # 프로젝트 디렉토리 마운트 (태스크 파일 접근용)
+      - ${PROJECT_DIR}/tasks:/data/tasks
+      - ${PROJECT_DIR}/state:/data/state
+      - ${PROJECT_DIR}/reports:/data/reports
+      - ${PROJECT_DIR}/config:/data/config:ro
+
+volumes:
+  n8n_data:
+    driver: local
 
 ## 워크플로우 목록
 
-### 1. Master Orchestration (`master_orchestration.json`)
+### WF-1: 마스터 스케줄러
 
-**역할**: Task 생성 요청을 받아 적절한 에이전트에 배정하고 결과를 추적한다.
+태스크를 주기적으로 생성하는 메인 워크플로우.
 
-**트리거**: Webhook (POST `/webhook/new-task`)
+트리거: 매 5분 크론
+  │
+  ├─→ [Read] config/schedules.yml
+  │
+  ├─→ [Code] 현재 시간 기준 실행할 스케줄 계산
+  │   - 각 스케줄의 next_run과 현재 시간 비교
+  │   - SLEEP/AWAKE 모드 확인
+  │   - 실행 대상 스케줄 목록 생성
+  │
+  ├─→ [Loop] 각 스케줄에 대해:
+  │   ├─→ [Code] 태스크 YAML 생성
+  │   ├─→ [Write File] tasks/pending/{task_id}.yml
+  │   └─→ [Code] 다음 실행 시간 계산 & schedules.yml 업데이트
+  │
+  └─→ [Slack] #fas-general에 생성된 태스크 목록 알림 (있을 때만)
 
-**에이전트 배정 로직**:
-- `requires_personal_info=true` → Captain (헌터에 개인정보 전달 금지)
-- `risk_level=high|critical` → Captain
-- 그 외 → Hunter 배정 가능
+### WF-2: 결과 수집기
 
-**사용 예시**:
-curl -X POST http://localhost:5678/webhook/new-task \
-  -H 'Content-Type: application/json' \
-  -d '{"title": "웹 크롤링", "risk_level": "low", "requires_personal_info": false}'
+완료된 태스크를 감지하여 후속 처리.
 
-### 2. Health Check (`health_check.json`)
+트리거: Watch Folder (tasks/done/, 새 파일 감지)
+  │
+  ├─→ [Read File] 완료된 태스크 YAML 읽기
+  │
+  ├─→ [Switch] 알림 채널 분기
+  │   ├─→ notification.on_complete === 'slack'
+  │   │   └─→ [Slack] 해당 채널에 결과 요약 전송
+  │   │
+  │   ├─→ notification.on_complete === 'telegram'
+  │   │   └─→ [Telegram] 긴급 알림 전송
+  │   │
+  │   └─→ notification.report_format === 'notion_page'
+  │       └─→ [HTTP] Notion API 호출 → 페이지 생성
+  │           └─→ [Slack] #reports에 Notion URL 전송
+  │
+  ├─→ [Code] 반복 태스크면 다음 실행 태스크 생성
+  │   └─→ [Write File] tasks/pending/{next_task_id}.yml
+  │
+  └─→ [Code] state/agent_status.json 업데이트 (에이전트 idle로)
 
-**역할**: Gateway와 Hunter 상태를 주기적으로 확인한다.
+### WF-3: 모드 전환
 
-**트리거**: 5분마다 (Schedule)
+트리거: 크론 (23:00 → SLEEP, 07:30 → AWAKE)
+  │
+  ├─→ [Code] state/current_mode.json 업데이트
+  │   {
+  │     "mode": "sleep",
+  │     "switched_at": "2026-03-17T23:00:00+09:00",
+  │     "next_switch": "2026-03-18T07:30:00+09:00"
+  │   }
+  │
+  ├─→ [Switch] 모드별 분기
+  │   ├─→ SLEEP 진입:
+  │   │   ├─→ [Code] AWAKE 전용 in_progress 태스크 → 일시중지 (blocked로 이동, 사유: mode_switch)
+  │   │   └─→ [Slack] #fas-general "🌙 SLEEP 모드 진입"
+  │   │
+  │   └─→ AWAKE 진입:
+  │       ├─→ [HTTP] 모닝 브리핑 생성 트리거 (WF-4)
+  │       ├─→ [Code] mode_switch로 blocked된 태스크 → pending으로 복원
+  │       └─→ [Slack] #fas-general "☀️ AWAKE 모드 진입"
+  │
+  └─→ [Telegram] 모드 전환 알림
 
-**장애 감지**: 3회 연속 실패 → Telegram 긴급 알림
+### WF-4: 모닝 브리핑
 
-### 3. Resource Monitor (`resource_monitor.json`)
+트리거: WF-3에서 AWAKE 진입 시 호출 (또는 매일 07:30)
+  │
+  ├─→ [Read] 밤새 완료된 태스크 목록 (tasks/done/ 중 오늘 날짜)
+  ├─→ [Read] 현재 blocked 태스크 목록
+  ├─→ [Read] 현재 pending 승인 목록
+  ├─→ [Read] 크롤링 결과 요약 (reports/crawl_results/)
+  │
+  ├─→ [Code] 브리핑 텍스트 생성
+  │   - 완료 건수, 차단 건수
+  │   - 주요 발견 (창업, 채용, 청약 등)
+  │   - 승인 대기 목록
+  │   - 오늘 추천 태스크
+  │
+  ├─→ [Telegram] 요약 전송 (Galaxy Watch 진동)
+  ├─→ [Slack] #fas-general 상세 전송
+  └─→ [HTTP] Notion 전체 리포트 페이지 생성
 
-**역할**: CPU/RAM/Disk 모니터링
+### WF-5: 에이전트 헬스체크
 
-**트리거**: 10분마다 (Schedule)
+트리거: 매 5분 크론
+  │
+  ├─→ [Code] state/agent_status.json 읽기
+  │   - 각 에이전트의 last_heartbeat 확인
+  │   - 5분 이상 무응답 → 경고
+  │   - 15분 이상 무응답 → 위험
+  │
+  ├─→ [HTTP] Task API /api/health 호출 (Gateway 살아있는지)
+  │
+  ├─→ [Code] 헌터 heartbeat 확인
+  │   - Task API의 last_hunter_heartbeat
+  │   - 60초 이상 없으면 → 경고
+  │
+  ├─→ [Switch] 문제 있으면
+  │   ├─→ [Execute Command] tmux 세션 확인: tmux has-session -t {session}
+  │   ├─→ 세션 없으면: [Execute Command] 재시작 스크립트 실행
+  │   └─→ 3회 실패: [Telegram] 긴급 알림
+  │
+  └─→ [Code] state/agent_status.json 업데이트
 
-**임계치**: CPU > 80%, Disk > 90%, Memory pressure != normal
+### WF-6: 리소스 모니터링
 
-### 4. Token Usage Tracker (`token_usage_tracker.json`)
+트리거: 매 30분 크론
+  │
+  ├─→ [Execute Command] 캡틴 리소스 수집
+  │   - CPU: top -l 1 | grep "CPU usage"
+  │   - RAM: vm_stat | memory pressure
+  │   - 디스크: df -h /
+  │
+  ├─→ [HTTP] 헌터 리소스 수집 (SSH 경유 또는 Task API 확장)
+  │
+  ├─→ [Code] 임계값 체크
+  │   - RAM 사용률 > 85% → 경고
+  │   - 디스크 잔여 < 10GB → 경고
+  │   - CPU 지속 > 90% (3회 연속) → 경고
+  │
+  ├─→ [Switch] 임계값 초과 시
+  │   ├─→ [Telegram] 긴급 알림 + 구매 제안
+  │   └─→ [Slack] #alerts 상세 정보
+  │
+  └─→ [Code] logs/resource/{date}.json에 기록
 
-**역할**: Claude/Gemini 토큰 사용량 추적
+### WF-7: 차단 태스크 에스컬레이션
 
-**트리거**: 1시간마다
+트리거: Watch Folder (tasks/blocked/, 새 파일 감지)
+  │
+  ├─→ [Read File] 차단된 태스크 YAML
+  │
+  ├─→ [Code] 차단 사유 분석
+  │   - approval_rejected → 인간에게 보고
+  │   - agent_error → 재시도 가능한지 확인
+  │   - mode_switch → 무시 (모드 전환 시 자동 복원)
+  │   - dependency → 선행 태스크 상태 확인
+  │
+  ├─→ [Switch] 사유별 분기
+  │   ├─→ 재시도 가능: 태스크를 pending으로 되돌리기 (retry_count 증가)
+  │   ├─→ 인간 개입 필요: [Telegram] 알림
+  │   └─→ 자동 해결 불가: [Slack] #alerts
+  │
+  └─→ [Code] 차단 로그 기록
 
-**한도**: Claude 1000/day, Gemini 500/day (환경변수로 설정)
+## schedules.yml
 
-## 환경변수
+# config/schedules.yml
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GATEWAY_URL` | Gateway API base URL | `http://host.docker.internal:3100` |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot API token | (required) |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID | (required) |
-| `SLACK_WEBHOOK_URL` | Slack incoming webhook | (required) |
-| `CLAUDE_DAILY_LIMIT` | Claude daily request limit | `1000` |
-| `GEMINI_DAILY_LIMIT` | Gemini daily request limit | `500` |
+schedules:
+  # === 정보 수집 ===
+  startup_crawl:
+    title: "창업지원사업 크롤링"
+    type: every_3_days
+    time: "02:00"
+    mode: sleep
+    template: startup_crawl
+    agent: gemini_a
 
-## Import 방법
+  housing_crawl:
+    title: "로또 청약 모니터링"
+    type: every_3_days
+    time: "02:30"
+    mode: sleep
+    template: housing_crawl
+    agent: gemini_a
 
-1. n8n UI 접속 (`http://localhost:5678`)
-2. Workflows → Import from File
-3. `config/n8n/*.json` 파일 선택
-4. Settings → Environment Variables에서 필수 변수 설정
-5. 워크플로우 활성화
+  blind_monitor:
+    title: "블라인드 네이버 인기글 감지"
+    type: daily
+    time: "03:00"
+    mode: recurring
+    template: blind_monitor
+    agent: gemini_a
+
+  ai_trends:
+    title: "AI 트렌드 리서치"
+    type: daily
+    time: "01:00"
+    mode: sleep
+    template: ai_trends
+    agent: gemini_a
+
+  job_openings:
+    title: "글로벌 빅테크 채용 체크"
+    type: every_3_days
+    time: "03:30"
+    mode: sleep
+    template: job_openings
+    agent: gemini_a
+
+  grad_school:
+    title: "대학원 일정 체크"
+    type: weekly
+    day: monday
+    time: "04:00"
+    mode: sleep
+    template: grad_school
+    agent: gemini_a
+
+  # === 시스템 ===
+  morning_briefing:
+    title: "모닝 브리핑"
+    type: daily
+    time: "07:30"
+    mode: awake
+    workflow: WF-4
+
+  mode_sleep:
+    title: "SLEEP 모드 전환"
+    type: daily
+    time: "23:00"
+    workflow: WF-3
+
+  mode_awake:
+    title: "AWAKE 모드 전환"
+    type: daily
+    time: "07:30"
+    workflow: WF-3
 
 ---
 
@@ -5606,10 +5073,7 @@ hunter/
   "license": "ISC",
   "packageManager": "pnpm@10.30.3",
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild"
-    ]
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -5624,7 +5088,6 @@ hunter/
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@notionhq/client": "^5.13.0",
     "@slack/web-api": "^7.15.0",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.3.1",
@@ -5762,13 +5225,12 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 2-1. 교차 승인 프로토콜 구현
 
-- [x] 승인 요청 표준 포맷 정의 — `CrossApprovalResult`, `CrossApprovalConfig` 타입 (`src/shared/types.ts`)
-- [x] Gemini CLI 교차 승인 모듈 — `src/gateway/cross_approval.ts`
+- [ ] 승인 요청 표준 포맷 정의
+- [ ] 승인 게이트웨이 서비스 (TypeScript)
   - `LOW` → 즉시 실행, 로그만 기록
-  - `MID` → Gemini CLI spawn → JSON 응답 파싱 → 승인/거부
+  - `MID` → 다른 AI에게 검증 요청 → 승인/거부
   - `HIGH` → Telegram으로 인간에게 전송 → 응답 대기
-  - 10분 타임아웃 / JSON 파싱 실패 → 자동 거부 (secure by default)
-- [ ] 교차 검증 로직 (n8n 워크플로우 통합):
+- [ ] 교차 검증 로직:
   - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
   - 불일치 시 → NotebookLM(헌터)에게 검증 요청
   - 최종 불일치 시 → 무조건 인간 승인
@@ -6236,8 +5698,7 @@ FAS는 두 계층으로 분리된다:
 
 FAS-operations/
 ├── src/
-│   ├── gateway/          # Task API 서버 (Express, SQLite) + 교차 승인
-│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
+│   ├── gateway/          # Task API 서버 (Express, SQLite)
 │   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬

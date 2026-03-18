@@ -2,490 +2,6 @@
 
 > 소스 코드 (테스트 제외). 생성일: 2026-03-18
 
-## 파일: [OPS] src/captain/feedback_extractor.ts
-
-// Feedback extractor for FAS Captain
-// Extracts lessons learned from completed tasks via Gemini CLI
-// Fire-and-forget: failures only log warnings, never block task completion
-
-import { spawn } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-
-// === Configuration ===
-
-export type FeedbackExtractorConfig = {
-  gemini_command?: string;    // CLI command (default: 'gemini')
-  feedback_path: string;      // Path to Doctrine feedback file (append)
-  timeout_ms?: number;        // Gemini timeout (default: 60_000 = 1 min)
-};
-
-const DEFAULT_TIMEOUT_MS = 60_000;
-const DEFAULT_GEMINI_COMMAND = 'gemini';
-
-// === Execute Gemini CLI ===
-
-const exec_gemini = (command: string, prompt: string, timeout_ms: number): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, [prompt], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeout_ms,
-    });
-
-    let stdout = '';
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Gemini CLI exited with code ${code}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-  });
-};
-
-// === Factory ===
-
-export const create_feedback_extractor = (config: FeedbackExtractorConfig) => {
-  const gemini_command = config.gemini_command ?? DEFAULT_GEMINI_COMMAND;
-  const timeout_ms = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
-
-  // Extract a one-sentence lesson from a completed task
-  const extract = async (task_title: string, output_summary: string): Promise<void> => {
-    const prompt =
-      `Task: "${task_title}"\nResult: "${output_summary}"\n\n` +
-      `이 작업에서 얻은 교훈을 한 문장으로 요약하세요. 한국어로 답변하세요.`;
-
-    try {
-      const lesson = await exec_gemini(gemini_command, prompt, timeout_ms);
-
-      if (lesson.length > 0 && lesson.length < 500) {
-        const timestamp = new Date().toISOString().split('T')[0];
-        const entry = `\n- [${timestamp}] ${task_title}: ${lesson}`;
-        appendFileSync(config.feedback_path, entry, 'utf-8');
-      } else {
-        console.warn(`[FeedbackExtractor] Unexpected response length (${lesson.length}), skipping`);
-      }
-    } catch (err) {
-      // Non-critical: log and continue
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[FeedbackExtractor] Failed to extract feedback: ${msg}`);
-    }
-  };
-
-  return { extract };
-};
-
-export type FeedbackExtractor = ReturnType<typeof create_feedback_extractor>;
-
----
-
-## 파일: [OPS] src/captain/planning_loop.ts
-
-// Captain's planning loop — morning/night autonomous scheduling
-// Reads schedules.yml, creates due tasks in store, sends briefing notifications
-
-import { readFileSync } from 'node:fs';
-import { parse as yaml_parse } from 'yaml';
-import type { TaskStore } from '../gateway/task_store.js';
-import type { NotificationRouter } from '../notification/router.js';
-
-// === Schedule types (from schedules.yml) ===
-
-type ScheduleType = 'daily' | 'every_3_days' | 'weekly';
-
-type ScheduleEntry = {
-  title: string;
-  type: ScheduleType;
-  time: string;
-  mode?: string;
-  agent?: string;
-  risk_level?: string;
-  requires_personal_info?: boolean;
-  day?: string;          // For weekly schedules (e.g., 'monday')
-  workflow?: string;     // System workflows (not task-based)
-};
-
-type SchedulesFile = {
-  schedules: Record<string, ScheduleEntry>;
-};
-
-// === Day-of-week helpers ===
-
-const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-
-const get_day_name = (date: Date): string => DAY_NAMES[date.getDay()];
-
-// === Check if a schedule is due today ===
-
-const is_due_today = (entry: ScheduleEntry, today: Date, epoch: Date): boolean => {
-  switch (entry.type) {
-    case 'daily':
-      return true;
-    case 'weekly':
-      return entry.day ? get_day_name(today) === entry.day.toLowerCase() : false;
-    case 'every_3_days': {
-      // Calculate days since epoch, check if divisible by 3
-      const diff_ms = today.getTime() - epoch.getTime();
-      const diff_days = Math.floor(diff_ms / (24 * 60 * 60 * 1000));
-      return diff_days % 3 === 0;
-    }
-    default:
-      return false;
-  }
-};
-
-// === Dependencies ===
-
-export type PlanningLoopDeps = {
-  store: TaskStore;
-  router: NotificationRouter;
-  schedules_path: string;
-  epoch?: Date;  // Reference date for every_3_days calculation (default: 2026-01-01)
-};
-
-// === Factory ===
-
-export const create_planning_loop = (deps: PlanningLoopDeps) => {
-  const epoch = deps.epoch ?? new Date('2026-01-01T00:00:00Z');
-
-  // Load and parse schedules.yml
-  const load_schedules = (): Record<string, ScheduleEntry> => {
-    const raw = readFileSync(deps.schedules_path, 'utf-8');
-    const parsed = yaml_parse(raw) as SchedulesFile;
-    return parsed.schedules ?? {};
-  };
-
-  // Check if a task with the same title was already completed recently (within 20 hours)
-  const is_recently_completed = (title: string): boolean => {
-    const done_tasks = deps.store.get_by_status('done');
-    const twenty_hours_ago = Date.now() - 20 * 60 * 60 * 1000;
-    return done_tasks.some(
-      (t) => t.title === title && t.completed_at && new Date(t.completed_at).getTime() > twenty_hours_ago,
-    );
-  };
-
-  // Check if a task with the same title is already pending or in_progress
-  const is_already_queued = (title: string): boolean => {
-    const pending = deps.store.get_by_status('pending');
-    const in_progress = deps.store.get_by_status('in_progress');
-    return [...pending, ...in_progress].some((t) => t.title === title);
-  };
-
-  // Morning planning: create due tasks from schedules.yml
-  const run_morning = async (today: Date = new Date()): Promise<{
-    created: string[];
-    skipped: string[];
-  }> => {
-    const schedules = load_schedules();
-    const created: string[] = [];
-    const skipped: string[] = [];
-
-    for (const [_key, entry] of Object.entries(schedules)) {
-      // Skip system workflows (no agent assigned)
-      if (!entry.agent) {
-        skipped.push(`${entry.title} (system workflow)`);
-        continue;
-      }
-
-      // Check if due today
-      if (!is_due_today(entry, today, epoch)) {
-        skipped.push(`${entry.title} (not due)`);
-        continue;
-      }
-
-      // Dedup: skip if already queued or recently completed
-      if (is_already_queued(entry.title)) {
-        skipped.push(`${entry.title} (already queued)`);
-        continue;
-      }
-      if (is_recently_completed(entry.title)) {
-        skipped.push(`${entry.title} (recently completed)`);
-        continue;
-      }
-
-      // Create task
-      deps.store.create({
-        title: entry.title,
-        assigned_to: entry.agent,
-        mode: (entry.mode as 'awake' | 'sleep' | 'recurring') ?? 'awake',
-        risk_level: (entry.risk_level as 'low' | 'mid' | 'high' | 'critical') ?? 'low',
-        requires_personal_info: entry.requires_personal_info ?? false,
-      });
-
-      created.push(entry.title);
-    }
-
-    // Send morning briefing
-    if (created.length > 0) {
-      const briefing_msg = `[Morning Briefing] ${created.length} tasks scheduled:\n${created.map((t) => `• ${t}`).join('\n')}`;
-      await deps.router.route({
-        type: 'briefing',
-        message: briefing_msg,
-        device: 'captain',
-      });
-    }
-
-    return { created, skipped };
-  };
-
-  // Night planning: send daily summary
-  const run_night = async (): Promise<{
-    summary: { done: number; blocked: number; pending: number };
-  }> => {
-    const stats = deps.store.get_stats();
-    const summary = {
-      done: stats.done ?? 0,
-      blocked: stats.blocked ?? 0,
-      pending: stats.pending ?? 0,
-    };
-
-    const night_msg = `[Night Summary] Done: ${summary.done}, Blocked: ${summary.blocked}, Pending: ${summary.pending}`;
-    await deps.router.route({
-      type: 'briefing',
-      message: night_msg,
-      device: 'captain',
-    });
-
-    return { summary };
-  };
-
-  return {
-    run_morning,
-    run_night,
-    // Exposed for testing
-    _is_due_today: is_due_today,
-    _load_schedules: load_schedules,
-  };
-};
-
-export type PlanningLoop = ReturnType<typeof create_planning_loop>;
-
----
-
-## 파일: [OPS] src/gateway/cross_approval.ts
-
-// Cross-approval module for FAS
-// Requests approval from Gemini CLI for MID-risk actions
-// Auto-rejects on timeout or parse failure (secure by default)
-
-import { spawn } from 'node:child_process';
-import type { CrossApprovalResult, CrossApprovalConfig } from '../shared/types.js';
-
-const DEFAULT_TIMEOUT_MS = 600_000; // 10 minutes
-const DEFAULT_GEMINI_COMMAND = 'gemini';
-
-// === Build the prompt for Gemini to evaluate an action ===
-
-const build_prompt = (action: string, context: string): string =>
-  `You are a security reviewer for the FAS (Fully Automation System).
-Evaluate the following action and respond with ONLY a JSON object (no markdown, no explanation).
-
-Action: ${action}
-Context: ${context}
-
-Respond in this exact JSON format:
-{"decision": "approved" | "rejected", "reason": "one sentence explanation"}`;
-
-// === Execute Gemini CLI and capture stdout ===
-
-const exec_gemini = (command: string, prompt: string, timeout_ms: number): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, [prompt], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeout_ms,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    proc.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Gemini CLI exited with code ${code}: ${stderr.trim()}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-  });
-};
-
-// === Parse Gemini response JSON ===
-
-const parse_response = (raw: string): { decision: 'approved' | 'rejected'; reason: string } => {
-  // Try to extract JSON from the response (Gemini may add surrounding text)
-  const json_match = raw.match(/\{[\s\S]*"decision"[\s\S]*\}/);
-  if (!json_match) {
-    throw new Error(`No JSON found in Gemini response: ${raw.slice(0, 200)}`);
-  }
-
-  const parsed = JSON.parse(json_match[0]) as Record<string, unknown>;
-
-  if (parsed.decision !== 'approved' && parsed.decision !== 'rejected') {
-    throw new Error(`Invalid decision value: ${String(parsed.decision)}`);
-  }
-
-  return {
-    decision: parsed.decision,
-    reason: typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided',
-  };
-};
-
-// === Factory: create cross-approval client ===
-
-export const create_cross_approval = (config: CrossApprovalConfig = {}) => {
-  const gemini_command = config.gemini_command ?? DEFAULT_GEMINI_COMMAND;
-  const timeout_ms = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
-  const auto_reject = config.auto_reject_on_error ?? true;
-
-  const request_approval = async (
-    action: string,
-    context: string,
-  ): Promise<CrossApprovalResult> => {
-    const prompt = build_prompt(action, context);
-
-    try {
-      const raw = await exec_gemini(gemini_command, prompt, timeout_ms);
-      const { decision, reason } = parse_response(raw);
-
-      return {
-        decision,
-        reason,
-        reviewed_by: 'gemini_a',
-        reviewed_at: new Date().toISOString(),
-      };
-    } catch (err) {
-      const error_msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[CrossApproval] Error: ${error_msg}`);
-
-      if (auto_reject) {
-        return {
-          decision: 'rejected',
-          reason: `Auto-rejected due to error: ${error_msg}`,
-          reviewed_by: 'system',
-          reviewed_at: new Date().toISOString(),
-        };
-      }
-
-      throw err;
-    }
-  };
-
-  return { request_approval };
-};
-
-export type CrossApproval = ReturnType<typeof create_cross_approval>;
-
----
-
-## 파일: [OPS] src/gateway/mode_manager.ts
-
-// SLEEP/AWAKE mode manager for FAS Gateway
-// Controls which actions are allowed based on current operating mode
-
-import type { FasMode, ModeState, ModeTransitionRequest, RiskLevel } from '../shared/types.js';
-
-// === Configuration ===
-
-export type ModeManagerConfig = {
-  sleep_start_hour: number;     // default: 23
-  sleep_end_hour: number;       // default: 7
-  sleep_end_minute: number;     // default: 30
-  initial_mode?: FasMode;
-};
-
-// Actions blocked in SLEEP mode regardless of risk level
-const SLEEP_BLOCKED_ACTIONS = new Set([
-  'git_push', 'pr_creation', 'deploy', 'external_api_call',
-  'account_action', 'financial_action', 'package_install',
-]);
-
-// === Factory ===
-
-export const create_mode_manager = (config: ModeManagerConfig) => {
-  let state: ModeState = {
-    current_mode: config.initial_mode ?? 'awake',
-    switched_at: new Date().toISOString(),
-    switched_by: 'api',
-    next_scheduled_switch: calculate_next_switch(config.initial_mode ?? 'awake', config),
-  };
-
-  const get_state = (): Readonly<ModeState> => ({ ...state });
-
-  const transition = (request: ModeTransitionRequest): {
-    success: boolean;
-    previous_mode: FasMode;
-    current_mode: FasMode;
-    reason?: string;
-  } => {
-    const previous = state.current_mode;
-    if (previous === request.target_mode) {
-      return { success: true, previous_mode: previous, current_mode: previous, reason: 'Already in target mode' };
-    }
-    state = {
-      current_mode: request.target_mode,
-      switched_at: new Date().toISOString(),
-      switched_by: request.requested_by,
-      next_scheduled_switch: calculate_next_switch(request.target_mode, config),
-    };
-    return { success: true, previous_mode: previous, current_mode: state.current_mode };
-  };
-
-  // Check if an action is allowed in current mode
-  const is_action_allowed = (action: string, risk_level: RiskLevel): boolean => {
-    if (state.current_mode === 'awake') return true;
-
-    // SLEEP mode restrictions:
-    // HIGH/CRITICAL risk always blocked
-    if (risk_level === 'high' || risk_level === 'critical') return false;
-
-    // Specific actions blocked in SLEEP mode
-    if (SLEEP_BLOCKED_ACTIONS.has(action)) return false;
-
-    return true;
-  };
-
-  return { get_state, transition, is_action_allowed };
-};
-
-// Calculate next scheduled mode switch time
-const calculate_next_switch = (current_mode: FasMode, config: ModeManagerConfig): string | null => {
-  const now = new Date();
-  const target = new Date(now);
-  if (current_mode === 'sleep') {
-    // Next switch: AWAKE at sleep_end_hour:sleep_end_minute
-    target.setHours(config.sleep_end_hour, config.sleep_end_minute, 0, 0);
-    if (target <= now) target.setDate(target.getDate() + 1);
-  } else {
-    // Next switch: SLEEP at sleep_start_hour:00
-    target.setHours(config.sleep_start_hour, 0, 0, 0);
-    if (target <= now) target.setDate(target.getDate() + 1);
-  }
-  return target.toISOString();
-};
-
-export type ModeManager = ReturnType<typeof create_mode_manager>;
-
----
-
 ## 파일: [OPS] src/gateway/rate_limiter.ts
 
 // Simple in-memory sliding window rate limiter for Hunter API
@@ -570,10 +86,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /\d{6}-?[1-4]\d{6}/g,
     replacement: '[주민번호 제거됨]',
   },
-  // Phone numbers (010-xxxx-xxxx variants, with optional spaces around hyphens)
+  // Phone numbers (010-xxxx-xxxx variants)
   {
     name: 'phone_number',
-    regex: /01[016789]\s*-?\s*\d{3,4}\s*-?\s*\d{4}/g,
+    regex: /01[016789]-?\d{3,4}-?\d{4}/g,
     replacement: '[전화번호 제거됨]',
   },
   // Email addresses
@@ -588,10 +104,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[시도]?\s+[가-힣]+[시군구]/g,
     replacement: '[주소 제거됨]',
   },
-  // Credit card numbers (4 groups of 4 digits, with optional spaces) — must be before bank_account
+  // Credit card numbers (4 groups of 4 digits) — must be before bank_account
   {
     name: 'credit_card',
-    regex: /\b\d{4}\s*[- ]\s*\d{4}\s*[- ]\s*\d{4}\s*[- ]\s*\d{4}\b/g,
+    regex: /\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b/g,
     replacement: '[카드번호 제거됨]',
   },
   // IP addresses (private/Tailscale ranges) — must be before bank_account
@@ -600,10 +116,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[0-2]\d)\.\d{1,3}\.\d{1,3})\b/g,
     replacement: '[IP 제거됨]',
   },
-  // Bank account numbers (3-4 digit groups with hyphens, with optional spaces)
+  // Bank account numbers (3-4 digit groups with hyphens)
   {
     name: 'bank_account',
-    regex: /\d{3,4}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/g,
+    regex: /\d{3,4}-\d{2,6}-\d{2,6}/g,
     replacement: '[계좌 제거됨]',
   },
   // Financial amounts with labels
@@ -658,11 +174,7 @@ export const sanitize_task = (task: Task): HunterSafeTask => ({
 // === Check if text contains PII ===
 
 export const contains_pii = (text: string): boolean => {
-  return PII_PATTERNS.some((pattern) => {
-    // Reset lastIndex for global regex to avoid stateful matching bugs
-    pattern.regex.lastIndex = 0;
-    return pattern.regex.test(text);
-  });
+  return PII_PATTERNS.some((pattern) => pattern.regex.test(text));
 };
 
 // === Get detected PII types in text ===
@@ -696,15 +208,6 @@ export const detect_pii_types = (text: string): string[] => {
 //   POST   /api/hunter/tasks/:id/result — Submit hunter task result
 //   POST   /api/hunter/heartbeat   — Hunter heartbeat
 //
-//   POST   /api/agents/:name/heartbeat — Agent heartbeat (generic)
-//   GET    /api/agents/health      — All agent statuses
-//   POST   /api/agents/:name/crash — Report agent crash
-//
-//   GET    /api/mode               — Current SLEEP/AWAKE mode
-//   POST   /api/mode               — Switch mode
-//
-//   POST   /api/approval/request   — Request cross-approval for an action
-//
 //   GET    /api/health             — Health check
 //   GET    /api/stats              — Task statistics
 //
@@ -718,11 +221,9 @@ import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
 import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
-import { create_cross_approval, type CrossApproval } from './cross_approval.js';
-import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
 import type { Request, Response, NextFunction } from 'express';
 import { FASError } from '../shared/types.js';
-import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel } from '../shared/types.js';
+import type { TaskStatus } from '../shared/types.js';
 
 // === Hunter API security constants ===
 
@@ -743,13 +244,10 @@ const ALLOWED_FILE_EXTENSIONS = new Set([
 
 export type AppOptions = {
   hunter_api_key?: string;          // If set, require for /api/hunter/* (Defense in Depth)
-  dev_mode?: boolean;               // If true, skip auth when no key is configured (testing only)
   rate_limit_window_ms?: number;    // Rate limit window (default: 60s)
   rate_limit_max_requests?: number; // Max requests per window (default: 30)
   max_output_length?: number;       // Max hunter output text length (default: 50KB)
   max_files_count?: number;         // Max files per result (default: 20)
-  cross_approval_config?: CrossApprovalConfig;  // Gemini CLI cross-approval config
-  mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
 };
 
 // === Create Express app ===
@@ -758,28 +256,9 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const app = express();
   app.use(express.json({ limit: BODY_SIZE_LIMIT }));
 
-  // Track hunter heartbeat (legacy, also tracked in agent_heartbeats)
+  // Track hunter heartbeat
   let last_hunter_heartbeat: Date | null = null;
   const start_time = Date.now();
-
-  // Agent heartbeat tracker — generic for all agents
-  const agent_heartbeats = new Map<string, {
-    last_heartbeat: Date;
-    crash_count: number;
-    started_at: Date;
-  }>();
-
-  // Mode manager — SLEEP/AWAKE state
-  const mode_manager = create_mode_manager(options.mode_config ?? {
-    sleep_start_hour: 23,
-    sleep_end_hour: 7,
-    sleep_end_minute: 30,
-  });
-
-  // Cross-approval — Gemini CLI for MID risk actions
-  const cross_approval = options.cross_approval_config
-    ? create_cross_approval(options.cross_approval_config)
-    : null;
 
   // Rate limiter for hunter endpoints
   const hunter_rate_limiter = create_rate_limiter({
@@ -792,18 +271,10 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
   // === Hunter API key authentication middleware ===
   // Defense in Depth: even with Tailscale network auth, require app-level key
-  // No key + no dev_mode = reject all hunter requests (secure by default)
   const hunter_auth = (req: Request, res: Response, next: NextFunction): void => {
     if (!options.hunter_api_key) {
-      if (options.dev_mode) {
-        // No key configured + dev mode — skip auth (testing only)
-        next();
-        return;
-      }
-      // No key configured + production — reject (secure by default)
-      console.error('[SECURITY] Hunter API key not configured — rejecting request');
-      const err = new FASError('AUTH_ERROR', 'Hunter API key not configured on server', 401);
-      res.status(401).json(err.to_json());
+      // No key configured — skip auth (development mode)
+      next();
       return;
     }
 
@@ -1049,136 +520,10 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     res.json({ ok: true });
   });
 
-  // Hunter heartbeat (legacy endpoint — also updates agent_heartbeats)
+  // Hunter heartbeat
   app.post('/api/hunter/heartbeat', (_req, res) => {
     last_hunter_heartbeat = new Date();
-    const existing = agent_heartbeats.get('openclaw');
-    agent_heartbeats.set('openclaw', {
-      last_heartbeat: new Date(),
-      crash_count: existing?.crash_count ?? 0,
-      started_at: existing?.started_at ?? new Date(),
-    });
     res.json({ ok: true, server_time: new Date().toISOString() });
-  });
-
-  // === Agent Healthcheck API ===
-
-  // Generic agent heartbeat
-  app.post('/api/agents/:name/heartbeat', (req, res) => {
-    const { name } = req.params;
-    const existing = agent_heartbeats.get(name);
-    agent_heartbeats.set(name, {
-      last_heartbeat: new Date(),
-      crash_count: existing?.crash_count ?? 0,
-      started_at: existing?.started_at ?? new Date(),
-    });
-    res.json({ ok: true, server_time: new Date().toISOString() });
-  });
-
-  // All agent statuses
-  app.get('/api/agents/health', (_req, res) => {
-    const HEARTBEAT_TIMEOUT_MS = 60_000;
-    const agents: AgentHealthInfo[] = [];
-    for (const [name, info] of agent_heartbeats) {
-      const alive = Date.now() - info.last_heartbeat.getTime() < HEARTBEAT_TIMEOUT_MS;
-      agents.push({
-        name: name as AgentHealthInfo['name'],
-        status: alive ? 'running' : 'crashed',
-        last_heartbeat: info.last_heartbeat.toISOString(),
-        uptime_seconds: Math.floor((Date.now() - info.started_at.getTime()) / 1000),
-        crash_count: info.crash_count,
-      });
-    }
-    res.json({ agents, timestamp: new Date().toISOString() });
-  });
-
-  // Report agent crash (watchdog calls this)
-  app.post('/api/agents/:name/crash', (req, res) => {
-    const { name } = req.params;
-    const existing = agent_heartbeats.get(name);
-    if (existing) {
-      existing.crash_count += 1;
-    } else {
-      agent_heartbeats.set(name, {
-        last_heartbeat: new Date(0),
-        crash_count: 1,
-        started_at: new Date(),
-      });
-    }
-    res.json({ ok: true, crash_count: agent_heartbeats.get(name)!.crash_count });
-  });
-
-  // === Mode Management API (Phase 3) ===
-
-  // Get current mode
-  app.get('/api/mode', (_req, res) => {
-    res.json(mode_manager.get_state());
-  });
-
-  // Switch mode
-  app.post('/api/mode', (req, res) => {
-    const { target_mode, reason, requested_by } = req.body;
-    if (target_mode !== 'sleep' && target_mode !== 'awake') {
-      res.status(400).json(new FASError('VALIDATION_ERROR', 'target_mode must be "sleep" or "awake"', 400).to_json());
-      return;
-    }
-    const result = mode_manager.transition({
-      target_mode,
-      reason: reason ?? '',
-      requested_by: requested_by ?? 'api',
-    });
-    res.json(result);
-  });
-
-  // === Cross-Approval API (Phase 2) ===
-
-  // Request cross-approval for an action
-  app.post('/api/approval/request', async (req, res) => {
-    const { action, context, risk_level } = req.body;
-
-    if (!action || !risk_level) {
-      res.status(400).json(new FASError('VALIDATION_ERROR', 'action and risk_level are required', 400).to_json());
-      return;
-    }
-
-    // Check mode restriction first
-    if (!mode_manager.is_action_allowed(action, risk_level as RiskLevel)) {
-      res.status(403).json(new FASError('MODE_VIOLATION',
-        `Action "${action}" is not allowed in ${mode_manager.get_state().current_mode} mode`, 403).to_json());
-      return;
-    }
-
-    // LOW risk → auto-approve
-    if (risk_level === 'low') {
-      res.json({ decision: 'approved', reason: 'Low risk — auto-approved', reviewed_by: 'system' });
-      return;
-    }
-
-    // HIGH/CRITICAL → needs human approval
-    if (risk_level === 'high' || risk_level === 'critical') {
-      res.json({ decision: 'needs_human_approval', reason: `${risk_level} risk requires human approval via Telegram` });
-      return;
-    }
-
-    // MID risk → Gemini cross-approval
-    if (!cross_approval) {
-      // No Gemini configured — auto-approve with warning
-      res.json({ decision: 'approved', reason: 'Mid risk — auto-approved (no cross-approval configured)', reviewed_by: 'system' });
-      return;
-    }
-
-    try {
-      const result = await cross_approval.request_approval(action, context ?? '');
-      if (result.decision === 'rejected') {
-        res.status(403).json(new FASError('CROSS_APPROVAL_REJECTED', result.reason, 403, {
-          reviewed_by: result.reviewed_by,
-        }).to_json());
-        return;
-      }
-      res.json(result);
-    } catch {
-      res.status(500).json(new FASError('INTERNAL_ERROR', 'Cross-approval request failed', 500).to_json());
-    }
   });
 
   // === System ===
@@ -1192,7 +537,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
     res.json({
       status: 'ok',
-      mode: mode_manager.get_state().current_mode,
+      mode: process.env.FAS_MODE ?? 'awake',
       uptime_seconds,
       hunter_alive,
       timestamp: new Date().toISOString(),
@@ -1204,12 +549,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     res.json(store.get_stats());
   });
 
-  // Expose internals for testing
-  return Object.assign(app, {
-    _hunter_rate_limiter: hunter_rate_limiter,
-    _mode_manager: mode_manager,
-    _agent_heartbeats: agent_heartbeats,
-  });
+  // Expose rate limiter for testing
+  return Object.assign(app, { _hunter_rate_limiter: hunter_rate_limiter });
 };
 
 // === Start server (when run directly) ===
@@ -1224,25 +565,16 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
-  const dev_mode = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
-
-  if (!process.env.HUNTER_API_KEY && !dev_mode) {
-    console.error('[Gateway] FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
-    console.error('[Gateway] Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
-    process.exit(1);
-  }
-
   const app = create_app(store, {
     hunter_api_key: process.env.HUNTER_API_KEY,
-    dev_mode,
   });
 
   app.listen(port, host, () => {
     console.log(`[Gateway] FAS Gateway + Task API listening on ${host}:${port}`);
     if (process.env.HUNTER_API_KEY) {
       console.log('[Gateway] Hunter API key authentication: ENABLED');
-    } else if (dev_mode) {
-      console.warn('[Gateway] Hunter API key authentication: DISABLED (dev mode)');
+    } else {
+      console.warn('[Gateway] Hunter API key authentication: DISABLED (set HUNTER_API_KEY to enable)');
     }
   });
 
@@ -1268,8 +600,7 @@ import type { Task, TaskStatus, RiskLevel } from '../shared/types.js';
 // === Task store using SQLite ===
 
 export type TaskStoreConfig = {
-  db_path: string;             // ':memory:' for testing
-  busy_timeout_ms?: number;    // SQLite busy timeout (default: 5000ms)
+  db_path: string; // ':memory:' for testing
 };
 
 export const create_task_store = (config: TaskStoreConfig) => {
@@ -1278,8 +609,6 @@ export const create_task_store = (config: TaskStoreConfig) => {
   // Enable WAL mode for better concurrent read performance
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
-  // Busy timeout: wait instead of failing immediately on SQLITE_BUSY
-  db.pragma(`busy_timeout = ${config.busy_timeout_ms ?? 5000}`);
 
   // === Initialize schema ===
   db.exec(`
@@ -1446,11 +775,6 @@ export const create_task_store = (config: TaskStoreConfig) => {
     return rows.map(row_to_task);
   };
 
-  // Run a function inside a SQLite transaction (atomic, auto-rollback on error)
-  const run_in_transaction = <T>(fn: () => T): T => {
-    return db.transaction(fn)();
-  };
-
   const close = () => {
     db.close();
   };
@@ -1466,217 +790,12 @@ export const create_task_store = (config: TaskStoreConfig) => {
     quarantine_task,
     get_stats,
     get_all,
-    run_in_transaction,
     close,
     _db: db, // for testing
   };
 };
 
 export type TaskStore = ReturnType<typeof create_task_store>;
-
----
-
-## 파일: [OPS] src/gemini/cli_wrapper.ts
-
-// Gemini CLI wrapper module for FAS
-// Spawns Gemini CLI as child process with timeout, retry, and output parsing
-// Used by: cross-approval verification, research tasks, fact-checking
-
-import { spawn } from 'node:child_process';
-import { execSync } from 'node:child_process';
-import type { GeminiAccount, GeminiConfig, GeminiResponse, GeminiSessionStatus } from './types.js';
-
-// === Constants ===
-
-const DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
-const DEFAULT_GEMINI_COMMAND = 'gemini';
-
-const SESSION_NAMES: Record<GeminiAccount, string> = {
-  a: 'fas-gemini-a',
-  b: 'fas-gemini-b',
-};
-
-// === Get CLI command for a specific account ===
-
-export const get_gemini_command = (account: GeminiAccount, base_command?: string): string => {
-  const cmd = base_command ?? DEFAULT_GEMINI_COMMAND;
-  // Account-specific config directories allow multiple Gemini accounts
-  // Account A uses default config, Account B uses alternate config dir
-  if (account === 'b') {
-    return `GEMINI_CONFIG_DIR=$HOME/.gemini-b ${cmd}`;
-  }
-  return cmd;
-};
-
-// === Parse Gemini CLI output ===
-
-export const parse_gemini_response = (raw_output: string): string => {
-  // Remove ANSI escape codes
-  const cleaned = raw_output.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
-
-  // Try to extract JSON if present
-  const json_match = cleaned.match(/\{[\s\S]*\}/);
-  if (json_match) {
-    try {
-      const parsed = JSON.parse(json_match[0]);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      // Not valid JSON, return cleaned text
-    }
-  }
-
-  return cleaned;
-};
-
-// === Spawn Gemini CLI and capture output ===
-
-export const spawn_gemini = (config: GeminiConfig, prompt: string): Promise<GeminiResponse> => {
-  const timeout_ms = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
-  const command = config.gemini_command ?? DEFAULT_GEMINI_COMMAND;
-  const start_time = Date.now();
-
-  return new Promise((resolve) => {
-    const args = [prompt];
-    if (config.model) {
-      args.unshift('--model', config.model);
-    }
-
-    // For account B, set alternate config directory
-    const env = { ...process.env };
-    if (config.account === 'b') {
-      env.GEMINI_CONFIG_DIR = `${process.env.HOME}/.gemini-b`;
-    }
-
-    const proc = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env,
-      shell: true,
-      timeout: timeout_ms,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    proc.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on('close', (code) => {
-      const duration_ms = Date.now() - start_time;
-
-      if (code === 0) {
-        resolve({
-          content: parse_gemini_response(stdout),
-          raw_output: stdout,
-          success: true,
-          duration_ms,
-        });
-      } else {
-        resolve({
-          content: '',
-          raw_output: stdout,
-          success: false,
-          error: `Gemini CLI exited with code ${code}: ${stderr.trim()}`,
-          duration_ms,
-        });
-      }
-    });
-
-    proc.on('error', (err) => {
-      const duration_ms = Date.now() - start_time;
-      resolve({
-        content: '',
-        raw_output: '',
-        success: false,
-        error: `Failed to spawn Gemini CLI: ${err.message}`,
-        duration_ms,
-      });
-    });
-  });
-};
-
-// === Check tmux session status for a Gemini account ===
-
-export const check_session_status = (account: GeminiAccount): GeminiSessionStatus => {
-  const session_name = SESSION_NAMES[account];
-
-  try {
-    const output = execSync(`tmux has-session -t ${session_name} 2>&1 || true`, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-
-    // tmux has-session returns empty string on success, error message on failure
-    if (output.trim() === '' || !output.includes('no server') && !output.includes("can't find")) {
-      // Session exists, check if process is alive
-      try {
-        const pane_pid = execSync(
-          `tmux list-panes -t ${session_name} -F '#{pane_pid}' 2>/dev/null`,
-          { encoding: 'utf-8', timeout: 5000 },
-        ).trim();
-
-        if (pane_pid) {
-          return 'running';
-        }
-      } catch {
-        return 'crashed';
-      }
-    }
-
-    return 'stopped';
-  } catch {
-    return 'stopped';
-  }
-};
-
-// === Get session name for account ===
-
-export const get_session_name = (account: GeminiAccount): string => SESSION_NAMES[account];
-
----
-
-## 파일: [OPS] src/gemini/index.ts
-
-// Gemini CLI module barrel export
-export { spawn_gemini, parse_gemini_response, check_session_status, get_gemini_command, get_session_name } from './cli_wrapper.js';
-export type { GeminiAccount, GeminiConfig, GeminiResponse, GeminiSessionStatus, GeminiSessionInfo } from './types.js';
-
----
-
-## 파일: [OPS] src/gemini/types.ts
-
-// Local type definitions for Gemini CLI module
-// Kept separate from src/shared/types.ts to avoid cross-session conflicts
-
-export type GeminiAccount = 'a' | 'b';
-
-export type GeminiConfig = {
-  account: GeminiAccount;
-  timeout_ms?: number;           // Default: 300_000 (5 min)
-  model?: string;                // Default: undefined (use CLI default)
-  gemini_command?: string;       // Default: 'gemini'
-};
-
-export type GeminiResponse = {
-  content: string;               // Parsed/cleaned response content
-  raw_output: string;            // Raw stdout from CLI
-  success: boolean;
-  error?: string;
-  duration_ms: number;
-};
-
-export type GeminiSessionStatus = 'running' | 'stopped' | 'crashed';
-
-export type GeminiSessionInfo = {
-  account: GeminiAccount;
-  status: GeminiSessionStatus;
-  session_name: string;          // tmux session name (fas-gemini-a, fas-gemini-b)
-  pid?: number;
-};
 
 ---
 
@@ -2179,287 +1298,6 @@ export const create_task_executor = (logger: Logger) => {
 export { create_telegram_client, type TelegramClient, type TelegramConfig } from './telegram.js';
 export { create_slack_client, type SlackClient, type SlackConfig } from './slack.js';
 export { create_notification_router, type NotificationRouter, type NotificationRouterDeps } from './router.js';
-export { create_notion_client, type NotionClient, type NotionConfig } from './notion.js';
-
----
-
-## 파일: [OPS] src/notification/notion.ts
-
-// Notion notification module for FAS
-// Handles: daily briefings, detailed reports, notification logging
-// Notion is used for long-form content that doesn't fit Telegram/Slack
-
-import { Client } from '@notionhq/client';
-import { FASError } from '../shared/types.js';
-import type { NotificationEvent, NotificationResult } from '../shared/types.js';
-
-// === Configuration ===
-
-export type NotionConfig = {
-  api_key: string;
-  database_id: string;         // Main notification log database
-  reports_db_id?: string;      // Reports database (optional)
-};
-
-// === Local types (not in shared/types.ts to avoid cross-session conflict) ===
-
-export type NotionPage = {
-  page_id: string;
-  url: string;
-};
-
-export type DailyBriefingSection = {
-  title: string;
-  content: string;
-};
-
-// === Constants ===
-
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 1000;
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// === Severity to emoji mapping ===
-
-const SEVERITY_EMOJI: Record<string, string> = {
-  low: '🟢',
-  mid: '🟡',
-  high: '🟠',
-  critical: '🔴',
-};
-
-// === Notion Client Factory ===
-
-export const create_notion_client = (config: NotionConfig) => {
-  const client = new Client({ auth: config.api_key });
-
-  // === Send notification event to Notion database ===
-  const send_notification = async (event: NotificationEvent): Promise<NotionPage> => {
-    const emoji = SEVERITY_EMOJI[event.severity ?? 'low'] ?? '⚪';
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const response = await client.pages.create({
-          parent: { database_id: config.database_id },
-          properties: {
-            Name: {
-              title: [{ text: { content: `${emoji} [${event.type.toUpperCase()}] ${event.message.slice(0, 100)}` } }],
-            },
-            Type: {
-              select: { name: event.type },
-            },
-            Device: {
-              select: { name: event.device },
-            },
-            Severity: {
-              select: { name: event.severity ?? 'low' },
-            },
-            Timestamp: {
-              date: { start: new Date().toISOString() },
-            },
-          },
-          children: [
-            {
-              object: 'block' as const,
-              type: 'paragraph' as const,
-              paragraph: {
-                rich_text: [{ type: 'text' as const, text: { content: event.message } }],
-              },
-            },
-            ...(event.metadata ? [{
-              object: 'block' as const,
-              type: 'code' as const,
-              code: {
-                rich_text: [{ type: 'text' as const, text: { content: JSON.stringify(event.metadata, null, 2) } }],
-                language: 'json' as const,
-              },
-            }] : []),
-          ],
-        });
-
-        return {
-          page_id: response.id,
-          url: (response as Record<string, unknown>).url as string ?? '',
-        };
-      } catch (error) {
-        console.error(`[Notion] Attempt ${attempt}/${MAX_RETRIES} failed:`, error);
-        if (attempt < MAX_RETRIES) {
-          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
-        }
-      }
-    }
-
-    throw new FASError(
-      'NOTIFICATION_ERROR',
-      `Notion notification failed after ${MAX_RETRIES} attempts`,
-      502,
-    );
-  };
-
-  // === Send with detailed result (compatible with NotificationResult) ===
-  const send_with_result = async (event: NotificationEvent): Promise<NotificationResult> => {
-    try {
-      await send_notification(event);
-      return { channel: 'notion', success: true, attempts: 1 };
-    } catch {
-      return {
-        channel: 'notion',
-        success: false,
-        attempts: MAX_RETRIES,
-        error: 'All retry attempts exhausted',
-      };
-    }
-  };
-
-  // === Create a full page (for reports) ===
-  const create_page = async (params: {
-    title: string;
-    content: string;
-    database_id?: string;
-  }): Promise<NotionPage> => {
-    const db_id = params.database_id ?? config.reports_db_id ?? config.database_id;
-
-    // Split content into chunks of 2000 chars (Notion block limit)
-    const chunks = split_content(params.content, 2000);
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const response = await client.pages.create({
-          parent: { database_id: db_id },
-          properties: {
-            Name: {
-              title: [{ text: { content: params.title } }],
-            },
-            Timestamp: {
-              date: { start: new Date().toISOString() },
-            },
-          },
-          children: chunks.map((chunk) => ({
-            object: 'block' as const,
-            type: 'paragraph' as const,
-            paragraph: {
-              rich_text: [{ type: 'text' as const, text: { content: chunk } }],
-            },
-          })),
-        });
-
-        return {
-          page_id: response.id,
-          url: (response as Record<string, unknown>).url as string ?? '',
-        };
-      } catch (error) {
-        console.error(`[Notion] create_page attempt ${attempt}/${MAX_RETRIES} failed:`, error);
-        if (attempt < MAX_RETRIES) {
-          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
-        }
-      }
-    }
-
-    throw new FASError(
-      'NOTIFICATION_ERROR',
-      `Notion page creation failed after ${MAX_RETRIES} attempts`,
-      502,
-    );
-  };
-
-  // === Create daily briefing page ===
-  const create_daily_briefing = async (params: {
-    date: string;             // ISO date string (YYYY-MM-DD)
-    sections: DailyBriefingSection[];
-  }): Promise<NotionPage> => {
-    const db_id = config.reports_db_id ?? config.database_id;
-
-    const children = params.sections.flatMap((section) => [
-      {
-        object: 'block' as const,
-        type: 'heading_2' as const,
-        heading_2: {
-          rich_text: [{ type: 'text' as const, text: { content: section.title } }],
-        },
-      },
-      ...split_content(section.content, 2000).map((chunk) => ({
-        object: 'block' as const,
-        type: 'paragraph' as const,
-        paragraph: {
-          rich_text: [{ type: 'text' as const, text: { content: chunk } }],
-        },
-      })),
-    ]);
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const response = await client.pages.create({
-          parent: { database_id: db_id },
-          properties: {
-            Name: {
-              title: [{ text: { content: `🌅 Daily Briefing — ${params.date}` } }],
-            },
-            Type: {
-              select: { name: 'briefing' },
-            },
-            Timestamp: {
-              date: { start: params.date },
-            },
-          },
-          children,
-        });
-
-        return {
-          page_id: response.id,
-          url: (response as Record<string, unknown>).url as string ?? '',
-        };
-      } catch (error) {
-        console.error(`[Notion] create_daily_briefing attempt ${attempt}/${MAX_RETRIES} failed:`, error);
-        if (attempt < MAX_RETRIES) {
-          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
-        }
-      }
-    }
-
-    throw new FASError(
-      'NOTIFICATION_ERROR',
-      `Notion daily briefing creation failed after ${MAX_RETRIES} attempts`,
-      502,
-    );
-  };
-
-  return {
-    send_notification,
-    send_with_result,
-    create_page,
-    create_daily_briefing,
-    // Expose for testing
-    _client: client,
-  };
-};
-
-export type NotionClient = ReturnType<typeof create_notion_client>;
-
-// === Helper: split long content into chunks ===
-
-const split_content = (content: string, max_length: number): string[] => {
-  if (content.length <= max_length) return [content];
-
-  const chunks: string[] = [];
-  let remaining = content;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= max_length) {
-      chunks.push(remaining);
-      break;
-    }
-
-    // Try to split at newline boundary
-    const cut_point = remaining.lastIndexOf('\n', max_length);
-    const actual_cut = cut_point > 0 ? cut_point + 1 : max_length;
-
-    chunks.push(remaining.slice(0, actual_cut));
-    remaining = remaining.slice(actual_cut);
-  }
-
-  return chunks;
-};
 
 ---
 
@@ -2537,30 +1375,17 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       results.slack = await deps.slack.route(event);
     }
 
-    // === Cross-channel fallback logic ===
-
-    // Case 1: Both Telegram and Slack were supposed to send but both failed
-    if (rules.telegram && !results.telegram && rules.slack && !results.slack) {
+    // Fallback: Telegram failed → try Slack (for critical events)
+    if (rules.telegram && !results.telegram && deps.slack && !results.slack) {
       console.warn(`[Router] Both Telegram and Slack failed for ${event.type} — critical notification lost`);
-    }
-    // Case 2: Telegram failed → fallback to Slack
-    else if (rules.telegram && !results.telegram && deps.slack) {
+    } else if (rules.telegram && !results.telegram && deps.slack) {
       console.warn(`[Router] Telegram failed for ${event.type}, falling back to Slack`);
       results.slack = await deps.slack.send('#alerts', `[Telegram Fallback] ${event.message}`);
-    }
-    // Case 3: Slack failed → fallback to Telegram (includes slack-only events as emergency fallback)
-    else if (rules.slack && !results.slack && deps.telegram) {
-      if (rules.telegram) {
-        // Dual-route event: normal Slack fallback via Telegram
-        console.warn(`[Router] Slack failed for ${event.type}, falling back to Telegram`);
-        const fallback = await deps.telegram.send(`[Slack Fallback] ${event.message}`, telegram_type);
-        results.telegram = fallback.success;
-      } else {
-        // Slack-only event: emergency fallback to Telegram (not normally routed there)
-        console.warn(`[Router] Slack failed for slack-only event ${event.type}, emergency fallback to Telegram`);
-        const fallback = await deps.telegram.send(`[Emergency Fallback] ${event.message}`, 'alert');
-        results.telegram = fallback.success;
-      }
+    } else if (rules.slack && !results.slack && deps.telegram) {
+      // Fallback: Slack failed → try Telegram
+      console.warn(`[Router] Slack failed for ${event.type}, falling back to Telegram`);
+      const fallback = await deps.telegram.send(`[Slack Fallback] ${event.message}`, telegram_type);
+      results.telegram = fallback.success;
     }
 
     // Notion — placeholder for future implementation
@@ -2992,9 +1817,7 @@ export type FASErrorCode =
   | 'PII_DETECTED'
   | 'INTERNAL_ERROR'
   | 'NOTIFICATION_ERROR'
-  | 'TIMEOUT'
-  | 'CROSS_APPROVAL_REJECTED'
-  | 'MODE_VIOLATION';
+  | 'TIMEOUT';
 
 export class FASError extends Error {
   readonly code: FASErrorCode;
@@ -3070,105 +1893,6 @@ export type HunterPendingTasksResponse = {
   count: number;
 };
 
-// === Cross Approval Types ===
-
-export type CrossApprovalDecision = 'approved' | 'rejected';
-
-export type CrossApprovalResult = {
-  decision: CrossApprovalDecision;
-  reason: string;
-  reviewed_by: string;   // e.g. 'gemini_a', 'gemini_b'
-  reviewed_at: string;   // ISO 8601
-};
-
-export type CrossApprovalConfig = {
-  gemini_command?: string;        // CLI command to invoke Gemini (default: 'gemini')
-  timeout_ms?: number;            // Timeout for approval request (default: 600_000 = 10 min)
-  auto_reject_on_error?: boolean; // Auto-reject on parse/timeout error (default: true)
-};
-
-// === Agent Healthcheck Types ===
-
-export type AgentName = 'claude' | 'gemini_a' | 'gemini_b' | 'openclaw' | 'gateway' | 'watchdog';
-
-export type AgentStatus = 'running' | 'stopped' | 'crashed';
-
-export type AgentHealthInfo = {
-  name: AgentName;
-  status: AgentStatus;
-  last_heartbeat: string | null;
-  uptime_seconds: number | null;
-  crash_count: number;
-};
-
-// === Mode Management Types (Phase 3) ===
-
-export type ModeState = {
-  current_mode: FasMode;
-  switched_at: string;
-  switched_by: 'cron' | 'human' | 'api';
-  next_scheduled_switch: string | null;
-};
-
-export type ModeTransitionRequest = {
-  target_mode: FasMode;
-  reason: string;
-  requested_by: 'cron' | 'human' | 'api';
-};
-
-// === Activity Logging Types (Phase 7) ===
-
-export type ActivityLogEntry = {
-  id: string;
-  timestamp: string;
-  agent: string;
-  action: string;
-  risk_level: RiskLevel;
-  approval_decision?: CrossApprovalDecision;
-  approval_reviewer?: string;
-  details: Record<string, unknown>;
-};
-
-export type ApprovalHistoryEntry = {
-  id: string;
-  timestamp: string;
-  requester: string;
-  action: string;
-  risk_level: RiskLevel;
-  decision: CrossApprovalDecision | 'timeout';
-  reviewer: string;
-  reason: string;
-  duration_ms: number;
-};
-
-// === Resource Monitoring Types (Phase 7) ===
-
-export type ResourceSnapshot = {
-  timestamp: string;
-  cpu_usage_percent: number;
-  memory_used_mb: number;
-  memory_total_mb: number;
-  disk_used_gb: number;
-  disk_total_gb: number;
-};
-
-export type ResourceThresholds = {
-  cpu_percent: number;
-  memory_percent: number;
-  disk_percent: number;
-};
-
-// === Network Queue Types (Phase 7) ===
-
-export type QueuedRequest = {
-  id: string;
-  queued_at: string;
-  endpoint: string;
-  method: string;
-  body: unknown;
-  retry_count: number;
-};
-
 // === Gateway Types ===
 
 export type ApprovalRequest = {
@@ -3197,380 +1921,6 @@ export type HealthCheckResponse = {
     last_heartbeat: string | null;
   }>;
   timestamp: string;
-};
-
----
-
-## 파일: [OPS] src/watchdog/activity_logger.ts
-
-// FAS Activity Logger
-// Structured activity logging and approval history using SQLite.
-// Tracks all agent actions with risk levels and approval decisions,
-// enabling audit trails and compliance reporting.
-
-import Database from 'better-sqlite3';
-import { v4 as uuid_v4 } from 'uuid';
-import type { RiskLevel, CrossApprovalDecision, ActivityLogEntry, ApprovalHistoryEntry } from '../shared/types.js';
-
-// === Config type ===
-
-export type ActivityLoggerConfig = {
-  db_path: string;  // ':memory:' for testing
-};
-
-// === Factory function ===
-
-export const create_activity_logger = (config: ActivityLoggerConfig) => {
-  const db = new Database(config.db_path);
-
-  // Enable WAL mode for better concurrent read performance
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.pragma('busy_timeout = 5000');
-
-  // === Initialize schema ===
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS activity_logs (
-      id TEXT PRIMARY KEY,
-      timestamp TEXT NOT NULL,
-      agent TEXT NOT NULL,
-      action TEXT NOT NULL,
-      risk_level TEXT NOT NULL,
-      approval_decision TEXT,
-      approval_reviewer TEXT,
-      details TEXT NOT NULL DEFAULT '{}'
-    );
-
-    CREATE TABLE IF NOT EXISTS approval_history (
-      id TEXT PRIMARY KEY,
-      timestamp TEXT NOT NULL,
-      requester TEXT NOT NULL,
-      action TEXT NOT NULL,
-      risk_level TEXT NOT NULL,
-      decision TEXT NOT NULL,
-      reviewer TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      duration_ms INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_activity_agent ON activity_logs(agent);
-    CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_logs(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_approval_timestamp ON approval_history(timestamp);
-  `);
-
-  // === Prepared statements ===
-
-  const stmts = {
-    insert_activity: db.prepare(`
-      INSERT INTO activity_logs (id, timestamp, agent, action, risk_level, approval_decision, approval_reviewer, details)
-      VALUES (@id, @timestamp, @agent, @action, @risk_level, @approval_decision, @approval_reviewer, @details)
-    `),
-    insert_approval: db.prepare(`
-      INSERT INTO approval_history (id, timestamp, requester, action, risk_level, decision, reviewer, reason, duration_ms)
-      VALUES (@id, @timestamp, @requester, @action, @risk_level, @decision, @reviewer, @reason, @duration_ms)
-    `),
-    get_by_agent: db.prepare(`
-      SELECT * FROM activity_logs WHERE agent = ? ORDER BY timestamp DESC LIMIT ?
-    `),
-    get_activities_by_date: db.prepare(`
-      SELECT * FROM activity_logs WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC
-    `),
-    get_approvals_by_date: db.prepare(`
-      SELECT * FROM approval_history WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC
-    `),
-  };
-
-  // === Row converters ===
-
-  const row_to_activity = (row: Record<string, unknown>): ActivityLogEntry => ({
-    id: row.id as string,
-    timestamp: row.timestamp as string,
-    agent: row.agent as string,
-    action: row.action as string,
-    risk_level: row.risk_level as RiskLevel,
-    approval_decision: (row.approval_decision as CrossApprovalDecision) ?? undefined,
-    approval_reviewer: (row.approval_reviewer as string) ?? undefined,
-    details: JSON.parse(row.details as string) as Record<string, unknown>,
-  });
-
-  const row_to_approval = (row: Record<string, unknown>): ApprovalHistoryEntry => ({
-    id: row.id as string,
-    timestamp: row.timestamp as string,
-    requester: row.requester as string,
-    action: row.action as string,
-    risk_level: row.risk_level as RiskLevel,
-    decision: row.decision as CrossApprovalDecision | 'timeout',
-    reviewer: row.reviewer as string,
-    reason: row.reason as string,
-    duration_ms: row.duration_ms as number,
-  });
-
-  // === Public methods ===
-
-  // Log an agent activity (action performed, risk level, optional approval info)
-  const log_activity = (params: {
-    agent: string;
-    action: string;
-    risk_level: RiskLevel;
-    approval_decision?: CrossApprovalDecision;
-    approval_reviewer?: string;
-    details?: Record<string, unknown>;
-  }): string => {
-    const id = uuid_v4();
-    const now = new Date().toISOString();
-
-    stmts.insert_activity.run({
-      id,
-      timestamp: now,
-      agent: params.agent,
-      action: params.action,
-      risk_level: params.risk_level,
-      approval_decision: params.approval_decision ?? null,
-      approval_reviewer: params.approval_reviewer ?? null,
-      details: JSON.stringify(params.details ?? {}),
-    });
-
-    return id;
-  };
-
-  // Log an approval decision (approved/rejected/timeout with reviewer info)
-  const log_approval = (params: {
-    requester: string;
-    action: string;
-    risk_level: RiskLevel;
-    decision: CrossApprovalDecision | 'timeout';
-    reviewer: string;
-    reason: string;
-    duration_ms: number;
-  }): string => {
-    const id = uuid_v4();
-    const now = new Date().toISOString();
-
-    stmts.insert_approval.run({
-      id,
-      timestamp: now,
-      requester: params.requester,
-      action: params.action,
-      risk_level: params.risk_level,
-      decision: params.decision,
-      reviewer: params.reviewer,
-      reason: params.reason,
-      duration_ms: params.duration_ms,
-    });
-
-    return id;
-  };
-
-  // Retrieve activity logs for a specific agent, ordered by most recent first
-  const get_activities_by_agent = (agent: string, limit = 100): ActivityLogEntry[] => {
-    const rows = stmts.get_by_agent.all(agent, limit) as Record<string, unknown>[];
-    return rows.map(row_to_activity);
-  };
-
-  // Retrieve activity logs within a date range (ISO 8601 strings)
-  const get_activities_by_date = (start: string, end: string): ActivityLogEntry[] => {
-    const rows = stmts.get_activities_by_date.all(start, end) as Record<string, unknown>[];
-    return rows.map(row_to_activity);
-  };
-
-  // Retrieve approval history within a date range (ISO 8601 strings)
-  const get_approvals_by_date = (start: string, end: string): ApprovalHistoryEntry[] => {
-    const rows = stmts.get_approvals_by_date.all(start, end) as Record<string, unknown>[];
-    return rows.map(row_to_approval);
-  };
-
-  // Close the database connection
-  const close = (): void => {
-    db.close();
-  };
-
-  return {
-    log_activity,
-    log_approval,
-    get_activities_by_agent,
-    get_activities_by_date,
-    get_approvals_by_date,
-    close,
-    _db: db, // exposed for testing
-  };
-};
-
-export type ActivityLogger = ReturnType<typeof create_activity_logger>;
-
----
-
-## 파일: [OPS] src/watchdog/local_queue.ts
-
-// FAS Local Queue — Network disconnect resilience layer
-// SQLite-backed queue that buffers outbound HTTP requests
-// when the network is unavailable. On reconnect, flush()
-// replays them in FIFO order via the provided on_flush callback.
-//
-// Usage:
-//   const queue = create_local_queue({
-//     db_path: './fas_queue.db',
-//     on_flush: async (req) => { /* send HTTP request, return true on success */ },
-//   });
-//   queue.enqueue('/api/notify', 'POST', { message: 'hello' });
-//   await queue.flush();
-
-import Database from 'better-sqlite3';
-import { v4 as uuid_v4 } from 'uuid';
-import type { QueuedRequest } from '../shared/types.js';
-
-// === Configuration ===
-
-export type LocalQueueConfig = {
-  db_path: string;
-  max_retries?: number;
-  on_flush: (request: QueuedRequest) => Promise<boolean>;
-};
-
-// === Public interface ===
-
-export type LocalQueue = {
-  /** Enqueue a request for later delivery. Returns generated id. */
-  enqueue: (endpoint: string, method: string, body: unknown) => string;
-  /** Flush all pending items. Calls on_flush for each, removes successes, increments retry_count for failures. */
-  flush: () => Promise<{ sent: number; failed: number }>;
-  /** Number of items currently waiting in the queue. */
-  pending_count: () => number;
-  /** Close the database connection. */
-  close: () => void;
-  /** Exposed for testing only. */
-  _db: Database.Database;
-};
-
-// === SQL statements ===
-
-const SQL_CREATE_TABLE = `
-  CREATE TABLE IF NOT EXISTS queue (
-    id          TEXT PRIMARY KEY,
-    queued_at   TEXT NOT NULL,
-    endpoint    TEXT NOT NULL,
-    method      TEXT NOT NULL,
-    body        TEXT NOT NULL,
-    retry_count INTEGER NOT NULL DEFAULT 0
-  )
-`;
-
-const SQL_INSERT = `
-  INSERT INTO queue (id, queued_at, endpoint, method, body, retry_count)
-  VALUES (?, ?, ?, ?, ?, 0)
-`;
-
-const SQL_SELECT_ALL = `SELECT * FROM queue ORDER BY queued_at ASC`;
-
-const SQL_DELETE_BY_ID = `DELETE FROM queue WHERE id = ?`;
-
-const SQL_INCREMENT_RETRY = `UPDATE queue SET retry_count = retry_count + 1 WHERE id = ?`;
-
-const SQL_COUNT = `SELECT COUNT(*) AS cnt FROM queue`;
-
-// === Factory ===
-
-export const create_local_queue = (config: LocalQueueConfig): LocalQueue => {
-  const max_retries = config.max_retries ?? 5;
-
-  // Open database with WAL mode for better concurrent read performance
-  const db = new Database(config.db_path);
-  db.pragma('journal_mode = WAL');
-  db.exec(SQL_CREATE_TABLE);
-
-  // Prepare statements for performance
-  const stmt_insert = db.prepare(SQL_INSERT);
-  const stmt_select_all = db.prepare(SQL_SELECT_ALL);
-  const stmt_delete = db.prepare(SQL_DELETE_BY_ID);
-  const stmt_increment = db.prepare(SQL_INCREMENT_RETRY);
-  const stmt_count = db.prepare(SQL_COUNT);
-
-  // --- enqueue ---
-  const enqueue = (endpoint: string, method: string, body: unknown): string => {
-    const id = uuid_v4();
-    const queued_at = new Date().toISOString();
-    const body_json = JSON.stringify(body);
-    stmt_insert.run(id, queued_at, endpoint, method, body_json);
-    return id;
-  };
-
-  // --- flush ---
-  const flush = async (): Promise<{ sent: number; failed: number }> => {
-    // Snapshot current queue items
-    const rows = stmt_select_all.all() as Array<{
-      id: string;
-      queued_at: string;
-      endpoint: string;
-      method: string;
-      body: string;
-      retry_count: number;
-    }>;
-
-    let sent = 0;
-    let failed = 0;
-
-    for (const row of rows) {
-      // Reconstruct the QueuedRequest for the callback
-      const request: QueuedRequest = {
-        id: row.id,
-        queued_at: row.queued_at,
-        endpoint: row.endpoint,
-        method: row.method,
-        body: JSON.parse(row.body),
-        retry_count: row.retry_count,
-      };
-
-      try {
-        const success = await config.on_flush(request);
-
-        if (success) {
-          // Remove successfully sent item from queue
-          stmt_delete.run(row.id);
-          sent += 1;
-        } else {
-          // Increment retry count; drop if exceeding max_retries
-          stmt_increment.run(row.id);
-          const new_retry_count = row.retry_count + 1;
-
-          if (new_retry_count >= max_retries) {
-            stmt_delete.run(row.id);
-          }
-
-          failed += 1;
-        }
-      } catch {
-        // Treat thrown errors as failure
-        stmt_increment.run(row.id);
-        const new_retry_count = row.retry_count + 1;
-
-        if (new_retry_count >= max_retries) {
-          stmt_delete.run(row.id);
-        }
-
-        failed += 1;
-      }
-    }
-
-    return { sent, failed };
-  };
-
-  // --- pending_count ---
-  const pending_count = (): number => {
-    const result = stmt_count.get() as { cnt: number };
-    return result.cnt;
-  };
-
-  // --- close ---
-  const close = (): void => {
-    db.close();
-  };
-
-  return {
-    enqueue,
-    flush,
-    pending_count,
-    close,
-    _db: db,
-  };
 };
 
 ---
@@ -3660,8 +2010,6 @@ export type WatcherConfig = {
   sessions: string[];           // tmux session names to watch
   poll_interval_ms?: number;    // how often to capture output (default: 2000)
   on_match: (match: PatternMatch) => void | Promise<void>;
-  on_crash?: (session: string, consecutive_failures: number) => void | Promise<void>;
-  crash_threshold?: number;     // consecutive failures before on_crash fires (default: 3)
 };
 
 export class OutputWatcher extends EventEmitter {
@@ -3670,8 +2018,6 @@ export class OutputWatcher extends EventEmitter {
   private timers: ReturnType<typeof setInterval>[] = [];
   // Track last captured content per session to detect new lines
   private last_content: Map<string, string> = new Map();
-  // Track consecutive capture failures per session for crash detection
-  private crash_counts: Map<string, number> = new Map();
 
   constructor(config: WatcherConfig) {
     super();
@@ -3727,18 +2073,8 @@ export class OutputWatcher extends EventEmitter {
           await this.config.on_match(match);
         }
       }
-
-      // Reset crash counter on successful capture
-      this.crash_counts.set(session, 0);
     } catch {
-      // Track consecutive failures for crash detection
-      const count = (this.crash_counts.get(session) ?? 0) + 1;
-      this.crash_counts.set(session, count);
-      const threshold = this.config.crash_threshold ?? 3;
-      if (count >= threshold && this.config.on_crash) {
-        this.emit('crash', session, count);
-        await this.config.on_crash(session, count);
-      }
+      // Session might not exist yet, ignore errors silently
     }
   }
 
@@ -3813,206 +2149,5 @@ if (is_main) {
     process.exit(0);
   });
 }
-
----
-
-## 파일: [OPS] src/watchdog/resource_monitor.ts
-
-// FAS Resource Monitor (macOS)
-// Monitors system resources (CPU, memory, disk) and fires alerts
-// when thresholds are exceeded. Uses macOS-specific commands:
-//   - top -l 1 -n 0  → CPU usage
-//   - vm_stat + sysctl → memory usage
-//   - df -g /         → disk usage
-
-import { execSync } from 'node:child_process';
-import type { ResourceSnapshot, ResourceThresholds } from '../shared/types.js';
-
-// === Config type ===
-
-export type ResourceMonitorConfig = {
-  thresholds?: Partial<ResourceThresholds>;
-  check_interval_ms?: number; // default: 60_000
-  on_alert: (metric: string, value: number, threshold: number) => void | Promise<void>;
-};
-
-// === Default thresholds ===
-
-const DEFAULT_THRESHOLDS: ResourceThresholds = {
-  cpu_percent: 85,
-  memory_percent: 90,
-  disk_percent: 85,
-};
-
-// === macOS-specific parsers (exported for testing) ===
-
-/**
- * Parse CPU usage from `top -l 1 -n 0` output.
- * Looks for line like: "CPU usage: 45.2% user, 12.3% sys, 42.5% idle"
- * Returns combined user + sys percentage.
- */
-export const parse_cpu_usage = (): number => {
-  try {
-    const output = execSync('top -l 1 -n 0', { encoding: 'utf-8', timeout: 10_000 });
-    const match = output.match(/CPU usage:\s*([\d.]+)%\s*user,\s*([\d.]+)%\s*sys/);
-    if (!match) return 0;
-    return parseFloat(match[1]) + parseFloat(match[2]);
-  } catch {
-    return 0;
-  }
-};
-
-/**
- * Parse memory usage from `vm_stat` and `sysctl -n hw.memsize`.
- * vm_stat reports pages (page size = 16384 on Apple Silicon, 4096 on Intel).
- * sysctl -n hw.memsize returns total bytes.
- */
-export const parse_memory_usage = (): { used_mb: number; total_mb: number } => {
-  try {
-    const total_bytes = parseInt(
-      execSync('sysctl -n hw.memsize', { encoding: 'utf-8', timeout: 5_000 }).trim(),
-      10,
-    );
-    const total_mb = total_bytes / (1024 * 1024);
-
-    const vm_output = execSync('vm_stat', { encoding: 'utf-8', timeout: 5_000 });
-
-    // Extract page size from first line: "Mach Virtual Memory Statistics: (page size of XXXX bytes)"
-    const page_size_match = vm_output.match(/page size of (\d+) bytes/);
-    const page_size = page_size_match ? parseInt(page_size_match[1], 10) : 16384;
-
-    // Parse page counts — vm_stat uses "Pages free:", "Pages inactive:", etc.
-    const parse_pages = (label: string): number => {
-      const regex = new RegExp(`${label}:\\s*(\\d+)`);
-      const m = vm_output.match(regex);
-      return m ? parseInt(m[1], 10) : 0;
-    };
-
-    const free = parse_pages('Pages free');
-    const inactive = parse_pages('Pages inactive');
-    const speculative = parse_pages('Pages speculative');
-
-    // Available = free + inactive + speculative (rough approximation)
-    const available_mb = (free + inactive + speculative) * page_size / (1024 * 1024);
-    const used_mb = total_mb - available_mb;
-
-    return { used_mb: Math.round(used_mb), total_mb: Math.round(total_mb) };
-  } catch {
-    return { used_mb: 0, total_mb: 0 };
-  }
-};
-
-/**
- * Parse disk usage from `df -g /`.
- * Output format:
- *   Filesystem  1G-blocks  Used Available Capacity
- *   /dev/disk3s1  460  230  200  54%
- */
-export const parse_disk_usage = (): { used_gb: number; total_gb: number } => {
-  try {
-    const output = execSync('df -g /', { encoding: 'utf-8', timeout: 5_000 });
-    const lines = output.trim().split('\n');
-    // Data is on the second line
-    if (lines.length < 2) return { used_gb: 0, total_gb: 0 };
-
-    const parts = lines[1].trim().split(/\s+/);
-    // parts: [filesystem, 1G-blocks, Used, Available, Capacity, ...]
-    if (parts.length < 4) return { used_gb: 0, total_gb: 0 };
-
-    const total_gb = parseInt(parts[1], 10);
-    const used_gb = parseInt(parts[2], 10);
-
-    return {
-      used_gb: isNaN(used_gb) ? 0 : used_gb,
-      total_gb: isNaN(total_gb) ? 0 : total_gb,
-    };
-  } catch {
-    return { used_gb: 0, total_gb: 0 };
-  }
-};
-
-// === Resource Monitor (returned interface) ===
-
-export type ResourceMonitor = {
-  take_snapshot: () => ResourceSnapshot;
-  check: () => Promise<ResourceSnapshot>;
-  start: () => void;
-  stop: () => void;
-};
-
-// === Factory function ===
-
-export const create_resource_monitor = (config: ResourceMonitorConfig): ResourceMonitor => {
-  const thresholds: ResourceThresholds = {
-    ...DEFAULT_THRESHOLDS,
-    ...config.thresholds,
-  };
-  const interval_ms = config.check_interval_ms ?? 60_000;
-  let timer: ReturnType<typeof setInterval> | null = null;
-
-  // Capture current system resource state
-  const take_snapshot = (): ResourceSnapshot => {
-    const cpu_usage_percent = parse_cpu_usage();
-    const { used_mb, total_mb } = parse_memory_usage();
-    const { used_gb, total_gb } = parse_disk_usage();
-
-    return {
-      timestamp: new Date().toISOString(),
-      cpu_usage_percent,
-      memory_used_mb: used_mb,
-      memory_total_mb: total_mb,
-      disk_used_gb: used_gb,
-      disk_total_gb: total_gb,
-    };
-  };
-
-  // Take snapshot and fire alerts for any threshold violations
-  const check = async (): Promise<ResourceSnapshot> => {
-    const snapshot = take_snapshot();
-
-    // Check CPU threshold
-    if (snapshot.cpu_usage_percent > thresholds.cpu_percent) {
-      await config.on_alert('cpu', snapshot.cpu_usage_percent, thresholds.cpu_percent);
-    }
-
-    // Check memory threshold (compute percentage from used/total)
-    if (snapshot.memory_total_mb > 0) {
-      const memory_percent = (snapshot.memory_used_mb / snapshot.memory_total_mb) * 100;
-      if (memory_percent > thresholds.memory_percent) {
-        await config.on_alert('memory', memory_percent, thresholds.memory_percent);
-      }
-    }
-
-    // Check disk threshold (compute percentage from used/total)
-    if (snapshot.disk_total_gb > 0) {
-      const disk_percent = (snapshot.disk_used_gb / snapshot.disk_total_gb) * 100;
-      if (disk_percent > thresholds.disk_percent) {
-        await config.on_alert('disk', disk_percent, thresholds.disk_percent);
-      }
-    }
-
-    return snapshot;
-  };
-
-  // Start periodic checking
-  const start = (): void => {
-    if (timer) return; // already running
-    timer = setInterval(() => {
-      check().catch(() => {
-        // Swallow errors in periodic checks — alert callback might throw
-      });
-    }, interval_ms);
-  };
-
-  // Stop periodic checking
-  const stop = (): void => {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  };
-
-  return { take_snapshot, check, start, stop };
-};
 
 ---
