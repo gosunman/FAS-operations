@@ -113,6 +113,22 @@ describe('Output Watcher', () => {
       watcher.stop();
     });
 
+    it('should accept on_crash and crash_threshold config', () => {
+      const on_crash = vi.fn();
+      const watcher = new OutputWatcher({
+        sessions: ['test-session'],
+        poll_interval_ms: 100,
+        on_match: vi.fn(),
+        on_crash,
+        crash_threshold: 5,
+      });
+
+      expect(watcher.is_running()).toBe(false);
+      watcher.start();
+      expect(watcher.is_running()).toBe(true);
+      watcher.stop();
+    });
+
     it('should emit started and stopped events', () => {
       const started_handler = vi.fn();
       const stopped_handler = vi.fn();

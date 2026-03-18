@@ -13,6 +13,15 @@
 //   POST   /api/hunter/tasks/:id/result — Submit hunter task result
 //   POST   /api/hunter/heartbeat   — Hunter heartbeat
 //
+//   POST   /api/agents/:name/heartbeat — Agent heartbeat (generic)
+//   GET    /api/agents/health      — All agent statuses
+//   POST   /api/agents/:name/crash — Report agent crash
+//
+//   GET    /api/mode               — Current SLEEP/AWAKE mode
+//   POST   /api/mode               — Switch mode
+//
+//   POST   /api/approval/request   — Request cross-approval for an action
+//
 //   GET    /api/health             — Health check
 //   GET    /api/stats              — Task statistics
 //
@@ -26,9 +35,11 @@ import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
 import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
+import { create_cross_approval, type CrossApproval } from './cross_approval.js';
+import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
 import type { Request, Response, NextFunction } from 'express';
 import { FASError } from '../shared/types.js';
-import type { TaskStatus } from '../shared/types.js';
+import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel } from '../shared/types.js';
 
 // === Hunter API security constants ===
 
@@ -54,6 +65,8 @@ export type AppOptions = {
   rate_limit_max_requests?: number; // Max requests per window (default: 30)
   max_output_length?: number;       // Max hunter output text length (default: 50KB)
   max_files_count?: number;         // Max files per result (default: 20)
+  cross_approval_config?: CrossApprovalConfig;  // Gemini CLI cross-approval config
+  mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
 };
 
 // === Create Express app ===
@@ -62,9 +75,28 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const app = express();
   app.use(express.json({ limit: BODY_SIZE_LIMIT }));
 
-  // Track hunter heartbeat
+  // Track hunter heartbeat (legacy, also tracked in agent_heartbeats)
   let last_hunter_heartbeat: Date | null = null;
   const start_time = Date.now();
+
+  // Agent heartbeat tracker — generic for all agents
+  const agent_heartbeats = new Map<string, {
+    last_heartbeat: Date;
+    crash_count: number;
+    started_at: Date;
+  }>();
+
+  // Mode manager — SLEEP/AWAKE state
+  const mode_manager = create_mode_manager(options.mode_config ?? {
+    sleep_start_hour: 23,
+    sleep_end_hour: 7,
+    sleep_end_minute: 30,
+  });
+
+  // Cross-approval — Gemini CLI for MID risk actions
+  const cross_approval = options.cross_approval_config
+    ? create_cross_approval(options.cross_approval_config)
+    : null;
 
   // Rate limiter for hunter endpoints
   const hunter_rate_limiter = create_rate_limiter({
@@ -334,10 +366,136 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     res.json({ ok: true });
   });
 
-  // Hunter heartbeat
+  // Hunter heartbeat (legacy endpoint — also updates agent_heartbeats)
   app.post('/api/hunter/heartbeat', (_req, res) => {
     last_hunter_heartbeat = new Date();
+    const existing = agent_heartbeats.get('openclaw');
+    agent_heartbeats.set('openclaw', {
+      last_heartbeat: new Date(),
+      crash_count: existing?.crash_count ?? 0,
+      started_at: existing?.started_at ?? new Date(),
+    });
     res.json({ ok: true, server_time: new Date().toISOString() });
+  });
+
+  // === Agent Healthcheck API ===
+
+  // Generic agent heartbeat
+  app.post('/api/agents/:name/heartbeat', (req, res) => {
+    const { name } = req.params;
+    const existing = agent_heartbeats.get(name);
+    agent_heartbeats.set(name, {
+      last_heartbeat: new Date(),
+      crash_count: existing?.crash_count ?? 0,
+      started_at: existing?.started_at ?? new Date(),
+    });
+    res.json({ ok: true, server_time: new Date().toISOString() });
+  });
+
+  // All agent statuses
+  app.get('/api/agents/health', (_req, res) => {
+    const HEARTBEAT_TIMEOUT_MS = 60_000;
+    const agents: AgentHealthInfo[] = [];
+    for (const [name, info] of agent_heartbeats) {
+      const alive = Date.now() - info.last_heartbeat.getTime() < HEARTBEAT_TIMEOUT_MS;
+      agents.push({
+        name: name as AgentHealthInfo['name'],
+        status: alive ? 'running' : 'crashed',
+        last_heartbeat: info.last_heartbeat.toISOString(),
+        uptime_seconds: Math.floor((Date.now() - info.started_at.getTime()) / 1000),
+        crash_count: info.crash_count,
+      });
+    }
+    res.json({ agents, timestamp: new Date().toISOString() });
+  });
+
+  // Report agent crash (watchdog calls this)
+  app.post('/api/agents/:name/crash', (req, res) => {
+    const { name } = req.params;
+    const existing = agent_heartbeats.get(name);
+    if (existing) {
+      existing.crash_count += 1;
+    } else {
+      agent_heartbeats.set(name, {
+        last_heartbeat: new Date(0),
+        crash_count: 1,
+        started_at: new Date(),
+      });
+    }
+    res.json({ ok: true, crash_count: agent_heartbeats.get(name)!.crash_count });
+  });
+
+  // === Mode Management API (Phase 3) ===
+
+  // Get current mode
+  app.get('/api/mode', (_req, res) => {
+    res.json(mode_manager.get_state());
+  });
+
+  // Switch mode
+  app.post('/api/mode', (req, res) => {
+    const { target_mode, reason, requested_by } = req.body;
+    if (target_mode !== 'sleep' && target_mode !== 'awake') {
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'target_mode must be "sleep" or "awake"', 400).to_json());
+      return;
+    }
+    const result = mode_manager.transition({
+      target_mode,
+      reason: reason ?? '',
+      requested_by: requested_by ?? 'api',
+    });
+    res.json(result);
+  });
+
+  // === Cross-Approval API (Phase 2) ===
+
+  // Request cross-approval for an action
+  app.post('/api/approval/request', async (req, res) => {
+    const { action, context, risk_level } = req.body;
+
+    if (!action || !risk_level) {
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'action and risk_level are required', 400).to_json());
+      return;
+    }
+
+    // Check mode restriction first
+    if (!mode_manager.is_action_allowed(action, risk_level as RiskLevel)) {
+      res.status(403).json(new FASError('MODE_VIOLATION',
+        `Action "${action}" is not allowed in ${mode_manager.get_state().current_mode} mode`, 403).to_json());
+      return;
+    }
+
+    // LOW risk → auto-approve
+    if (risk_level === 'low') {
+      res.json({ decision: 'approved', reason: 'Low risk — auto-approved', reviewed_by: 'system' });
+      return;
+    }
+
+    // HIGH/CRITICAL → needs human approval
+    if (risk_level === 'high' || risk_level === 'critical') {
+      res.json({ decision: 'needs_human_approval', reason: `${risk_level} risk requires human approval via Telegram` });
+      return;
+    }
+
+    // MID risk → Gemini cross-approval
+    if (!cross_approval) {
+      // No Gemini configured — auto-approve with warning
+      res.json({ decision: 'approved', reason: 'Mid risk — auto-approved (no cross-approval configured)', reviewed_by: 'system' });
+      return;
+    }
+
+    try {
+      const result = await cross_approval.request_approval(action, context ?? '');
+      if (result.decision === 'rejected') {
+        res.status(403).json(new FASError('CROSS_APPROVAL_REJECTED', result.reason, 403, {
+          reviewed_by: result.reviewed_by,
+        }).to_json());
+        return;
+      }
+      res.json(result);
+    } catch {
+      res.status(500).json(new FASError('INTERNAL_ERROR', 'Cross-approval request failed', 500).to_json());
+    }
   });
 
   // === System ===
@@ -351,7 +509,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
     res.json({
       status: 'ok',
-      mode: process.env.FAS_MODE ?? 'awake',
+      mode: mode_manager.get_state().current_mode,
       uptime_seconds,
       hunter_alive,
       timestamp: new Date().toISOString(),
@@ -363,8 +521,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     res.json(store.get_stats());
   });
 
-  // Expose rate limiter for testing
-  return Object.assign(app, { _hunter_rate_limiter: hunter_rate_limiter });
+  // Expose internals for testing
+  return Object.assign(app, {
+    _hunter_rate_limiter: hunter_rate_limiter,
+    _mode_manager: mode_manager,
+    _agent_heartbeats: agent_heartbeats,
+  });
 };
 
 // === Start server (when run directly) ===

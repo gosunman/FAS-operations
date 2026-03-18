@@ -81,6 +81,8 @@ export type WatcherConfig = {
   sessions: string[];           // tmux session names to watch
   poll_interval_ms?: number;    // how often to capture output (default: 2000)
   on_match: (match: PatternMatch) => void | Promise<void>;
+  on_crash?: (session: string, consecutive_failures: number) => void | Promise<void>;
+  crash_threshold?: number;     // consecutive failures before on_crash fires (default: 3)
 };
 
 export class OutputWatcher extends EventEmitter {
@@ -89,6 +91,8 @@ export class OutputWatcher extends EventEmitter {
   private timers: ReturnType<typeof setInterval>[] = [];
   // Track last captured content per session to detect new lines
   private last_content: Map<string, string> = new Map();
+  // Track consecutive capture failures per session for crash detection
+  private crash_counts: Map<string, number> = new Map();
 
   constructor(config: WatcherConfig) {
     super();
@@ -144,8 +148,18 @@ export class OutputWatcher extends EventEmitter {
           await this.config.on_match(match);
         }
       }
+
+      // Reset crash counter on successful capture
+      this.crash_counts.set(session, 0);
     } catch {
-      // Session might not exist yet, ignore errors silently
+      // Track consecutive failures for crash detection
+      const count = (this.crash_counts.get(session) ?? 0) + 1;
+      this.crash_counts.set(session, count);
+      const threshold = this.config.crash_threshold ?? 3;
+      if (count >= threshold && this.config.on_crash) {
+        this.emit('crash', session, count);
+        await this.config.on_crash(session, count);
+      }
     }
   }
 

@@ -627,4 +627,135 @@ describe('Gateway Server', () => {
       rl_store.close();
     });
   });
+
+  // === Agent Healthcheck API ===
+
+  describe('Agent Healthcheck API', () => {
+    it('should register agent heartbeat', async () => {
+      const res = await request(app).post('/api/agents/claude/heartbeat');
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('should return all agent statuses', async () => {
+      await request(app).post('/api/agents/claude/heartbeat');
+      await request(app).post('/api/agents/gemini_a/heartbeat');
+
+      const res = await request(app).get('/api/agents/health');
+      expect(res.status).toBe(200);
+      expect(res.body.agents.length).toBe(2);
+      expect(res.body.agents[0].status).toBe('running');
+    });
+
+    it('should report and track agent crash', async () => {
+      await request(app).post('/api/agents/claude/heartbeat');
+      const crash_res = await request(app).post('/api/agents/claude/crash');
+      expect(crash_res.body.crash_count).toBe(1);
+
+      await request(app).post('/api/agents/claude/crash');
+      const crash_res2 = await request(app).post('/api/agents/claude/crash');
+      expect(crash_res2.body.crash_count).toBe(3);
+    });
+
+    it('should track crash for unknown agent', async () => {
+      const res = await request(app).post('/api/agents/unknown_agent/crash');
+      expect(res.status).toBe(200);
+      expect(res.body.crash_count).toBe(1);
+    });
+
+    it('should sync hunter heartbeat to agent_heartbeats', async () => {
+      await request(app).post('/api/hunter/heartbeat');
+      const health = await request(app).get('/api/agents/health');
+      const openclaw = health.body.agents.find((a: { name: string }) => a.name === 'openclaw');
+      expect(openclaw).toBeDefined();
+      expect(openclaw.status).toBe('running');
+    });
+  });
+
+  // === Mode Management API ===
+
+  describe('Mode Management API', () => {
+    it('should return current mode', async () => {
+      const res = await request(app).get('/api/mode');
+      expect(res.status).toBe(200);
+      expect(res.body.current_mode).toBe('awake');
+      expect(res.body.switched_at).toBeDefined();
+    });
+
+    it('should switch to sleep mode', async () => {
+      const res = await request(app).post('/api/mode').send({
+        target_mode: 'sleep',
+        reason: 'bedtime',
+        requested_by: 'cron',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.previous_mode).toBe('awake');
+      expect(res.body.current_mode).toBe('sleep');
+
+      const mode_res = await request(app).get('/api/mode');
+      expect(mode_res.body.current_mode).toBe('sleep');
+    });
+
+    it('should reject invalid target_mode', async () => {
+      const res = await request(app).post('/api/mode').send({ target_mode: 'invalid' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reflect mode in health check', async () => {
+      await request(app).post('/api/mode').send({ target_mode: 'sleep' });
+      const health = await request(app).get('/api/health');
+      expect(health.body.mode).toBe('sleep');
+    });
+  });
+
+  // === Cross-Approval API ===
+
+  describe('Cross-Approval API', () => {
+    it('should auto-approve low risk actions', async () => {
+      const res = await request(app).post('/api/approval/request').send({
+        action: 'file_read',
+        risk_level: 'low',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.decision).toBe('approved');
+    });
+
+    it('should require human approval for high risk', async () => {
+      const res = await request(app).post('/api/approval/request').send({
+        action: 'git_push',
+        risk_level: 'high',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.decision).toBe('needs_human_approval');
+    });
+
+    it('should auto-approve mid risk when no cross-approval configured', async () => {
+      const res = await request(app).post('/api/approval/request').send({
+        action: 'file_write',
+        risk_level: 'mid',
+        context: 'writing config file',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.decision).toBe('approved');
+      expect(res.body.reason).toContain('no cross-approval');
+    });
+
+    it('should reject when mode violation (sleep + high risk)', async () => {
+      await request(app).post('/api/mode').send({ target_mode: 'sleep' });
+
+      const res = await request(app).post('/api/approval/request').send({
+        action: 'git_push',
+        risk_level: 'high',
+      });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('MODE_VIOLATION');
+    });
+
+    it('should reject missing required fields', async () => {
+      const res = await request(app).post('/api/approval/request').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+    });
+  });
 });
