@@ -126,23 +126,24 @@ hunter_security:
 - 계정 격리 보안 계층(Defense in Depth의 최후 보루) 무력화
 
 **필요 조치** (주인님이 직접 수행):
-1. 헌터에서 기존 Claude Code OAuth 세션 로그아웃 및 토큰 삭제
+1. 헌터에서 기존 Claude Code 세션 로그아웃 및 토큰 삭제
    ```bash
    # 헌터 머신에서 실행
    claude logout
    rm -rf ~/.claude/auth*
    ```
-2. Google 계정 보안 설정에서 헌터의 OAuth 접근 권한 해제
-   - https://myaccount.google.com/permissions → Claude Code 앱 제거
-3. 계정 B(별도 Anthropic 계정) 생성 또는 기존 보유 시 해당 계정으로 재인증
+2. 계정 B(별도 Anthropic 계정) 생성 또는 기존 보유 시 해당 계정으로 재인증
    ```bash
    # 헌터 머신에서 실행 — 계정 B로 로그인
    claude login
    ```
-4. 인증 완료 후 검증
+3. 인증 완료 후 검증
    ```bash
    claude whoami  # 계정 B인지 확인
    ```
+
+> 참고: Claude Code OAuth 토큰은 `~/.claude/` 로컬에만 저장됨.
+> `logout` + 캐시 삭제로 완전 무효화. 별도 Google 설정 변경 불필요.
 
 **발견 경위**: NotebookLM 교차 검증에서 Doctrine-Operations 계정 격리 불일치로 지적됨.
 
