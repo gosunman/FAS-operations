@@ -74,7 +74,8 @@ describe('Gateway Server', () => {
         .send({ assigned_to: 'claude' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('title');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('title');
     });
 
     it('should reject task without assigned_to', async () => {
@@ -356,7 +357,7 @@ describe('Gateway Server', () => {
     it('should reject hunter requests without API key', async () => {
       const res = await request(auth_app).get('/api/hunter/tasks/pending');
       expect(res.status).toBe(401);
-      expect(res.body.error).toContain('API key');
+      expect(res.body.error).toBe('AUTH_ERROR');
     });
 
     it('should reject hunter requests with wrong API key', async () => {
@@ -422,7 +423,8 @@ describe('Gateway Server', () => {
         .send({ status: 'invalid_status', output: 'Test' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('status');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('status');
     });
 
     it('should reject non-string output', async () => {
@@ -435,7 +437,8 @@ describe('Gateway Server', () => {
         .send({ status: 'success', output: { nested: 'object' } });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('output must be a string');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('output must be a string');
     });
 
     it('should reject output exceeding max length', async () => {
@@ -450,7 +453,8 @@ describe('Gateway Server', () => {
         .send({ status: 'success', output: long_output });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('max length');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('max length');
     });
 
     it('should reject files exceeding max count', async () => {
@@ -468,7 +472,8 @@ describe('Gateway Server', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('max count');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('max count');
     });
 
     it('should reject files with path traversal', async () => {
@@ -485,7 +490,8 @@ describe('Gateway Server', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('..');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('..');
     });
 
     it('should reject files with absolute paths', async () => {
@@ -502,7 +508,8 @@ describe('Gateway Server', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('"/"');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('"/"');
     });
 
     it('should reject files with disallowed extensions', async () => {
@@ -519,8 +526,9 @@ describe('Gateway Server', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('.exe');
-      expect(res.body.allowed).toBeDefined();
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('.exe');
+      expect(res.body.details.allowed).toBeDefined();
     });
 
     it('should allow files with permitted extensions', async () => {
@@ -554,7 +562,8 @@ describe('Gateway Server', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('array');
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+      expect(res.body.message).toContain('array');
     });
   });
 
@@ -579,7 +588,7 @@ describe('Gateway Server', () => {
       // 3rd request — rate limited
       const res3 = await request(rl_app).get('/api/hunter/tasks/pending');
       expect(res3.status).toBe(429);
-      expect(res3.body.error).toContain('Rate limit');
+      expect(res3.body.error).toBe('RATE_LIMIT');
 
       rl_store.close();
     });

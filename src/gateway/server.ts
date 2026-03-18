@@ -27,6 +27,7 @@ import { create_task_store, type TaskStore } from './task_store.js';
 import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import type { Request, Response, NextFunction } from 'express';
+import { FASError } from '../shared/types.js';
 import type { TaskStatus } from '../shared/types.js';
 
 // === Hunter API security constants ===
@@ -83,9 +84,16 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     }
 
     const provided_key = req.headers[HUNTER_API_KEY_HEADER] as string | undefined;
+    if (!provided_key) {
+      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — missing API key`);
+      const err = new FASError('AUTH_ERROR', 'API key is required in x-hunter-api-key header', 401);
+      res.status(401).json(err.to_json());
+      return;
+    }
     if (provided_key !== options.hunter_api_key) {
-      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid or missing API key`);
-      res.status(401).json({ error: 'Invalid or missing API key' });
+      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid API key`);
+      const err = new FASError('AUTH_ERROR', 'Invalid API key', 401);
+      res.status(401).json(err.to_json());
       return;
     }
     next();
@@ -95,10 +103,9 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const hunter_rate_limit = (_req: Request, res: Response, next: NextFunction): void => {
     if (!hunter_rate_limiter.is_allowed()) {
       console.warn('[SECURITY] Hunter rate limit exceeded');
-      res.status(429).json({
-        error: 'Rate limit exceeded',
-        retry_after_ms: options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
-      });
+      const retry_after_ms = options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
+      const err = new FASError('RATE_LIMIT', 'Rate limit exceeded', 429, { retry_after_ms });
+      res.status(429).json(err.to_json());
       return;
     }
     next();
@@ -115,7 +122,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       const { title, description, priority, assigned_to, mode, risk_level, requires_personal_info, deadline, depends_on } = req.body;
 
       if (!title || !assigned_to) {
-        res.status(400).json({ error: 'title and assigned_to are required' });
+        const err = new FASError('VALIDATION_ERROR', 'title and assigned_to are required', 400);
+        res.status(400).json(err.to_json());
         return;
       }
 
@@ -133,7 +141,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
       res.status(201).json(task);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to create task' });
+      const err = new FASError('INTERNAL_ERROR', 'Failed to create task', 500);
+      res.status(500).json(err.to_json());
     }
   });
 
@@ -144,7 +153,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       const tasks = status ? store.get_by_status(status) : store.get_all();
       res.json({ tasks, count: tasks.length });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to list tasks' });
+      const err = new FASError('INTERNAL_ERROR', 'Failed to list tasks', 500);
+      res.status(500).json(err.to_json());
     }
   });
 
@@ -152,7 +162,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   app.get('/api/tasks/:id', (req, res) => {
     const task = store.get_by_id(req.params.id);
     if (!task) {
-      res.status(404).json({ error: 'Task not found' });
+      res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
     res.json(task);
@@ -162,12 +172,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   app.patch('/api/tasks/:id/status', (req, res) => {
     const { status } = req.body;
     if (!status) {
-      res.status(400).json({ error: 'status is required' });
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'status is required', 400).to_json());
       return;
     }
     const ok = store.update_status(req.params.id, status);
     if (!ok) {
-      res.status(404).json({ error: 'Task not found' });
+      res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
     res.json(store.get_by_id(req.params.id));
@@ -177,12 +187,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   app.post('/api/tasks/:id/complete', (req, res) => {
     const { summary, files_created } = req.body;
     if (!summary) {
-      res.status(400).json({ error: 'summary is required' });
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'summary is required', 400).to_json());
       return;
     }
     const ok = store.complete_task(req.params.id, { summary, files_created });
     if (!ok) {
-      res.status(404).json({ error: 'Task not found' });
+      res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
     res.json(store.get_by_id(req.params.id));
@@ -192,12 +202,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   app.post('/api/tasks/:id/block', (req, res) => {
     const { reason } = req.body;
     if (!reason) {
-      res.status(400).json({ error: 'reason is required' });
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'reason is required', 400).to_json());
       return;
     }
     const ok = store.block_task(req.params.id, reason);
     if (!ok) {
-      res.status(404).json({ error: 'Task not found' });
+      res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
     res.json(store.get_by_id(req.params.id));
@@ -214,7 +224,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         .map(sanitize_task);
       res.json({ tasks: sanitized, count: sanitized.length });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to get hunter tasks' });
+      res.status(500).json(new FASError('INTERNAL_ERROR', 'Failed to get hunter tasks', 500).to_json());
     }
   });
 
@@ -226,59 +236,50 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
     // Validate result_status
     if (result_status !== 'success' && result_status !== 'failure') {
-      res.status(400).json({ error: 'status must be "success" or "failure"' });
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'status must be "success" or "failure"', 400).to_json());
       return;
     }
 
     // Validate output type and length
     if (output !== undefined && typeof output !== 'string') {
-      res.status(400).json({ error: 'output must be a string' });
+      res.status(400).json(new FASError('VALIDATION_ERROR', 'output must be a string', 400).to_json());
       return;
     }
     if (typeof output === 'string' && output.length > max_output_length) {
-      res.status(400).json({
-        error: `output exceeds max length (${max_output_length} chars)`,
-        max_length: max_output_length,
-      });
+      res.status(400).json(new FASError('VALIDATION_ERROR', `output exceeds max length (${max_output_length} chars)`, 400, { max_length: max_output_length }).to_json());
       return;
     }
 
     // Validate files array
     if (files !== undefined) {
       if (!Array.isArray(files)) {
-        res.status(400).json({ error: 'files must be an array of strings' });
+        res.status(400).json(new FASError('VALIDATION_ERROR', 'files must be an array of strings', 400).to_json());
         return;
       }
       if (files.length > max_files_count) {
-        res.status(400).json({
-          error: `files array exceeds max count (${max_files_count})`,
-          max_count: max_files_count,
-        });
+        res.status(400).json(new FASError('VALIDATION_ERROR', `files array exceeds max count (${max_files_count})`, 400, { max_count: max_files_count }).to_json());
         return;
       }
 
       // Validate each file entry
       for (const file of files) {
         if (typeof file !== 'string') {
-          res.status(400).json({ error: 'each file entry must be a string' });
+          res.status(400).json(new FASError('VALIDATION_ERROR', 'each file entry must be a string', 400).to_json());
           return;
         }
         if (file.length > MAX_FILE_PATH_LENGTH) {
-          res.status(400).json({ error: `file path exceeds max length (${MAX_FILE_PATH_LENGTH})` });
+          res.status(400).json(new FASError('VALIDATION_ERROR', `file path exceeds max length (${MAX_FILE_PATH_LENGTH})`, 400).to_json());
           return;
         }
         // Block path traversal attempts
         if (file.includes('..') || file.startsWith('/')) {
-          res.status(400).json({ error: 'file paths must not contain ".." or start with "/"' });
+          res.status(400).json(new FASError('VALIDATION_ERROR', 'file paths must not contain ".." or start with "/"', 400).to_json());
           return;
         }
         // Check file extension against allowlist
         const ext = file.substring(file.lastIndexOf('.')).toLowerCase();
         if (file.includes('.') && !ALLOWED_FILE_EXTENSIONS.has(ext)) {
-          res.status(400).json({
-            error: `file extension "${ext}" is not allowed`,
-            allowed: [...ALLOWED_FILE_EXTENSIONS],
-          });
+          res.status(400).json(new FASError('VALIDATION_ERROR', `file extension "${ext}" is not allowed`, 400, { allowed: [...ALLOWED_FILE_EXTENSIONS] }).to_json());
           return;
         }
       }

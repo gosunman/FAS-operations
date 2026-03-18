@@ -51,6 +51,50 @@ export type ApprovalResponse = {
   responded_at: string;
 } | null; // null = timeout
 
+// === Notification Result ===
+
+export type NotificationResult = {
+  channel: 'telegram' | 'slack' | 'notion';
+  success: boolean;
+  attempts: number;
+  error?: string;
+  fallback_used?: boolean;
+};
+
+// === Error Types ===
+
+export type FASErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'AUTH_ERROR'
+  | 'RATE_LIMIT'
+  | 'PII_DETECTED'
+  | 'INTERNAL_ERROR'
+  | 'NOTIFICATION_ERROR'
+  | 'TIMEOUT';
+
+export class FASError extends Error {
+  readonly code: FASErrorCode;
+  readonly status_code: number;
+  readonly details?: Record<string, unknown>;
+
+  constructor(code: FASErrorCode, message: string, status_code: number, details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'FASError';
+    this.code = code;
+    this.status_code = status_code;
+    this.details = details;
+  }
+
+  to_json() {
+    return {
+      error: this.code,
+      message: this.message,
+      ...(this.details ? { details: this.details } : {}),
+    };
+  }
+}
+
 // === Task Types ===
 
 export type RiskLevel = 'low' | 'mid' | 'high' | 'critical';
