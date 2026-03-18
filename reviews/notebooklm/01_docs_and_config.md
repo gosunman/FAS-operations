@@ -5,7 +5,6 @@
 
 ## 파일: CLAUDE.md
 
-`````markdown
 # CLAUDE.md — Captain (캡틴) Claude Code 규칙
 
 ## 정체성
@@ -135,13 +134,11 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [docs/task-system.md](docs/task-system.md) — 태스크 시스템
 - [docs/hunter-protocol.md](docs/hunter-protocol.md) — 헌터 격리 & 통신 프로토콜
 - [PLAN.md](PLAN.md) — 구축 계획
-`````
 
 ---
 
 ## 파일: PLAN.md
 
-`````markdown
 # PLAN.md — Fully Automation System 구축 계획
 
 ## 전체 로드맵
@@ -586,13 +583,11 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | AI 서비스 장애 (Claude/Gemini 다운) | 가용성 | 다른 AI로 자동 폴백                   |
 | 디바이스 리소스 부족                | 성능   | 모니터링 + 주인님에게 구매 제안       |
 | AI 토큰 사용량 한도 초과            | 생산성 | 모니터링 + 플랜 업그레이드 제안       |
-`````
 
 ---
 
 ## 파일: README.md
 
-`````markdown
 # Fully Automation System (FAS)
 
 > 24시간 무중단 AI 워커 시스템 — 잠자는 동안에도 일하는 디지털 분신
@@ -794,13 +789,11 @@ pnpm run gateway
 - **검증**: NotebookLM (헌터, 웹 자동화), AI 교차 리뷰
 - **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)
 - **인프라**: Docker/Colima (n8n, 각종 서비스 격리)
-`````
 
 ---
 
 ## 파일: SPEC.md
 
-`````markdown
 # SPEC.md — 기술 명세 인덱스
 
 > 상세 기술 명세는 `docs/` 디렉토리에 분리되어 있습니다.
@@ -831,13 +824,11 @@ pnpm run gateway
 | [config/schedules.yml](config/schedules.yml)             | 반복 태스크 스케줄                      |
 | [config/risk_rules.yml](config/risk_rules.yml)           | 위험도 분류 규칙                        |
 | [config/personal_filter.yml](config/personal_filter.yml) | 개인정보 필터링 패턴 (gateway.md 참조)  |
-`````
 
 ---
 
 ## 파일: devspec.md
 
-`````markdown
 # devspec.md — FAS 개발자 & AI 에이전트 기술 명세
 
 ## 시스템 아키텍처
@@ -991,13 +982,11 @@ pnpm run hunter    # Hunter Agent (on hunter machine)
 - n8n은 Colima(Docker)에서 실행, 볼륨은 로컬 디스크
 - launchd plist로 부팅 시 자동 시작 (`com.fas.captain.plist`)
 - 에이전트 크래시 시 `agent_wrapper.sh`가 지수 백오프로 최대 3회 재시작
-`````
 
 ---
 
 ## 파일: package.json
 
-`````json
 {
   "name": "fully-automation-system",
   "version": "0.1.0",
@@ -1045,21 +1034,17 @@ pnpm run hunter    # Hunter Agent (on hunter machine)
     "yaml": "^2.8.2"
   }
 }
-`````
 
 ---
 
 ## 파일: pnpm-workspace.yaml
 
-`````yaml
 approveBuilds: better-sqlite3
-`````
 
 ---
 
 ## 파일: tsconfig.json
 
-`````json
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -1085,13 +1070,11 @@ approveBuilds: better-sqlite3
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
-`````
 
 ---
 
 ## 파일: vitest.config.ts
 
-`````typescript
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -1111,13 +1094,11 @@ export default defineConfig({
     },
   },
 });
-`````
 
 ---
 
 ## 파일: .gitignore
 
-`````gitignore
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -1158,13 +1139,11 @@ coverage/
 
 # Docker volumes
 .n8n/
-`````
 
 ---
 
 ## 파일: .env.example
 
-`````example
 # === Telegram ===
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
@@ -1196,13 +1175,11 @@ HUNTER_LOG_DIR=./logs
 FAS_MODE=awake
 FAS_DEVICE=captain
 NODE_ENV=development
-`````
 
 ---
 
 ## 파일: .env
 
-`````env
 # === Telegram ===
 TELEGRAM_BOT_TOKEN=[MASKED_VALUE]
 TELEGRAM_CHAT_ID=[MASKED_VALUE]
@@ -1229,13 +1206,11 @@ GATEWAY_HOST=0.0.0.0
 FAS_MODE=awake
 FAS_DEVICE=captain
 NODE_ENV=development
-`````
 
 ---
 
 ## 파일: docker-compose.yml
 
-`````yaml
 version: '3.8'
 
 services:
@@ -1270,13 +1245,11 @@ services:
 volumes:
   n8n_data:
     driver: local
-`````
 
 ---
 
 ## 파일: config/agents.yml
 
-`````yaml
 # Source of truth for agent identities/roles: docs/agents-charter.md
 
 agents:
@@ -1416,13 +1389,11 @@ agents:
       max_retries: 3
       retry_delay_seconds: 5
       escalate_after: 3
-`````
 
 ---
 
 ## 파일: config/risk_rules.yml
 
-`````yaml
 rules:
   low:
     actions:
@@ -1475,13 +1446,11 @@ rules:
     timeout_minutes: null
     on_timeout: reject
     log: true
-`````
 
 ---
 
 ## 파일: config/schedules.yml
 
-`````yaml
 schedules:
   # === 정보 수집 (SLEEP / RECURRING) ===
 
@@ -1582,13 +1551,11 @@ schedules:
     type: daily
     time: "07:30"
     workflow: WF-3
-`````
 
 ---
 
 ## 파일: docs/academy.md
 
-`````markdown
 # 학원 업무 자동화
 
 ## 개요
@@ -1856,13 +1823,11 @@ function build_test_prompt(request: TestRequest): string {
 5. PDF/LaTeX 포매팅
 6. 인쇄
 ```
-`````
 
 ---
 
 ## 파일: docs/agent-control.md
 
-`````markdown
 # 에이전트 제어 프로토콜
 
 > 이 문서는 FAS의 핵심 — n8n/태스크 시스템이 AI CLI 도구를 **프로그래밍적으로 제어**하는 방법을 정의한다.
@@ -2336,13 +2301,11 @@ if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
     -d "text=🚨 Agent ${AGENT_ID} crashed after ${MAX_RETRIES} retries. Manual intervention needed."
 fi
 ```
-`````
 
 ---
 
 ## 파일: docs/agents-charter.md
 
-`````markdown
 # FAS Agent Charter — Source of Truth
 
 > This document defines the identity, roles, relationships, and principles of all FAS agents.
@@ -2515,13 +2478,11 @@ Gemini (proxy role)
 ```
 
 Both Captain and Hunter emit these patterns. The Watchdog on each machine captures and routes them appropriately.
-`````
 
 ---
 
 ## 파일: docs/architecture.md
 
-`````markdown
 # 시스템 아키텍처
 
 ## 전체 구조도
@@ -2761,13 +2722,11 @@ fully-automation-system/
    b. fas-wrapper  → Agent Wrapper (Task API 폴링)
 3. Wrapper가 캡틴의 Task API에 heartbeat 전송 시작
 ```
-`````
 
 ---
 
 ## 파일: docs/cost.md
 
-`````markdown
 # 비용 관리
 
 ## 구독 비용 (월간 고정)
@@ -2829,13 +2788,11 @@ Telegram 알림 조건:
 - 특정 서비스 rate limit 반복 도달
 - 디바이스 리소스 임계치 초과
 ```
-`````
 
 ---
 
 ## 파일: docs/crawlers.md
 
-`````markdown
 # 크롤러 상세 명세
 
 ## 실행 방식
@@ -3149,13 +3106,11 @@ rate_limits:
 
   # AI 방식 크롤러는 rate limit 불필요 (검색 엔진 경유)
 ```
-`````
 
 ---
 
 ## 파일: docs/gateway.md
 
-`````markdown
 # 승인 게이트웨이 + Task API
 
 ## 개요
@@ -3540,13 +3495,11 @@ patterns:
   - regex: "(자산|현금|예금|보증금|연봉|월급)[:：]?\\s*[약~]?\\s*\\d+[만억천]"
     replacement: "[금융정보 제거됨]"
 ```
-`````
 
 ---
 
 ## 파일: docs/hunter-protocol.md
 
-`````markdown
 # 헌터 격리 & 통신 프로토콜
 
 > 에이전트 정체성, 역할, 절대원칙, 관계 등의 원천 문서: [docs/agents-charter.md](agents-charter.md)
@@ -3786,13 +3739,11 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 - 헌터 → 캡틴 3100 포트만 (Task API)
 - 캡틴 → 헌터 22 포트만 (SSH, 긴급 관리용)
 - 헌터 → 캡틴 파일시스템 접근 불가
-`````
 
 ---
 
 ## 파일: docs/monitoring.md
 
-`````markdown
 # 감시 & 리소스 모니터링
 
 ## Watchdog 데몬
@@ -4066,13 +4017,11 @@ log_rotation:
   max_size: 100MB       # 파일당 최대 크기
   compress: true        # 오래된 로그 gzip 압축
 ```
-`````
 
 ---
 
 ## 파일: docs/n8n-workflows.md
 
-`````markdown
 # n8n 워크플로우 상세
 
 ## 개요
@@ -4359,13 +4308,11 @@ schedules:
     time: "07:30"
     workflow: WF-3
 ```
-`````
 
 ---
 
 ## 파일: docs/notification.md
 
-`````markdown
 # 소통 채널 명세
 
 ## 채널 역할 분담
@@ -4676,13 +4623,11 @@ async function create_report_page(
 | 시험지 생성 완료 | X | #academy | X |
 | 아이디어 분석 완료 | X | #ideas | O |
 | Deep Research 완료 | X | #reports | O |
-`````
 
 ---
 
 ## 파일: docs/pipeline.md
 
-`````markdown
 # 캐시플로우 & 사업화 파이프라인
 
 ## 개요
@@ -4942,13 +4887,11 @@ ideas_backlog:
     - "NVC 코칭 플랫폼"
     - "멘토링/강연 사업화"
 ```
-`````
 
 ---
 
 ## 파일: docs/security-audit.md
 
-`````markdown
 # 보안 감사 보고서 — 헌터 머신 배포 전 점검
 
 > 감사일: 2026-03-17
@@ -5151,13 +5094,11 @@ fas-hunter/
 3. 헌터 배포 패키지 구성이 적절한가? 누락된 위험 요소는?
 4. 역방향 PII 검사(헌터→캡틴) 전략의 적절성
 5. 네트워크 레벨 보안 (Tailscale ACL만으로 충분한가?)
-`````
 
 ---
 
 ## 파일: docs/security.md
 
-`````markdown
 # 보안 명세
 
 ## 시크릿 관리
@@ -5385,13 +5326,11 @@ dist/
 # Colima/Docker
 .colima/
 ```
-`````
 
 ---
 
 ## 파일: docs/task-system.md
 
-`````markdown
 # 태스크 시스템
 
 ## 개요
@@ -5690,13 +5629,11 @@ n8n 크론 트리거 (schedules.yml 기반)
 ```
 
 상세 워크플로우는 [n8n-workflows.md](n8n-workflows.md) 참조.
-`````
 
 ---
 
 ## 파일: hunter/CLAUDE.md
 
-`````markdown
 # CLAUDE.md — Hunter (헌터) Claude Code 규칙
 
 ## 정체성
@@ -5822,13 +5759,11 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [docs/agents-charter.md](../docs/agents-charter.md) — **에이전트 체계 원천 문서 (Source of Truth)**
 - [hunter/openclaw/system_prompt.md](openclaw/system_prompt.md) — OpenClaw 초기 지시문
 - [hunter/openclaw/browsing_rules.md](openclaw/browsing_rules.md) — 브라우징 규칙
-`````
 
 ---
 
 ## 파일: hunter/README.md
 
-`````markdown
 # Hunter (헌터) — 자율 정찰병
 
 Mac Studio #1 (M1 Ultra / 32GB)에서 24/7 무중단 가동되는 자율 탐색 에이전트.
@@ -5864,13 +5799,11 @@ hunter/
 - **계정 격리** — 계정 B(헌터 전용) 전용
 
 상세: [docs/agents-charter.md](../docs/agents-charter.md)
-`````
 
 ---
 
 ## 파일: hunter/openclaw/README.md
 
-`````markdown
 # OpenClaw Configuration
 
 헌터의 메인 브라우저 엔진(ChatGPT Pro OAuth) 설정 파일.
@@ -5886,13 +5819,11 @@ hunter/
 
 이 파일들은 헌터 배포 시 OpenClaw의 시스템 프롬프트와 설정으로 주입된다.
 헌터 초기화 후 재배포 시에도 함께 전달된다.
-`````
 
 ---
 
 ## 파일: hunter/openclaw/browsing_rules.md
 
-`````markdown
 # Hunter Browsing Rules — OpenClaw
 
 ## Bot Detection Bypass
@@ -5999,13 +5930,11 @@ hunter/
 2. Captain/Watchdog sends Telegram notification to owner
 3. Wait for owner to manually re-login via VNC
 4. Resume operations after session is restored
-`````
 
 ---
 
 ## 파일: hunter/openclaw/system_prompt.md
 
-`````markdown
 # OpenClaw System Prompt — Hunter Agent
 
 ## Identity
@@ -6095,13 +6024,11 @@ When receiving tasks via Task API:
 3. Execute with full effort
 4. Report structured results back via Task API
 5. Flag any issues that emerged during execution
-`````
 
 ---
 
 ## 파일: shadow/CLAUDE.md
 
-`````markdown
 # CLAUDE.md — Shadow (그림자) Claude Code 규칙
 
 ## 정체성
@@ -6154,13 +6081,11 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 
 - [docs/agents-charter.md](../docs/agents-charter.md) — **에이전트 체계 원천 문서 (Source of Truth)**
 - [docs/architecture.md](../docs/architecture.md) — 시스템 아키텍처
-`````
 
 ---
 
 ## 파일: shadow/README.md
 
-`````markdown
 # Shadow (그림자) — 주인님의 보좌관
 
 MacBook Pro (M1 Pro / 32GB)에서 주인님이 필요할 때만 수동으로 사용하는 지휘소.
@@ -6185,13 +6110,11 @@ shadow/
 - 코드 작성, 설계, 디버깅 시 Claude Code 수동 보조
 
 상세: [docs/agents-charter.md](../docs/agents-charter.md)
-`````
 
 ---
 
 ## 파일: scripts/README.md
 
-`````markdown
 # scripts/ — FAS 스크립트
 
 ## 스크립트 목록
@@ -6211,13 +6134,11 @@ shadow/
 | `setup_colima.sh` | Colima + Docker 설치 (brew) |
 | `setup_ai_cli.sh` | AI CLI 인증 상태 확인 가이드 |
 | `com.fas.captain.plist` | launchd 자동 시작 설정 |
-`````
 
 ---
 
 ## 파일: scripts/setup/com.fas.captain.plist
 
-`````xml
 <!-- FAS Captain launchd plist
      Auto-starts FAS tmux sessions on login.
 
@@ -6265,13 +6186,11 @@ shadow/
     </dict>
 </dict>
 </plist>
-`````
 
 ---
 
 ## 파일: .claude/settings.local.json
 
-`````json
 {
   "permissions": {
     "allow": [
@@ -6296,6 +6215,5 @@ shadow/
     ]
   }
 }
-`````
 
 ---

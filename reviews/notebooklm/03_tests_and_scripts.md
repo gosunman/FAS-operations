@@ -5,7 +5,6 @@
 
 ## 파일: src/gateway/rate_limiter.test.ts
 
-`````typescript
 // TDD tests for rate limiter
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { create_rate_limiter } from './rate_limiter.js';
@@ -80,13 +79,11 @@ describe('RateLimiter', () => {
     expect(limiter.is_allowed()).toBe(true);
   });
 });
-`````
 
 ---
 
 ## 파일: src/gateway/sanitizer.test.ts
 
-`````typescript
 // TDD tests for PII sanitizer
 import { describe, it, expect } from 'vitest';
 import { sanitize_text, sanitize_task, contains_pii, detect_pii_types, type HunterSafeTask } from './sanitizer.js';
@@ -273,13 +270,11 @@ describe('Sanitizer', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/gateway/server.test.ts
 
-`````typescript
 // TDD tests for Gateway + Task API server
 // Covers: CRUD, Hunter API, authentication, rate limiting, quarantine, schema validation
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -887,13 +882,11 @@ describe('Gateway Server', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/gateway/task_store.test.ts
 
-`````typescript
 // TDD tests for SQLite task store
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { create_task_store, type TaskStore } from './task_store.js';
@@ -1096,13 +1089,11 @@ describe('TaskStore', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/hunter/api_client.test.ts
 
-`````typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_api_client } from './api_client.js';
 import type { Logger } from './logger.js';
@@ -1376,13 +1367,11 @@ describe('api_client', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/hunter/poll_loop.test.ts
 
-`````typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_poll_loop } from './poll_loop.js';
 import type { ApiClient } from './api_client.js';
@@ -1552,13 +1541,11 @@ describe('poll_loop', () => {
     expect(loop.get_current_interval()).toBe(1000);
   });
 });
-`````
 
 ---
 
 ## 파일: src/hunter/task_executor.test.ts
 
-`````typescript
 import { describe, it, expect, vi } from 'vitest';
 import { create_task_executor, resolve_action } from './task_executor.js';
 import type { Task } from '../shared/types.js';
@@ -1660,13 +1647,11 @@ describe('create_task_executor', () => {
     expect(result.output).toContain('NotebookLM');
   });
 });
-`````
 
 ---
 
 ## 파일: src/notification/router.test.ts
 
-`````typescript
 // TDD tests for notification router
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_notification_router } from './router.js';
@@ -1893,13 +1878,11 @@ describe('Notification Router', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/notification/slack.test.ts
 
-`````typescript
 // TDD tests for Slack notification module
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_slack_client } from './slack.js';
@@ -2109,13 +2092,11 @@ describe('Slack Client', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/notification/telegram.test.ts
 
-`````typescript
 // TDD tests for Telegram notification module
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { create_telegram_client } from './telegram.js';
@@ -2315,13 +2296,11 @@ describe('Telegram Client', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: src/watchdog/output_watcher.test.ts
 
-`````typescript
 // TDD tests for output watcher
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scan_line, OutputWatcher, type PatternMatch } from './output_watcher.js';
@@ -2457,13 +2436,11 @@ describe('Output Watcher', () => {
     });
   });
 });
-`````
 
 ---
 
 ## 파일: scripts/agent_wrapper.sh
 
-`````bash
 #!/usr/bin/env bash
 # FAS Agent Wrapper — Auto-restart on crash
 # Usage: agent_wrapper.sh <command> [args...]
@@ -2536,13 +2513,11 @@ while true; do
   echo "[Wrapper] Restarting in ${DELAY}s..."
   sleep "$DELAY"
 done
-`````
 
 ---
 
 ## 파일: scripts/generate_review_files.ts
 
-`````typescript
 /**
  * generate_review_files.ts
  *
@@ -2843,13 +2818,11 @@ const main = () => {
 };
 
 main();
-`````
 
 ---
 
 ## 파일: scripts/test_notifications.ts
 
-`````typescript
 // Quick integration test: send real messages to Telegram and Slack
 import 'dotenv/config';
 import { create_telegram_client } from '../src/notification/telegram.js';
@@ -2896,13 +2869,11 @@ const run = async () => {
 };
 
 run();
-`````
 
 ---
 
 ## 파일: scripts/setup/setup_ai_cli.sh
 
-`````bash
 #!/usr/bin/env bash
 # AI CLI authentication setup guide
 # This script checks auth status and guides manual setup steps
@@ -2989,13 +2960,11 @@ echo "  2. Create Slack workspace + bot token"
 echo "  3. Copy .env.example to .env and fill in values"
 echo "  4. Run 'claude' to complete OAuth login"
 echo "=========================================="
-`````
 
 ---
 
 ## 파일: scripts/setup/setup_colima.sh
 
-`````bash
 #!/usr/bin/env bash
 # Install and configure Colima + Docker for FAS
 # Requires: Homebrew
@@ -3049,13 +3018,11 @@ docker info --format '  Memory: {{.MemTotal}}'
 echo ""
 echo "[FAS] Colima + Docker setup complete!"
 echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
-`````
 
 ---
 
 ## 파일: scripts/setup/setup_tmux.sh
 
-`````bash
 #!/usr/bin/env bash
 # FAS tmux environment setup script
 # Sets up tmux configuration and session naming conventions
@@ -3113,13 +3080,11 @@ fi
 
 echo "[FAS] tmux setup complete!"
 echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
-`````
 
 ---
 
 ## 파일: scripts/start_captain_sessions.sh
 
-`````bash
 #!/usr/bin/env bash
 # Start all FAS tmux sessions on Captain
 # Naming convention: fas-{service}
@@ -3181,13 +3146,11 @@ create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJEC
 echo ""
 echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
 echo "[FAS] Attach to a session: tmux attach -t fas-claude"
-`````
 
 ---
 
 ## 파일: scripts/status.sh
 
-`````bash
 #!/usr/bin/env bash
 # Show status of all FAS tmux sessions and services
 
@@ -3242,13 +3205,11 @@ echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
 echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
 echo ""
 echo "=========================================="
-`````
 
 ---
 
 ## 파일: scripts/stop_all.sh
 
-`````bash
 #!/usr/bin/env bash
 # Stop all FAS tmux sessions gracefully
 # Sends SIGTERM to running processes, then kills sessions
@@ -3270,6 +3231,5 @@ for session in "${FAS_SESSIONS[@]}"; do
 done
 
 echo "[FAS] All FAS sessions stopped."
-`````
 
 ---

@@ -5,7 +5,6 @@
 
 ## 파일: src/shared/types.ts
 
-`````typescript
 // === Notification Types ===
 
 export type NotificationLevel = 'info' | 'approval' | 'alert' | 'briefing' | 'critical';
@@ -140,13 +139,11 @@ export type HealthCheckResponse = {
   }>;
   timestamp: string;
 };
-`````
 
 ---
 
 ## 파일: src/gateway/rate_limiter.ts
 
-`````typescript
 // Simple in-memory sliding window rate limiter for Hunter API
 // No external dependencies — lightweight defense against abuse
 
@@ -195,13 +192,11 @@ export const create_rate_limiter = (config: RateLimiterConfig) => {
 };
 
 export type RateLimiter = ReturnType<typeof create_rate_limiter>;
-`````
 
 ---
 
 ## 파일: src/gateway/sanitizer.ts
 
-`````typescript
 // Personal information sanitizer for FAS
 // Removes PII before sending tasks to Hunter (isolated device)
 // Stage 1: Regex-based pattern matching (fast, deterministic)
@@ -333,13 +328,11 @@ export const detect_pii_types = (text: string): string[] => {
     })
     .map((pattern) => pattern.name);
 };
-`````
 
 ---
 
 ## 파일: src/gateway/server.ts
 
-`````typescript
 // FAS Gateway + Task API Server
 // Port 3100 — Tailscale internal only
 //
@@ -731,13 +724,11 @@ if (is_main) {
     process.exit(0);
   });
 }
-`````
 
 ---
 
 ## 파일: src/gateway/task_store.ts
 
-`````typescript
 // SQLite-based task store for FAS
 // Manages task lifecycle: create -> pending -> in_progress -> done/blocked
 
@@ -944,13 +935,11 @@ export const create_task_store = (config: TaskStoreConfig) => {
 };
 
 export type TaskStore = ReturnType<typeof create_task_store>;
-`````
 
 ---
 
 ## 파일: src/hunter/api_client.ts
 
-`````typescript
 // HTTP client for Captain's Task API
 // Uses native fetch — no external dependencies needed
 // Supports API key authentication (Defense in Depth)
@@ -1065,13 +1054,11 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
 
   return { fetch_pending_tasks, submit_result, send_heartbeat };
 };
-`````
 
 ---
 
 ## 파일: src/hunter/config.ts
 
-`````typescript
 // Hunter agent configuration loader
 // Reads from environment variables with sensible defaults
 
@@ -1102,13 +1089,11 @@ export const load_hunter_config = (): HunterConfig => {
     device_name: 'hunter',
   };
 };
-`````
 
 ---
 
 ## 파일: src/hunter/index.ts
 
-`````typescript
 // Hunter module — barrel export
 
 export { load_hunter_config, type HunterConfig } from './config.js';
@@ -1116,13 +1101,11 @@ export { create_api_client, type ApiClient, type ApiClientConfig } from './api_c
 export { create_task_executor, resolve_action } from './task_executor.js';
 export { create_poll_loop, type PollLoopDeps, type PollLoopState } from './poll_loop.js';
 export { create_logger, type Logger } from './logger.js';
-`````
 
 ---
 
 ## 파일: src/hunter/logger.ts
 
-`````typescript
 // Simple file + console logger for Hunter agent
 // Logs to: console + {log_dir}/hunter_{date}.log
 
@@ -1174,13 +1157,11 @@ export const create_logger = (log_dir: string): Logger => {
     error: (msg) => write('error', msg),
   };
 };
-`````
 
 ---
 
 ## 파일: src/hunter/main.ts
 
-`````typescript
 // Hunter agent entry point
 // Polls Captain's Task API, executes tasks via OpenClaw (stubs for now)
 //
@@ -1222,13 +1203,11 @@ if (is_main) {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
-`````
 
 ---
 
 ## 파일: src/hunter/poll_loop.ts
 
-`````typescript
 // Main polling loop for Hunter agent
 // Cycle: heartbeat → fetch pending → execute first task → submit result → wait
 //
@@ -1357,13 +1336,11 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
 
   return { start, stop, get_state, run_cycle, get_current_interval };
 };
-`````
 
 ---
 
 ## 파일: src/hunter/task_executor.ts
 
-`````typescript
 // Task executor with action routing
 // Currently all executors are stubs — OpenClaw integration comes later
 
@@ -1451,24 +1428,20 @@ export const create_task_executor = (logger: Logger) => {
 
   return { execute, resolve_action };
 };
-`````
 
 ---
 
 ## 파일: src/notification/index.ts
 
-`````typescript
 // Notification module barrel export
 export { create_telegram_client, type TelegramClient, type TelegramConfig } from './telegram.js';
 export { create_slack_client, type SlackClient, type SlackConfig } from './slack.js';
 export { create_notification_router, type NotificationRouter, type NotificationRouterDeps } from './router.js';
-`````
 
 ---
 
 ## 파일: src/notification/router.ts
 
-`````typescript
 // Unified notification router for FAS
 // Routes events to Telegram, Slack, and Notion based on the routing matrix
 
@@ -1561,13 +1534,11 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
 };
 
 export type NotificationRouter = ReturnType<typeof create_notification_router>;
-`````
 
 ---
 
 ## 파일: src/notification/slack.ts
 
-`````typescript
 // Slack notification module for FAS
 // Handles: agent logs, approvals, reports, crawl results, alerts
 
@@ -1677,13 +1648,11 @@ export const create_slack_client = (config: SlackConfig) => {
 };
 
 export type SlackClient = ReturnType<typeof create_slack_client>;
-`````
 
 ---
 
 ## 파일: src/notification/telegram.ts
 
-`````typescript
 // Telegram Bot notification module for FAS
 // Handles: urgent alerts, approval requests, morning briefings
 
@@ -1835,13 +1804,11 @@ export const create_telegram_client = (config: TelegramConfig) => {
 };
 
 export type TelegramClient = ReturnType<typeof create_telegram_client>;
-`````
 
 ---
 
 ## 파일: src/watchdog/output_watcher.ts
 
-`````typescript
 // FAS Output Watcher
 // Monitors tmux session output for predefined patterns
 // and routes them to Telegram/Slack notifications.
@@ -2064,6 +2031,5 @@ if (is_main) {
     process.exit(0);
   });
 }
-`````
 
 ---
