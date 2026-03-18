@@ -130,7 +130,7 @@ hunter_security:
    ```bash
    # 헌터 머신에서 실행
    claude logout
-   rm -rf ~/.claude/auth*
+   rm -f ~/.claude/.credentials.json
    ```
 2. 계정 B(별도 Anthropic 계정) 생성 또는 기존 보유 시 해당 계정으로 재인증
    ```bash
