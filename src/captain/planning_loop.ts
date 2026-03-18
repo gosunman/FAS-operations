@@ -1,10 +1,13 @@
 // Captain's planning loop — morning/night autonomous scheduling
 // Reads schedules.yml, creates due tasks in store, sends briefing notifications
+// Also supports dynamic task discovery via Gemini analysis of crawl results
 
 import { readFileSync } from 'node:fs';
 import { parse as yaml_parse } from 'yaml';
 import type { TaskStore } from '../gateway/task_store.js';
 import type { NotificationRouter } from '../notification/router.js';
+import type { GeminiConfig } from '../gemini/types.js';
+import { spawn_gemini } from '../gemini/cli_wrapper.js';
 
 // === Schedule types (from schedules.yml) ===
 
@@ -51,6 +54,31 @@ const is_due_today = (entry: ScheduleEntry, today: Date, epoch: Date): boolean =
   }
 };
 
+// === Valid agents for discovered tasks ===
+
+const VALID_AGENTS = ['gemini_a', 'gemini_b', 'openclaw', 'claude'] as const;
+
+// === Crawl-related keywords for filtering completed tasks ===
+
+const CRAWL_KEYWORDS = ['crawl', '크롤링', 'scrape', 'research'] as const;
+
+// === Max suggestions per discovery cycle ===
+
+const MAX_DISCOVER_SUGGESTIONS = 3;
+
+// === Lookback window for recent crawl tasks (3 days in ms) ===
+
+const DISCOVER_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
+
+// === Type for Gemini discovery suggestion ===
+
+type DiscoverySuggestion = {
+  title: string;
+  description: string;
+  agent: string;
+  priority: 'low' | 'medium' | 'high';
+};
+
 // === Dependencies ===
 
 export type PlanningLoopDeps = {
@@ -58,6 +86,7 @@ export type PlanningLoopDeps = {
   router: NotificationRouter;
   schedules_path: string;
   epoch?: Date;  // Reference date for every_3_days calculation (default: 2026-01-01)
+  gemini_config?: GeminiConfig;  // For discover_opportunities
 };
 
 // === Factory ===
@@ -145,9 +174,176 @@ export const create_planning_loop = (deps: PlanningLoopDeps) => {
     return { created, skipped };
   };
 
-  // Night planning: send daily summary
+  // === Dynamic task discovery via Gemini analysis of crawl results ===
+
+  // Get recently completed crawl tasks (last 3 days)
+  const get_recent_crawl_tasks = () => {
+    const done_tasks = deps.store.get_by_status('done');
+    const cutoff = Date.now() - DISCOVER_LOOKBACK_MS;
+
+    return done_tasks.filter((t) => {
+      // Must have completed within lookback window
+      if (!t.completed_at || new Date(t.completed_at).getTime() < cutoff) {
+        return false;
+      }
+      // Must be crawl-related (title contains any crawl keyword)
+      const lower_title = t.title.toLowerCase();
+      return CRAWL_KEYWORDS.some((kw) => lower_title.includes(kw));
+    });
+  };
+
+  // Build the Gemini prompt with crawl result summaries
+  const build_discover_prompt = (summaries: string[]): string => {
+    const joined = summaries.join('\n\n');
+    return `다음은 최근 3일간의 크롤링/리서치 결과 요약입니다:
+
+${joined}
+
+이 결과를 분석하여, 주인님에게 도움이 될 만한 추가 조사/행동 아이템을 최대 3개 제안해 주세요.
+JSON 배열 형식으로 응답하세요:
+[{"title": "태스크 제목", "description": "설명", "agent": "에이전트명", "priority": "low|medium|high"}]
+
+기준:
+- 마감이 임박한 지원 사업
+- 새로 발견된 채용 공고
+- 시장/트렌드 변화로 즉시 행동이 필요한 사항`;
+  };
+
+  // Parse Gemini response into suggestion array (safely)
+  const parse_suggestions = (content: string): DiscoverySuggestion[] => {
+    try {
+      // Try to extract JSON array from response
+      const array_match = content.match(/\[[\s\S]*\]/);
+      if (!array_match) return [];
+
+      const parsed = JSON.parse(array_match[0]) as unknown[];
+      if (!Array.isArray(parsed)) return [];
+
+      // Validate and filter each suggestion
+      const valid: DiscoverySuggestion[] = [];
+      for (const item of parsed) {
+        if (valid.length >= MAX_DISCOVER_SUGGESTIONS) break;
+
+        if (
+          typeof item === 'object' &&
+          item !== null &&
+          'title' in item &&
+          'description' in item &&
+          'agent' in item &&
+          'priority' in item &&
+          typeof (item as Record<string, unknown>).title === 'string' &&
+          typeof (item as Record<string, unknown>).description === 'string' &&
+          typeof (item as Record<string, unknown>).agent === 'string' &&
+          typeof (item as Record<string, unknown>).priority === 'string'
+        ) {
+          const suggestion = item as { title: string; description: string; agent: string; priority: string };
+
+          // Only accept valid agents
+          if (!(VALID_AGENTS as readonly string[]).includes(suggestion.agent)) continue;
+
+          // Only accept valid priorities
+          const valid_priorities = ['low', 'medium', 'high'] as const;
+          if (!(valid_priorities as readonly string[]).includes(suggestion.priority)) continue;
+
+          valid.push({
+            title: suggestion.title,
+            description: suggestion.description,
+            agent: suggestion.agent,
+            priority: suggestion.priority as 'low' | 'medium' | 'high',
+          });
+        }
+      }
+
+      return valid;
+    } catch {
+      // Malformed JSON — return empty
+      return [];
+    }
+  };
+
+  // Discover opportunities from recent crawl results using Gemini
+  const run_discover = async (): Promise<{
+    analyzed_tasks: number;
+    created: string[];
+    skipped: string[];
+  }> => {
+    const created: string[] = [];
+    const skipped: string[] = [];
+
+    // Early return if no Gemini config provided
+    if (!deps.gemini_config) {
+      return { analyzed_tasks: 0, created, skipped };
+    }
+
+    // Get recent crawl tasks
+    const crawl_tasks = get_recent_crawl_tasks();
+    if (crawl_tasks.length === 0) {
+      return { analyzed_tasks: 0, created, skipped };
+    }
+
+    // Build summaries from crawl task outputs
+    const summaries = crawl_tasks.map((t) => {
+      const output_summary = t.output?.summary ?? '(no summary)';
+      return `[${t.title}] ${output_summary}`;
+    });
+
+    // Call Gemini to analyze and suggest tasks
+    const prompt = build_discover_prompt(summaries);
+
+    let response;
+    try {
+      response = await spawn_gemini(deps.gemini_config, prompt);
+    } catch (err) {
+      // Fire-and-forget: log warning and continue
+      console.warn('[discover_opportunities] Gemini call failed:', err);
+      return { analyzed_tasks: crawl_tasks.length, created, skipped };
+    }
+
+    if (!response.success) {
+      console.warn('[discover_opportunities] Gemini returned error:', response.error);
+      return { analyzed_tasks: crawl_tasks.length, created, skipped };
+    }
+
+    // Parse suggestions from Gemini response
+    const suggestions = parse_suggestions(response.content);
+
+    // Create tasks for valid suggestions (with deduplication)
+    for (const suggestion of suggestions) {
+      if (is_already_queued(suggestion.title)) {
+        skipped.push(`${suggestion.title} (already queued)`);
+        continue;
+      }
+
+      deps.store.create({
+        title: suggestion.title,
+        description: suggestion.description,
+        assigned_to: suggestion.agent,
+        priority: suggestion.priority,
+        mode: 'sleep',
+        risk_level: 'low',
+        requires_personal_info: false,
+      });
+
+      created.push(suggestion.title);
+    }
+
+    // Send notification about discovered opportunities
+    if (created.length > 0) {
+      const discover_msg = `[Discovery] ${created.length} opportunities found from ${crawl_tasks.length} crawl results:\n${created.map((t) => `• ${t}`).join('\n')}`;
+      await deps.router.route({
+        type: 'briefing',
+        message: discover_msg,
+        device: 'captain',
+      });
+    }
+
+    return { analyzed_tasks: crawl_tasks.length, created, skipped };
+  };
+
+  // Night planning: send daily summary + discover opportunities
   const run_night = async (): Promise<{
     summary: { done: number; blocked: number; pending: number };
+    discovery?: { analyzed_tasks: number; created: string[]; skipped: string[] };
   }> => {
     const stats = deps.store.get_stats();
     const summary = {
@@ -163,12 +359,19 @@ export const create_planning_loop = (deps: PlanningLoopDeps) => {
       device: 'captain',
     });
 
-    return { summary };
+    // Run discovery if gemini_config is provided
+    let discovery: { analyzed_tasks: number; created: string[]; skipped: string[] } | undefined;
+    if (deps.gemini_config) {
+      discovery = await run_discover();
+    }
+
+    return { summary, discovery };
   };
 
   return {
     run_morning,
     run_night,
+    run_discover,
     // Exposed for testing
     _is_due_today: is_due_today,
     _load_schedules: load_schedules,

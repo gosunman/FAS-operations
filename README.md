@@ -144,6 +144,7 @@ FAS는 두 계층으로 분리된다:
 - 에이전트 헬스체크 & 자동 재시작
 - 디바이스 리소스 24시간 최대 활용 (남으면 추가 태스크 배정)
 - AI 토큰 사용량 최대 활용 (한도 임박 시 플랜 업그레이드 제안)
+- **동적 기회 발견**: 크롤링/리서치 결과를 Gemini로 분석하여 추가 행동 아이템 자동 생성 (야간 SLEEP 모드)
 
 ## 프로젝트 구조
 
@@ -151,8 +152,8 @@ FAS는 두 계층으로 분리된다:
 FAS-operations/
 ├── src/
 │   ├── gateway/          # Task API 서버 (Express, SQLite) + 교차 승인
-│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
-│   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
+│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor, Dynamic Discovery)
+│   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬
 │   └── shared/           # 공유 타입 정의
@@ -209,5 +210,6 @@ pnpm run gateway
 - **소통**: Telegram Bot API + Slack + Notion API
 - **모니터링**: 커스텀 감시 스크립트 (stdout 감지 → Telegram)
 - **검증**: NotebookLM (헌터, 웹 자동화), AI 교차 리뷰
+- **브라우저 자동화**: Playwright (Chromium)
 - **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)
 - **인프라**: Docker/Colima (n8n, 각종 서비스 격리)

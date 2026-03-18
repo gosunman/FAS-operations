@@ -11,7 +11,7 @@
 
 ## planning_loop.ts
 
-`config/schedules.yml`을 읽어 오늘 due인 태스크를 TaskStore에 자동 주입.
+`config/schedules.yml`을 읽어 오늘 due인 태스크를 TaskStore에 자동 주입. 또한 Gemini CLI를 활용한 동적 태스크 발견(discover_opportunities) 기능 제공.
 
 **스케줄 타입:**
 - `daily` — 매일 실행
@@ -22,13 +22,32 @@
 - 같은 title의 태스크가 이미 pending/in_progress이면 스킵
 - 20시간 이내 완료된 동일 title 태스크가 있으면 스킵
 
+**동적 태스크 발견 (discover_opportunities):**
+- 최근 3일간 완료된 크롤링/리서치 태스크의 결과를 Gemini CLI로 분석
+- 크롤링 관련 키워드: `crawl`, `크롤링`, `scrape`, `research`
+- Gemini가 최대 3개의 추가 조사/행동 아이템을 제안
+- 허용 에이전트: `gemini_a`, `gemini_b`, `openclaw`, `claude`
+- 기존 pending/in_progress 태스크와 중복 방지
+- Fire-and-forget: Gemini 실패 시 경고 로그만 남기고 계속 (나이트 플래닝 차단하지 않음)
+- SLEEP 모드(야간)에 `run_night()` 내에서 자동 실행
+
 **사용법:**
 ```typescript
 import { create_planning_loop } from './planning_loop.js';
 
+// 기본 (정적 스케줄링만)
 const loop = create_planning_loop({ store, router, schedules_path: 'config/schedules.yml' });
 await loop.run_morning();  // 모닝 브리핑 + 태스크 주입
 await loop.run_night();    // 나이트 서머리
+
+// 동적 발견 포함
+const loop_with_discovery = create_planning_loop({
+  store, router,
+  schedules_path: 'config/schedules.yml',
+  gemini_config: { account: 'a' },
+});
+await loop_with_discovery.run_night();     // 나이트 서머리 + 기회 발견
+await loop_with_discovery.run_discover();  // 수동 발견 실행
 ```
 
 ## feedback_extractor.ts

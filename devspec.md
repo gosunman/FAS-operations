@@ -40,6 +40,7 @@
 | 패키지 매니저 | pnpm | 10+ |
 | 웹 프레임워크 | Express | 5.x |
 | DB | better-sqlite3 (WAL mode) | 12+ |
+| 브라우저 자동화 | Playwright (Chromium) | 1.x |
 | 테스트 | vitest + supertest | 4.x |
 | 컨테이너 | Colima + Docker | - |
 | 오케스트레이션 | n8n (Docker) | latest |
@@ -80,15 +81,16 @@
 - **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
 
 ### Hunter (`src/hunter/`)
+- **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout)
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + 실행기 (현재 스텁, OpenClaw 통합 시 교체)
+- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. `web_crawl`/`browser_task` 구현 완료, `deep_research`/`notebooklm_verify`는 OpenClaw 통합 대기 중 (failure 반환).
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
-- **main.ts**: 진입점 (`pnpm run hunter`)
+- **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지.
+- **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
 
 ### Cross-Approval (`src/gateway/cross_approval.ts`)
