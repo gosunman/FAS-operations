@@ -126,21 +126,82 @@ hunter_security:
 - 계정 격리 보안 계층(Defense in Depth의 최후 보루) 무력화
 
 **필요 조치** (주인님이 직접 수행):
-1. 헌터에서 기존 Claude Code 세션 로그아웃
+
+1. 헌터에서 개인정보 잔존 스캔
    ```bash
-   # 헌터 머신에서 실행
+   # 헌터 머신에서 실행 (또는 캡틴에서 ssh hunter)
+   cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh
+   ```
+2. 스캔 결과에 따라 정리 (셸 히스토리, git config, iCloud 등)
+3. Claude Code 로그아웃
+   ```bash
    claude logout
    ```
-2. 계정 B로 재인증 (플랜 확장 단계에 따라 진행)
+4. 계정 B로 재인증 (플랜 확장 Stage에 따라 진행)
    ```bash
-   # 헌터 머신에서 실행 — 계정 B로 로그인
-   claude login
-   claude whoami  # 계정 B인지 확인
+   claude login    # 계정 B로
+   claude whoami   # 계정 B인지 확인
+   ```
+5. 정리 후 재스캔으로 검증
+   ```bash
+   bash scripts/security/scan_hunter_pii.sh
    ```
 
-> 참고: `claude logout`으로 인증 토큰이 완전 무효화됨. 별도 파일 삭제 불필요.
-
 **발견 경위**: NotebookLM 교차 검증에서 Doctrine-Operations 계정 격리 불일치로 지적됨.
+
+---
+
+## 헌터 개인정보 스캔 (정기 보안 점검)
+
+헌터는 "언제든 포섭될 수 있는 외부 머신"이므로, 주인님 개인정보가 잔존하지 않는지 정기적으로 점검한다.
+
+### 스캔 스크립트
+
+```bash
+# 헌터에서 직접 실행
+bash scripts/security/scan_hunter_pii.sh
+
+# 또는 캡틴에서 SSH로 원격 실행
+ssh hunter 'cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh'
+```
+
+### 스캔 항목 (7단계)
+
+| # | 항목 | 위험도 | 확인 내용 |
+|---|------|--------|----------|
+| 1 | Claude Code 인증 | CRITICAL | 계정 A(주인님)로 로그인되어 있는지 |
+| 2 | 브라우저 프로필 | CRITICAL | Chrome/Chromium 프로필에 주인님 Google 쿠키가 있는지 |
+| 3 | 셸 히스토리 | WARNING | bash/zsh 히스토리에 개인정보 패턴이 있는지 |
+| 4 | 환경변수 / .env | CRITICAL | 캡틴 전용 시크릿(Telegram/Slack 토큰)이 헌터에 있는지 |
+| 5 | SSH / 인증 파일 | WARNING | SSH config에 개인정보가 있는지, Keychain에 인증 정보가 있는지 |
+| 6 | Doctrine / 소스코드 유출 | CRITICAL | Doctrine 디렉토리나 iCloud Drive가 헌터에 동기화되고 있는지 |
+| 7 | 파일 내용 전수 스캔 | WARNING | 주인님 이름, 이메일, 주소 등 패턴이 파일에 있는지 |
+
+### 정리 절차 (스캔 후 발견된 항목에 따라)
+
+```bash
+# 1. Claude Code 로그아웃
+claude logout
+
+# 2. 셸 히스토리 삭제
+history -c && rm -f ~/.bash_history ~/.zsh_history
+
+# 3. 브라우저 프로필 초기화 (계정 B로 재로그인 필요)
+rm -rf ~/fas-google-profile-hunter
+
+# 4. Git 사용자 정보를 헌터 전용으로 변경
+git config --global user.email 'hunter@fas.local'
+git config --global user.name 'FAS Hunter'
+
+# 5. iCloud 로그아웃 (시스템 설정에서)
+# 6. 캡틴 시크릿이 .env에 있으면 해당 라인 삭제
+```
+
+### 정기 실행 권장
+
+- SA-001 해소 직후: 1회 스캔 + 정리
+- 이후: 주 1회 또는 헌터 재초기화 시 매번 실행
+- n8n 워크플로우로 자동화 가능 (캡틴에서 SSH → 스캔 → 결과 Slack 보고)
 
 ---
 
