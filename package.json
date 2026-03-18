@@ -21,7 +21,10 @@
   "license": "ISC",
   "packageManager": "pnpm@10.30.3",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -36,6 +39,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@notionhq/client": "^5.13.0",
     "@slack/web-api": "^7.15.0",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.3.1",
