@@ -2,6 +2,7 @@
 // Starts: Gateway API, Output Watcher, Planning Loop
 // Handles graceful shutdown
 
+import 'dotenv/config';
 import { resolve } from 'node:path';
 import { create_app } from '../gateway/server.js';
 import { create_task_store } from '../gateway/task_store.js';

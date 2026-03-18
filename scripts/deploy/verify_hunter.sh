@@ -12,9 +12,17 @@
 
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# Load .env if present
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  set -a
+  source "$PROJECT_ROOT/.env"
+  set +a
+fi
+
 CAPTAIN_API="${1:-${CAPTAIN_API_URL:-http://100.64.0.1:3100}}"
 API_KEY="${2:-${HUNTER_API_KEY:-}}"
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # === Colors ===
 RED='\033[0;31m'
