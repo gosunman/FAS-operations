@@ -139,6 +139,26 @@ FAS는 두 계층으로 분리된다:
 - 학원 IP 수익화 (교재/시험지 → 전자책 플랫폼 자동 업로드)
 - B2B SaaS 전환 (무인 결제 → 자동 리포트 발송)
 
+### 헌터 운영 (Stage 2)
+
+배포 후 운영 도구:
+
+```bash
+# 배포 검증 (5가지 자동 체크)
+bash scripts/deploy/verify_hunter.sh
+
+# 헌터 프로세스 감시 (자동 재시작, launchd 연동)
+bash scripts/hunter_watchdog.sh
+
+# launchd 등록 (부팅 시 자동 시작)
+cp scripts/setup/com.fas.hunter.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
+```
+
+캡틴 heartbeat 모니터 (`src/watchdog/hunter_monitor.ts`): 2분 → Slack WARNING, 5분 → Telegram ALERT, 복구 시 → RECOVERY
+
+상세: [docs/hunter-protocol.md](docs/hunter-protocol.md) Stage 2 섹션
+
 ### 시스템 운영
 
 - 에이전트 헬스체크 & 자동 재시작
@@ -155,17 +175,18 @@ FAS-operations/
 │   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor, Dynamic Discovery)
 │   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
-│   ├── watchdog/         # 출력 감시 데몬
+│   ├── watchdog/         # 출력 감시 데몬 + 헌터 heartbeat 모니터
 │   └── shared/           # 공유 타입 정의
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
-│   ├── deploy/           # 헌터 배포 (소스코드 격리)
+│   ├── deploy/           # 헌터 배포 (소스코드 격리) + 배포 검증
 │   ├── security/         # 보안 스캔 (PII 검사)
 │   ├── start_all.sh      # 전체 서비스 기동 (멱등)
 │   ├── stop_all.sh       # 전체 서비스 중지
 │   ├── status.sh         # 전체 상태 조회
 │   ├── gateway_wrapper.sh # Gateway 자동 재시작 래퍼
-│   └── agent_wrapper.sh  # Claude Code 자동 재시작 래퍼
+│   ├── agent_wrapper.sh  # Claude Code 자동 재시작 래퍼
+│   └── hunter_watchdog.sh # 헌터 프로세스 자동 재시작 래퍼
 ├── hunter/               # 헌터 전용 설정 (CLAUDE.md, OpenClaw 설정)
 ├── shadow/               # 그림자 전용 설정 (CLAUDE.md)
 ├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
@@ -195,21 +216,49 @@ npx tsx scripts/test_notifications.ts
 # 5. 유닛 테스트 실행
 pnpm test:run
 
-# 6. Gateway 서버 시작
-pnpm run gateway
+# 6. 캡틴 통합 시작 (Gateway + Watcher + Planning Loop)
+pnpm run captain
+
+# 또는 개별 서비스 시작:
+pnpm run gateway    # Gateway만
+pnpm run watcher    # Output Watcher만
 
 # 7. (선택) Notion 태스크 백업 설정
-# .env에 NOTION_API_KEY, NOTION_TASK_RESULTS_DB 설정 후 Gateway 재시작
+# .env에 NOTION_API_KEY, NOTION_TASK_RESULTS_DB 설정 후 재시작
 
 # 8. 헌터 머신 배포 (소스코드 격리 — captain 코드 절대 미전송)
 bash scripts/deploy/deploy_hunter.sh hunter
 
 # 9. 전체 서비스 기동
 bash scripts/start_all.sh
-
-# 7. 전체 세션 시작
-./scripts/start_captain_sessions.sh
 ```
+
+## 모드 전환
+
+```bash
+# 수동 모드 전환
+pnpm run mode:sleep   # SLEEP 모드 전환 (23:00 자동 전환)
+pnpm run mode:awake   # AWAKE 모드 전환 (07:30 자동 전환)
+
+# launchd 자동 전환 설치
+cp scripts/setup/com.fas.sleep.plist ~/Library/LaunchAgents/
+cp scripts/setup/com.fas.awake.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.sleep.plist
+launchctl load ~/Library/LaunchAgents/com.fas.awake.plist
+```
+
+## 반복 태스크 스케줄
+
+스케줄 정의 파일: `config/schedules.yml`
+
+| 태스크 | 주기 | 담당 | 시간 |
+|--------|------|------|------|
+| 창업지원사업 신규 공고 수집 | 3일 | hunter | 02:00 |
+| 청약홈 신규 공고 수집 | 3일 | hunter | 02:30 |
+| 블라인드 네이버 인기글 | 매일 | hunter | 03:00 |
+| AI 트렌드 리서치 | 매일 | gemini_a | 01:00 |
+| 글로벌 빅테크 채용 공고 | 3일 | hunter | 03:30 |
+| 대학원 지원 일정 | 주간 (월) | gemini_a | 04:00 |
 
 > 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
 

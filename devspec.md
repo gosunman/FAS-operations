@@ -97,6 +97,7 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
 
@@ -105,7 +106,13 @@
 - 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export.
+- **hunter_monitor.ts**: 헌터 heartbeat 모니터. Gateway `/api/agents/health` 주기적 폴링으로 헌터 생존 감시. 2분 경과 → Slack WARNING, 5분 경과 → Telegram ALERT, 복구 시 → RECOVERY 알림. `start_hunter_monitor(config)`, `stop_hunter_monitor()` export.
+
+### Mode Switching (`scripts/`)
+- **mode_switch.sh**: SLEEP/AWAKE 모드 전환 스크립트. Gateway API 호출 + 로그 기록. `pnpm mode:sleep`, `pnpm mode:awake`로 실행.
+- **com.fas.sleep.plist**: 23:00 자동 SLEEP 전환 (launchd)
+- **com.fas.awake.plist**: 07:30 자동 AWAKE 전환 (launchd)
 
 ## API 엔드포인트
 
@@ -143,9 +150,14 @@ pnpm test:run      # 단발 실행
 pnpm test          # watch 모드
 
 # 서버 실행
-pnpm run gateway   # Gateway + Task API
-pnpm run watcher   # Output Watcher
+pnpm run captain   # Unified captain (Gateway + Watcher + Planning)
+pnpm run gateway   # Gateway + Task API (standalone)
+pnpm run watcher   # Output Watcher (standalone)
 pnpm run hunter    # Hunter Agent (on hunter machine)
+
+# Mode switching
+pnpm run mode:sleep   # Switch to SLEEP mode
+pnpm run mode:awake   # Switch to AWAKE mode
 
 # tmux 환경
 ./scripts/setup/setup_tmux.sh      # tmux-resurrect 설치
@@ -160,6 +172,11 @@ pnpm run hunter    # Hunter Agent (on hunter machine)
 |---------|------|
 | `scripts/setup/setup_ai_cli.sh` | AI CLI 설치/인증 상태 확인 (Claude Code, Gemini CLI `@google/gemini-cli`, OpenClaw) |
 | `scripts/setup/setup_tmux.sh` | tmux + resurrect 설치 |
+| `scripts/setup/com.fas.captain.plist` | 캡틴 launchd plist (로그인 시 tmux 자동 시작) |
+| `scripts/setup/com.fas.hunter.plist` | 헌터 launchd plist (로그인 시 hunter_watchdog 자동 시작, KeepAlive) |
+| `scripts/deploy/deploy_hunter.sh` | 헌터 배포 (소스코드 격리, PII 검사) |
+| `scripts/deploy/verify_hunter.sh` | 헌터 배포 후 검증 (연결, heartbeat, 태스크 흐름, PII, 런타임) |
+| `scripts/hunter_watchdog.sh` | 헌터 프로세스 감시 (자동 재시작, 지수 백오프, 최대 3회) |
 | `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
 
 ## 배포 유의 사항

@@ -1,43 +1,38 @@
 schedules:
-  # === 정보 수집 (SLEEP / RECURRING) ===
+  # === Phase 4: Information Collection (SLEEP / RECURRING) ===
 
-  startup_crawl:
-    title: "창업지원사업 크롤링 (정부+민간)"
+  startup_grants:
+    title: "창업지원사업 신규 공고 수집"
     type: every_3_days
     time: "02:00"
     mode: sleep
-    agent: gemini_a
+    agent: hunter
     risk_level: low
-    requires_personal_info: true
-    notification:
-      on_complete: slack
-      report_format: notion_page
-      slack_channel: "#crawl-results"
+    requires_personal_info: false
+    action: web_crawl
+    description: "K-Startup, 창업진흥원, 중소벤처기업부, SBA, Google for Startups, D.CAMP 신규 공고 크롤링"
 
-  housing_crawl:
-    title: "로또 청약 모니터링"
+  lotto_housing:
+    title: "청약홈 신규 공고 수집"
     type: every_3_days
     time: "02:30"
     mode: sleep
-    agent: gemini_a
+    agent: hunter
     risk_level: low
-    requires_personal_info: true
-    notification:
-      on_complete: slack
-      report_format: notion_page
-      slack_channel: "#crawl-results"
+    requires_personal_info: false
+    action: web_crawl
+    description: "applyhome.co.kr 로또 청약 신규 공고 모니터링, 위치/가격/경쟁률 분석"
 
-  blind_monitor:
-    title: "블라인드 네이버 인기글 감지"
+  blind_naver:
+    title: "블라인드 네이버 인기글 모니터링"
     type: daily
     time: "03:00"
     mode: recurring
-    agent: gemini_a
+    agent: hunter
     risk_level: low
     requires_personal_info: false
-    notification:
-      on_complete: slack
-      slack_channel: "#crawl-results"
+    action: web_crawl
+    description: "블라인드 네이버 채널 인기글 감지 (댓글 50+, 좋아요 100+, 자극적 키워드)"
 
   ai_trends:
     title: "AI 트렌드 리서치"
@@ -47,26 +42,22 @@ schedules:
     agent: gemini_a
     risk_level: low
     requires_personal_info: false
-    notification:
-      on_complete: slack
-      report_format: notion_page
-      slack_channel: "#reports"
+    action: research
+    description: "Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, X 일일 트렌드. 키워드: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM"
 
-  job_openings:
-    title: "글로벌 빅테크 채용 체크"
+  bigtech_jobs:
+    title: "글로벌 빅테크 채용 공고 체크"
     type: every_3_days
     time: "03:30"
     mode: sleep
-    agent: gemini_a
+    agent: hunter
     risk_level: low
-    requires_personal_info: true
-    notification:
-      on_complete: slack
-      report_format: notion_page
-      slack_channel: "#crawl-results"
+    requires_personal_info: false
+    action: web_crawl
+    description: "Google, Meta, Apple, Amazon, Microsoft, Netflix 한국+해외 포지션. TS 풀스택 6년, 석사, 영어 가능 조건 필터"
 
-  grad_school:
-    title: "대학원/원격학위 일정 체크"
+  grad_school_deadlines:
+    title: "대학원 지원 일정 체크"
     type: weekly
     day: monday
     time: "04:00"
@@ -74,11 +65,10 @@ schedules:
     agent: gemini_a
     risk_level: low
     requires_personal_info: false
-    notification:
-      on_complete: slack
-      slack_channel: "#crawl-results"
+    action: research
+    description: "조지아텍 OMSCS, 서울대 GSEP 지원 일정/준비물/마감일 추적"
 
-  # === 시스템 ===
+  # === System workflows (no agent — triggered by cron/launchd) ===
 
   morning_briefing:
     title: "모닝 브리핑"

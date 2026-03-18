@@ -89,8 +89,10 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] Claude Code 출력 감시 → Telegram/Slack 전송 스크립트 — `src/watchdog/output_watcher.ts`
   - 승인 요청 패턴 감지: `[APPROVAL_NEEDED]`, `[BLOCKED]`
   - 마일스톤 완료 패턴: `[MILESTONE]`, `[DONE]`, `[ERROR]`
+  - [x] NotificationRouter 연동 완료 — 패턴 감지 → 자동 Telegram/Slack 라우팅
 - [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
 - [x] CLAUDE.md에 자율 실행 범위 명시
+- [x] 통합 캡틴 진입점 — `src/captain/main.ts` (Gateway + Watcher + Planning Loop 통합 기동, `pnpm captain`)
 
 ### 1-2. Gemini CLI 상시 실행 체계 (캡틴) ✅
 
@@ -110,30 +112,19 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 구글 로그인 감지 → `[LOGIN_REQUIRED]` → Telegram 긴급 알림
 - [ ] 헌터 머신 초기 세팅 *(인간 작업 — `scripts/setup/setup_hunter.sh` 실행)*
 
-### 1-4. 작업 큐 시스템 (간이)
+### 1-4. 작업 큐 시스템 ✅
 
-- [ ] `tasks/` 디렉토리 기반 파일 큐
-  - `tasks/pending/`, `tasks/in_progress/`, `tasks/done/`, `tasks/blocked/`
-- [ ] 태스크 파일 포맷:
-  ```yaml
-  id: task_001
-  title: "창업지원사업 정보 수집 자동화"
-  priority: high
-  assigned_to: gemini_a
-  mode: sleep # sleep | awake | recurring
-  risk_level: low # low | mid | high
-  requires_personal_info: false # true면 헌터 배정 금지
-  created_at: 2026-03-17
-  deadline: null
-  depends_on: []
-  ```
-- [ ] 에이전트별 태스크 폴링 스크립트
+- [x] SQLite 기반 태스크 저장소 — `src/gateway/task_store.ts` (WAL 모드, CRUD, 트랜잭션)
+- [x] Gateway Task API — `src/gateway/server.ts` (REST CRUD + 필터링 + 통계)
+- [x] 헌터 태스크 폴링 — `GET /api/hunter/tasks/pending` (PII 제거 후 전달)
+- [x] 반복 스케줄 정의 — `config/schedules.yml` (Phase 4 태스크 6개 + 시스템 워크플로우 3개)
+- [x] Planning Loop — `src/captain/planning_loop.ts` (스케줄 기반 자동 태스크 생성 + Gemini 동적 발견)
 
 ---
 
 ## Phase 2: 멀티 에이전트 + 교차 승인
 
-### 2-1. 교차 승인 프로토콜 구현
+### 2-1. 교차 승인 프로토콜 구현 ✅
 
 - [x] 승인 요청 표준 포맷 정의 — `CrossApprovalResult`, `CrossApprovalConfig` 타입 (`src/shared/types.ts`)
 - [x] Gemini CLI 교차 승인 모듈 — `src/gateway/cross_approval.ts`
@@ -146,12 +137,18 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 불일치 시 → NotebookLM(헌터)에게 검증 요청
   - 최종 불일치 시 → 무조건 인간 승인
 
-### 2-2. n8n 워크플로우 설계
+### 2-2. 에이전트 모니터링 ✅
 
-- [ ] 마스터 오케스트레이션 워크플로우
-- [ ] 에이전트 헬스체크 워크플로우 (5분마다)
-- [ ] 리소스 모니터링 워크플로우 (CPU/RAM/디스크)
-- [ ] AI 토큰 사용량 추적 워크플로우
+- [x] 헌터 Heartbeat 모니터 — `src/watchdog/hunter_monitor.ts`
+  - 30초 주기 헬스체크 폴링
+  - 2분 미응답 → WARNING (Slack), 5분 미응답 → ALERT (Telegram)
+  - 복구 시 RECOVERY 알림
+  - 캡틴 main.ts에 통합, graceful shutdown 포함
+- [x] 활동 로거 — `src/watchdog/activity_logger.ts`
+- [x] 리소스 모니터 — `src/watchdog/resource_monitor.ts`
+- [ ] n8n 워크플로우 통합 (Phase 2 후반):
+  - [ ] 마스터 오케스트레이션 워크플로우
+  - [ ] AI 토큰 사용량 추적 워크플로우
 
 ### 2-3. 할루시네이션 방지 파이프라인
 
@@ -165,6 +162,14 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 새 도메인 진입 시 초기 자료 수집
   - 결과를 `research/` 디렉토리에 구조화 저장
   - 사용량 한도 도달 시 → 주인님에게 보고 → 플랜 업그레이드 또는 추가 계정 구매
+
+### 2-4. 헌터 운영 인프라 ✅
+
+- [x] 헌터 배포 스크립트 — `scripts/deploy/deploy_hunter.sh`
+- [x] 배포 후 검증 스크립트 — `scripts/deploy/verify_hunter.sh` (5단계: API 연결, heartbeat, 태스크 라이프사이클, PII 스캔, 런타임)
+- [x] 헌터 watchdog — `scripts/hunter_watchdog.sh` (지수 백오프, Captain 크래시 보고, Telegram 알림)
+- [x] 헌터 launchd — `scripts/setup/com.fas.hunter.plist` (KeepAlive, 로그)
+- [x] 통합 테스트 — `tests/integration/captain_hunter.test.ts`
 
 ---
 
@@ -212,7 +217,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 3-3. 모드 전환 자동화
 
-- [ ] n8n 크론 트리거: 23:00 → SLEEP, 07:30 → AWAKE
+- [x] launchd 크론 트리거: 23:00 → SLEEP (`com.fas.sleep.plist`), 07:30 → AWAKE (`com.fas.awake.plist`)
+- [x] `scripts/mode_switch.sh` — Gateway API 호출로 모드 전환 + 로깅
 - [ ] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프
 
 ---
@@ -456,7 +462,7 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 비용을 단계적으로 증가시키며 시스템 안정성을 검증한 후 상위 플랜으로 전환한다.
 "잘 돌아가는 것을 확인한 뒤 투자"가 원칙.
 
-### Stage 1: 검증 단계 (현재)
+### Stage 1: 검증 단계 ✅ (완료)
 
 시스템 세팅 + 통신 검증. 이미 보유한 리소스 활용.
 
@@ -476,9 +482,22 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 
 **승격 조건:** Task API 연속 3일 무장애, 핸들러 4종 정상 동작 확인
 
-### Stage 2: 운영 단계
+### Stage 2: 운영 단계 (현재 — 코드 준비 완료, 인간 작업 대기)
 
 저가 AI 플랜으로 실제 업무를 돌리며 안정성 체감.
+
+**Stage 2 인프라 구현 현황:**
+- [x] 반복 스케줄 시스템 (`config/schedules.yml` + Planning Loop)
+- [x] SLEEP/AWAKE 자동 전환 (launchd + mode_switch.sh)
+- [x] 헌터 Heartbeat 모니터 (2분 WARNING, 5분 ALERT, RECOVERY)
+- [x] 캡틴 통합 진입점 (`pnpm captain` — Gateway + Watcher + Planning + Hunter Monitor)
+- [x] 헌터 배포/검증 스크립트
+- [x] 헌터 watchdog (자동 재시작 + 크래시 보고)
+- [x] 통합 테스트 (캡틴 ↔ 헌터 왕복 15건)
+- [x] 활동 로거 + 리소스 모니터
+- [ ] **인간 작업**: 헌터 머신 초기 세팅 (`setup_hunter.sh` 실행)
+- [ ] **인간 작업**: ChatGPT Plus 구독
+- [ ] **인간 작업**: Notion API Key 발급 + DB 생성
 
 | 에이전트 | 플랜 | 월 비용 | 비고 |
 |---------|------|---------|------|

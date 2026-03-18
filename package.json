@@ -9,9 +9,12 @@
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
+    "captain": "tsx src/captain/main.ts",
     "gateway": "tsx src/gateway/server.ts",
     "watcher": "tsx src/watchdog/output_watcher.ts",
-    "hunter": "tsx src/hunter/main.ts"
+    "hunter": "tsx src/hunter/main.ts",
+    "mode:sleep": "bash scripts/mode_switch.sh sleep",
+    "mode:awake": "bash scripts/mode_switch.sh awake"
   },
   "keywords": [
     "automation",

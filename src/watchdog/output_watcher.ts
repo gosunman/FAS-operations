@@ -13,6 +13,10 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { create_telegram_client, type TelegramClient } from '../notification/telegram.js';
+import { create_slack_client, type SlackClient } from '../notification/slack.js';
+import { create_notification_router, type NotificationRouter } from '../notification/router.js';
+import type { NotificationEventType } from '../shared/types.js';
 
 // === Pattern definitions ===
 
@@ -214,6 +218,98 @@ export class OutputWatcher extends EventEmitter {
   }
 }
 
+// === Pattern → NotificationEventType mapping ===
+
+const PATTERN_EVENT_MAP: Record<string, NotificationEventType> = {
+  APPROVAL_NEEDED: 'approval_high',
+  BLOCKED: 'blocked',
+  MILESTONE: 'milestone',
+  DONE: 'done',
+  ERROR: 'error',
+  LOGIN_REQUIRED: 'alert',
+  GEMINI_BLOCKED: 'alert',
+};
+
+const map_pattern_to_event = (pattern_name: string): NotificationEventType =>
+  PATTERN_EVENT_MAP[pattern_name] ?? 'agent_log';
+
+// === Build notification clients from env vars (graceful fallback) ===
+
+export const create_watcher_router = (): NotificationRouter | null => {
+  let telegram: TelegramClient | null = null;
+  let slack: SlackClient | null = null;
+
+  const telegram_token = process.env.TELEGRAM_BOT_TOKEN;
+  const telegram_chat_id = process.env.TELEGRAM_CHAT_ID;
+  if (telegram_token && telegram_chat_id) {
+    telegram = create_telegram_client({ token: telegram_token, chat_id: telegram_chat_id });
+    console.log('[Watcher] Telegram client initialized');
+  } else {
+    console.warn('[Watcher] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — Telegram notifications disabled');
+  }
+
+  const slack_token = process.env.SLACK_BOT_TOKEN;
+  if (slack_token) {
+    slack = create_slack_client({ token: slack_token });
+    console.log('[Watcher] Slack client initialized');
+  } else {
+    console.warn('[Watcher] SLACK_BOT_TOKEN not set — Slack notifications disabled');
+  }
+
+  // If neither client is available, return null
+  if (!telegram && !slack) {
+    console.warn('[Watcher] No notification clients available — running in log-only mode');
+    return null;
+  }
+
+  return create_notification_router({ telegram, slack });
+};
+
+// === Create a watcher with notification routing ===
+
+export const create_routed_watcher = (
+  sessions: string[],
+  router: NotificationRouter | null,
+  poll_interval_ms = 2000,
+): OutputWatcher => {
+  return new OutputWatcher({
+    sessions,
+    poll_interval_ms,
+    on_match: async (match) => {
+      console.log(`[Watcher] Pattern detected: [${match.pattern_name}] ${match.description} (session: ${match.session})`);
+
+      if (router) {
+        const event_type = map_pattern_to_event(match.pattern_name);
+        const message = `[${match.pattern_name}] ${match.description}\n(session: ${match.session}, ${match.timestamp})`;
+        try {
+          await router.route({
+            type: event_type,
+            message,
+            device: 'captain',
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[Watcher] Failed to route notification: ${msg}`);
+        }
+      }
+    },
+    on_crash: async (session, count) => {
+      console.error(`[Watcher] Session "${session}" crashed (${count} consecutive failures)`);
+      if (router) {
+        try {
+          await router.route({
+            type: 'alert',
+            message: `[CRASH] tmux session "${session}" unreachable (${count} consecutive failures)`,
+            device: 'captain',
+          });
+        } catch {
+          // Fire-and-forget — don't let crash reporting crash the watcher
+        }
+      }
+    },
+  });
+};
+
 // === Main entry point ===
 
 const is_main = import.meta.url === `file://${process.argv[1]}`;
@@ -227,18 +323,8 @@ if (is_main) {
 
   console.log(`[Watcher] Starting output watcher for sessions: ${WATCHED_SESSIONS.join(', ')}`);
 
-  const watcher = new OutputWatcher({
-    sessions: WATCHED_SESSIONS,
-    poll_interval_ms: 2000,
-    on_match: async (match) => {
-      console.log(`[Watcher] Pattern detected: [${match.pattern_name}] ${match.description} (session: ${match.session})`);
-
-      // TODO: integrate with notification router once env vars are configured
-      // const router = create_notification_router({ telegram, slack });
-      // await router.route({ type: map_pattern_to_event(match), ... });
-    },
-  });
-
+  const router = create_watcher_router();
+  const watcher = create_routed_watcher(WATCHED_SESSIONS, router);
   watcher.start();
 
   process.on('SIGINT', () => {

@@ -286,3 +286,85 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 - 헌터 → 캡틴 3100 포트만 (Task API)
 - 캡틴 → 헌터 22 포트만 (SSH, 긴급 관리용)
 - 헌터 → 캡틴 파일시스템 접근 불가
+
+---
+
+## Stage 2: 운영
+
+### 모니터링 (Heartbeat Monitor)
+
+캡틴의 `src/watchdog/hunter_monitor.ts`가 헌터의 heartbeat를 주기적으로 감시한다.
+
+| 임계값 | 동작 | 채널 |
+|--------|------|------|
+| heartbeat 2분 경과 | WARNING 알림 | Slack |
+| heartbeat 5분 경과 | ALERT 알림 | Telegram (긴급) |
+| heartbeat 복구 | RECOVERY 알림 | Slack |
+
+```typescript
+import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_monitor.js';
+
+start_hunter_monitor({
+  gateway_url: 'http://localhost:3100',
+  check_interval_ms: 30_000,
+  warning_threshold_ms: 120_000,
+  alert_threshold_ms: 300_000,
+  notification_router,
+});
+```
+
+### 자동 재시작 (Hunter Watchdog)
+
+헌터 머신의 `scripts/hunter_watchdog.sh`가 프로세스 크래시 시 자동 재시작한다.
+
+- 지수 백오프: `5s → 10s → 20s`
+- 최대 3회 연속 재시작 시도
+- 60초 이상 정상 실행 후 크래시 → 카운터 리셋
+- 최대 재시작 횟수 초과 시:
+  - `[BLOCKED]` 로그 출력
+  - Telegram 긴급 알림 전송
+  - 300초 대기 후 카운터 리셋
+
+### launchd 자동 시작
+
+헌터 머신에서 `com.fas.hunter.plist`를 설치하면 부팅/로그인 시 자동으로 tmux 세션이 시작된다.
+
+```bash
+# 설치
+cp scripts/setup/com.fas.hunter.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
+
+# 제거
+launchctl unload ~/Library/LaunchAgents/com.fas.hunter.plist
+rm ~/Library/LaunchAgents/com.fas.hunter.plist
+```
+
+로그: `~/Library/Logs/fas-hunter.log`
+
+### 배포 검증 (Deployment Verification)
+
+배포 후 `scripts/deploy/verify_hunter.sh`를 실행하여 모든 구성 요소를 검증한다.
+
+```bash
+bash scripts/deploy/verify_hunter.sh [captain-api-url] [hunter-api-key]
+```
+
+검증 항목:
+1. Captain API 연결 테스트 (health endpoint)
+2. Heartbeat 전송 및 반영 확인
+3. 태스크 생성 → 폴링 → 결과 제출 사이클
+4. PII 스캔 (개인정보 잔류 확인)
+5. 런타임 환경 (Node.js, pnpm, Playwright, Tailscale)
+
+### 트러블슈팅
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| Heartbeat ALERT | 헌터 프로세스 다운 | `ssh hunter` → `tmux attach -t fas-hunter` → 로그 확인 |
+| 401 Unauthorized | API 키 불일치 | 캡틴/헌터 `.env`의 `HUNTER_API_KEY` 값 비교 |
+| 429 Rate Limited | 과도한 요청 | 폴링 주기 확인 (`HUNTER_POLL_INTERVAL`) |
+| PII Quarantined | 크롤링 결과에 개인정보 포함 | Gateway 로그에서 quarantine 확인, 수동 검토 |
+| Tailscale 미연결 | VPN 끊김 | `tailscale up` → `tailscale status` |
+| Playwright 에러 | Chromium 미설치 | `npx playwright install chromium` |
+| LOGIN_REQUIRED | Google 세션 만료 | VNC로 헌터 접속 → Chrome 수동 로그인 |
+| Watchdog 300s 대기 | 3회 연속 크래시 | 로그 확인: `logs/crashes_hunter.log` |
