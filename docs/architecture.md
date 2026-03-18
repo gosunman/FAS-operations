@@ -133,6 +133,35 @@
   캡틴 ↔ 헌터: Task API만 (Tailscale 내부)
 ```
 
+## 태스크 결과 백업 아키텍처
+
+헌터의 크롤링/리서치 결과는 캡틴의 `state/tasks.sqlite`에 1차 저장되지만,
+물리적 파괴(디스크 손상, 머신 고장)에 취약하다. Notion을 2차 내구성 저장소로 사용한다.
+
+```text
+헌터 (Playwright 실행)
+  │
+  └─ POST /api/hunter/tasks/:id/result
+       │
+       ▼
+캡틴 Gateway (server.ts)
+  │
+  ├─ [1차] SQLite 저장 (state/tasks.sqlite) — 즉시, 동기
+  │
+  └─ [2차] Notion 백업 — fire-and-forget, 비동기
+       │
+       └─ create_page() → Notion DB (NOTION_TASK_RESULTS_DB)
+          실패해도 1차 저장은 이미 완료됨
+          실패 시 console.warn만 기록
+```
+
+**설계 원칙:**
+- Notion 실패가 태스크 완료를 절대 차단하지 않음 (fire-and-forget)
+- SQLite가 primary, Notion이 secondary (eventual consistency)
+- 환경변수 `NOTION_TASK_RESULTS_DB` 미설정 시 백업 비활성화 (graceful degradation)
+
+---
+
 ## 교차 승인 플로우 (Cross-Approval)
 
 ```text

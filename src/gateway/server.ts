@@ -67,13 +67,51 @@ export type AppOptions = {
   max_files_count?: number;         // Max files per result (default: 20)
   cross_approval_config?: CrossApprovalConfig;  // Gemini CLI cross-approval config
   mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
+  notion_backup?: NotionBackupConfig | null;    // Notion backup for task results (fire-and-forget)
+};
+
+// Notion backup configuration — saves completed task results to Notion as a durable backup
+export type NotionBackupConfig = {
+  api_key: string;
+  database_id: string;    // Notion database for task results
 };
 
 // === Create Express app ===
 
+// Fire-and-forget Notion backup for completed task results
+// Uses dynamic import to avoid hard dependency on @notionhq/client
+const create_notion_backup = (config: NotionBackupConfig) => {
+  const backup_task_result = async (task_id: string, title: string, output: string) => {
+    try {
+      const { create_notion_client } = await import('../notification/notion.js');
+      const notion = create_notion_client({
+        api_key: config.api_key,
+        database_id: config.database_id,
+      });
+      await notion.create_page({
+        title: `📋 [Task Result] ${title}`,
+        content: `Task ID: ${task_id}\nCompleted: ${new Date().toISOString()}\n\n${output}`,
+        database_id: config.database_id,
+      });
+      console.log(`[Notion Backup] Task ${task_id} backed up successfully`);
+    } catch (err) {
+      // Fire-and-forget: log warning but never block main flow
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Notion Backup] Failed for task ${task_id}: ${msg}`);
+    }
+  };
+
+  return { backup_task_result };
+};
+
 export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   const app = express();
   app.use(express.json({ limit: BODY_SIZE_LIMIT }));
+
+  // Notion backup (optional, fire-and-forget)
+  const notion_backup = options.notion_backup
+    ? create_notion_backup(options.notion_backup)
+    : null;
 
   // Track hunter heartbeat (legacy, also tracked in agent_heartbeats)
   let last_hunter_heartbeat: Date | null = null;
@@ -236,7 +274,14 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
-    res.json(store.get_by_id(req.params.id));
+
+    // Fire-and-forget Notion backup
+    const task = store.get_by_id(req.params.id);
+    if (notion_backup && task) {
+      notion_backup.backup_task_result(task.id, task.title, summary).catch(() => {});
+    }
+
+    res.json(task);
   });
 
   // Block a task
@@ -359,6 +404,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         summary: raw_output,
         files_created: files ?? [],
       });
+
+      // Fire-and-forget Notion backup for hunter results
+      const completed_task = store.get_by_id(req.params.id);
+      if (notion_backup && completed_task) {
+        notion_backup.backup_task_result(completed_task.id, completed_task.title, raw_output).catch(() => {});
+      }
     } else {
       store.block_task(req.params.id, raw_output);
     }
@@ -563,9 +614,15 @@ if (is_main) {
     console.warn('[Gateway] ⚠️  DEV MODE ACTIVE — Hunter auth is DISABLED. Do NOT use in production.');
   }
 
+  // Notion backup (optional — set NOTION_API_KEY and NOTION_TASK_RESULTS_DB to enable)
+  const notion_backup = process.env.NOTION_API_KEY && process.env.NOTION_TASK_RESULTS_DB
+    ? { api_key: process.env.NOTION_API_KEY, database_id: process.env.NOTION_TASK_RESULTS_DB }
+    : null;
+
   const app = create_app(store, {
     hunter_api_key: process.env.HUNTER_API_KEY,
     dev_mode,
+    notion_backup,
   });
 
   app.listen(port, host, () => {
@@ -574,6 +631,9 @@ if (is_main) {
       console.log('[Gateway] Hunter API key authentication: ENABLED');
     } else if (dev_mode) {
       console.warn('[Gateway] Hunter API key authentication: DISABLED (dev mode)');
+    }
+    if (notion_backup) {
+      console.log('[Gateway] Notion task backup: ENABLED');
     }
   });
 

@@ -64,6 +64,7 @@
 | `GOOGLE_PROFILE_DIR` | N | 구글 Chrome 프로필 디렉토리 — 헌터 전용 (기본: ./fas-google-profile-hunter) |
 | `DEEP_RESEARCH_TIMEOUT_MS` | N | Deep Research 타임아웃 ms — 헌터 전용 (기본: 300000) |
 | `NOTEBOOKLM_TIMEOUT_MS` | N | NotebookLM 타임아웃 ms — 헌터 전용 (기본: 180000) |
+| `NOTION_TASK_RESULTS_DB` | N | Notion 태스크 결과 백업 DB ID (설정 시 태스크 완료마다 Notion에 fire-and-forget 백업) |
 | `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false). NODE_ENV=production 시 강제 차단 |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |

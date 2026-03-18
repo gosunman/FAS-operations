@@ -43,7 +43,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
   - [x] 통합 라우터 — `src/notification/router.ts`
   - [x] Slack 워크스페이스 생성 + Bot 토큰 발급
-- [ ] **Notion** 연동 — 보고서/긴 문서 *(Phase 2에서 구현 예정)*
+- [ ] **Notion** 연동 — 보고서/긴 문서:
+  - [x] Notion 클라이언트 구현 — `src/notification/notion.ts` (create_page, send_notification, daily_briefing)
+  - [x] 태스크 결과 Notion 백업 파이프라인 — `server.ts`에서 fire-and-forget 백업 (NOTION_TASK_RESULTS_DB)
+  - [ ] Notion API Key 발급 + DB 생성 *(인간 작업)*
+  - [ ] `.env`에 `NOTION_API_KEY`, `NOTION_TASK_RESULTS_DB` 설정 *(인간 작업)*
+  - [ ] 라우터(`router.ts`)에 NotionClient 연결
+  - [ ] 모닝 브리핑 → Notion 페이지 자동 생성
 
 ### 0-4. Docker 환경 (캡틴) ✅
 
@@ -400,6 +406,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] 에이전트 크래시 → 자동 재시작 (3회까지)
 - [ ] 3회 실패 → 인간 알림 + 해당 에이전트 격리
 - [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
+
+### 7-3b. 데이터 내구성
+
+- [x] 태스크 결과 Notion 백업 파이프라인 구현 — `server.ts`에서 fire-and-forget
+- [ ] Notion DB 생성 + API Key 설정 (인간 작업)
+- [ ] SQLite 정기 백업 (cron → iCloud or 외부 스토리지)
+- [ ] 백업 무결성 검증 스크립트 (Notion에 저장된 수 vs SQLite 완료 수 비교)
 
 ### 7-4. 보안
 
