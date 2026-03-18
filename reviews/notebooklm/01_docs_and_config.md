@@ -1,91 +1,7 @@
-# FAS 전체 코드 리뷰 — Part 1: 문서 & 설정 (Docs & Config)
-> 이 파일은 민감정보가 마스킹된 상태입니다.
-> 파일 수: 41개 | 생성일: 2026-03-17
+# FAS 프로젝트 — 문서 및 설정 파일
 
-## 파일: .env.example
-
-`````bash
-# === Telegram ===
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-TELEGRAM_CHAT_ID=your_chat_id_here
-
-# === Slack ===
-SLACK_BOT_TOKEN=[MASKED_TOKEN]
-SLACK_SIGNING_SECRET=your_signing_secret
-
-# === Notion ===
-NOTION_API_KEY=your_notion_api_key
-NOTION_DAILY_REPORTS_DB=your_database_id
-NOTION_RESEARCH_DB=your_database_id
-NOTION_CRAWL_RESULTS_DB=your_database_id
-
-# === n8n ===
-N8N_USER=admin
-N8N_PASSWORD=changeme
-
-# === Gateway ===
-GATEWAY_PORT=3100
-GATEWAY_HOST=0.0.0.0
-
-# === Hunter (on hunter machine only) ===
-CAPTAIN_API_URL=http://<captain-tailscale-ip>:3100
-HUNTER_POLL_INTERVAL=10000
-HUNTER_LOG_DIR=./logs
-
-# === System ===
-FAS_MODE=awake
-FAS_DEVICE=captain
-NODE_ENV=development
-`````
-
----
-
-## 파일: .gitignore
-
-`````gitignore
-# Dependencies
-node_modules/
-.pnpm-store/
-
-# Build output
-dist/
-build/
-
-# Runtime state (local only)
-state/
-logs/
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Test coverage
-coverage/
-
-# SQLite databases (runtime)
-*.sqlite
-*.sqlite-journal
-
-# tmux resurrect local state
-.tmux/resurrect/
-
-# Docker volumes
-.n8n/
-`````
-
----
+> NotebookLM 교차 검증용 자동 생성 파일
+> 개인정보 및 시크릿은 마스킹 | 코드 로직은 원본 그대로 보존
 
 ## 파일: CLAUDE.md
 
@@ -219,6 +135,1141 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 - [docs/task-system.md](docs/task-system.md) — 태스크 시스템
 - [docs/hunter-protocol.md](docs/hunter-protocol.md) — 헌터 격리 & 통신 프로토콜
 - [PLAN.md](PLAN.md) — 구축 계획
+`````
+
+---
+
+## 파일: PLAN.md
+
+`````markdown
+# PLAN.md — Fully Automation System 구축 계획
+
+## 전체 로드맵
+
+```
+Phase 0: 인프라 기반 세팅               (1~2일)
+Phase 1: 단일 에이전트 자동화            (3~5일)
+Phase 2: 멀티 에이전트 + 교차 승인       (1~2주)
+Phase 3: SLEEP/AWAKE 모드 운영          (1주)
+Phase 4: 반복 태스크 자동화              (1~2주)
+Phase 5: 학원 업무 자동화                (1~2주)
+Phase 6: 캐시플로우 & 사업화 파이프라인   (지속)
+Phase 7: 안정화 + 모니터링 고도화        (지속)
+```
+
+---
+
+## Phase 0: 인프라 기반 세팅
+
+### 0-1. Mac Studio 네트워크 세팅 ✅
+
+- [x] 캡틴, 헌터에 Tailscale 설치 및 연결
+- [x] SSH 키 교환 (MacBook Pro ↔ 캡틴 ↔ 헌터)
+- [x] 고정 Tailscale IP 기록 및 alias 설정
+- [x] 방화벽 규칙: Tailscale 서브넷만 허용
+
+### 0-2. tmux 환경 구성 ✅
+
+- [x] 캡틴, 헌터에 tmux 설치
+- [x] 자동 세션 복구 스크립트 (`tmux-resurrect` 또는 커스텀)
+- [x] 세션 네이밍 컨벤션:
+  - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-gemini-b`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
+  - 헌터: `fas-openclaw`, `fas-watchdog`
+
+### 0-3. 소통 채널 구축 ✅
+
+- [x] **Telegram Bot** 코드 구현 — 긴급 알림 전용
+  - [x] 알림 전송 모듈 (TypeScript) — `src/notification/telegram.ts`
+  - [x] `send(text, type)` + `wait_for_approval(request_id, timeout_ms)`
+  - [x] BotFather에서 실제 봇 생성 + Chat ID 확인
+  - [x] Galaxy Watch 텔레그램 알림 허용 설정
+- [x] **Slack** 코드 구현 — 업무 소통
+  - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
+  - [x] 통합 라우터 — `src/notification/router.ts`
+  - [x] Slack 워크스페이스 생성 + Bot 토큰 발급
+- [ ] **Notion** 연동 — 보고서/긴 문서 *(Phase 2에서 구현 예정)*
+
+### 0-4. Docker 환경 (캡틴) ✅
+
+- [x] 캡틴에 Colima + Docker 설치 완료 (Docker 29.2.1)
+- [x] n8n Docker Compose 파일 작성 — `docker-compose.yml`
+- [x] 볼륨 매핑: tasks, state, reports, config
+
+### 0-5. AI CLI 설치 & 인증 ✅
+
+- [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
+- [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
+- [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 별도 진행)*
+
+### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
+
+- [x] 캡틴에 Task API 서버 구축 (Express, 포트 3100) — `src/gateway/server.ts`
+  - `POST /api/tasks` — 태스크 생성
+  - `GET /api/tasks` — 태스크 목록 (상태 필터)
+  - `GET /api/hunter/tasks/pending` — 헌터 전용 (산이타이징된 태스크)
+  - `POST /api/hunter/tasks/:id/result` — 헌터 결과 제출
+  - `POST /api/hunter/heartbeat` — 헌터 생존 체크
+  - `GET /api/health` — 헬스체크
+- [x] 개인정보 산이타이징 레이어 — `src/gateway/sanitizer.ts`
+- [x] SQLite 태스크 저장소 — `src/gateway/task_store.ts`
+- [x] 헌터는 캡틴 파일시스템에 직접 접근 불가 (API 통신만 허용)
+
+---
+
+## Phase 1: 단일 에이전트 자동화
+
+### 1-1. Claude Code 상시 실행 체계 (캡틴) ✅
+
+- [x] tmux 세션 자동 시작 스크립트 (launchd) — `scripts/setup/com.fas.captain.plist`
+- [x] Claude Code 출력 감시 → Telegram/Slack 전송 스크립트 — `src/watchdog/output_watcher.ts`
+  - 승인 요청 패턴 감지: `[APPROVAL_NEEDED]`, `[BLOCKED]`
+  - 마일스톤 완료 패턴: `[MILESTONE]`, `[DONE]`, `[ERROR]`
+- [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
+- [x] CLAUDE.md에 자율 실행 범위 명시
+
+### 1-2. Gemini CLI 상시 실행 체계 (캡틴)
+
+- [ ] 계정 A: 리서치 전용 세션
+- [ ] 계정 B: 교차 검증 전용 세션
+- [ ] 출력 로깅 + Telegram/Slack 연동
+
+### 1-3. OpenClaw 안정화 (헌터)
+
+- [ ] ChatGPT Pro 연동 완료
+- [ ] 개인정보 유입 방지 확인
+- [ ] 기본 태스크 실행 테스트
+- [ ] NotebookLM 웹 자동화 테스트
+- [ ] Gemini Deep Research 웹 자동화 테스트
+
+### 1-4. 작업 큐 시스템 (간이)
+
+- [ ] `tasks/` 디렉토리 기반 파일 큐
+  - `tasks/pending/`, `tasks/in_progress/`, `tasks/done/`, `tasks/blocked/`
+- [ ] 태스크 파일 포맷:
+  ```yaml
+  id: task_001
+  title: "창업지원사업 정보 수집 자동화"
+  priority: high
+  assigned_to: gemini_a
+  mode: sleep # sleep | awake | recurring
+  risk_level: low # low | mid | high
+  requires_personal_info: false # true면 헌터 배정 금지
+  created_at: 2026-03-17
+  deadline: null
+  depends_on: []
+  ```
+- [ ] 에이전트별 태스크 폴링 스크립트
+
+---
+
+## Phase 2: 멀티 에이전트 + 교차 승인
+
+### 2-1. 교차 승인 프로토콜 구현
+
+- [ ] 승인 요청 표준 포맷 정의
+- [ ] 승인 게이트웨이 서비스 (TypeScript)
+  - `LOW` → 즉시 실행, 로그만 기록
+  - `MID` → 다른 AI에게 검증 요청 → 승인/거부
+  - `HIGH` → Telegram으로 인간에게 전송 → 응답 대기
+- [ ] 교차 검증 로직:
+  - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
+  - 불일치 시 → NotebookLM(헌터)에게 검증 요청
+  - 최종 불일치 시 → 무조건 인간 승인
+
+### 2-2. n8n 워크플로우 설계
+
+- [ ] 마스터 오케스트레이션 워크플로우
+- [ ] 에이전트 헬스체크 워크플로우 (5분마다)
+- [ ] 리소스 모니터링 워크플로우 (CPU/RAM/디스크)
+- [ ] AI 토큰 사용량 추적 워크플로우
+
+### 2-3. 할루시네이션 방지 파이프라인
+
+- [ ] NotebookLM 연동 (구글 계정 2개, 섀도우/캡틴/헌터 모두 사용 가능):
+  - 에이전트 산출물을 NotebookLM에 업로드하여 검증
+  - 헌터: OpenClaw 웹 자동화로 실행
+  - 캡틴/섀도우: Gemini API 또는 웹 자동화 코드로 실행
+  - 검증 실패 시 → `blocked` 상태 + 사유 기록
+- [ ] Cross-AI 팩트체크 (Claude ↔ Gemini)
+- [ ] Deep Research 활용 (구글 계정 2개, 동시 3건 제한):
+  - 새 도메인 진입 시 초기 자료 수집
+  - 결과를 `research/` 디렉토리에 구조화 저장
+  - 사용량 한도 도달 시 → 주인님에게 보고 → 플랜 업그레이드 또는 추가 계정 구매
+
+---
+
+## Phase 3: SLEEP/AWAKE 모드 운영
+
+### 3-1. SLEEP 모드 (23:00~07:30)
+
+자동 실행 태스크만 수행, 인간 승인 불필요한 작업 위주.
+
+**허용 활동:**
+
+- 웹 크롤링 / 정보 수집
+- Deep Research 실행 (헌터)
+- 트렌드 분석 리포트 생성
+- 코드 리뷰 (기존 PR)
+- 테스트 실행 및 결과 기록
+- NotebookLM 검증 실행 (헌터)
+- 내일 AWAKE 모드 태스크 준비
+
+**금지 활동:**
+
+- git push / 배포
+- 외부 서비스 API 호출 (결제 관련)
+- 새 PR 생성
+- 인간 승인 필요 태스크
+
+**SLEEP 모드 산출물:**
+
+- `reports/daily/{date}_overnight_report.md`
+- Notion 페이지로 생성 → Slack으로 URL 전달
+
+### 3-2. AWAKE 모드 (07:30~23:00)
+
+**07:30 모닝 브리핑 (Telegram + Slack):**
+
+- Telegram: 핵심 요약 + 승인 대기 목록 (Galaxy Watch 진동)
+- Slack: 상세 내용
+- Notion: 밤새 작업 전체 리포트
+
+**활동:**
+
+- 개발 작업 (코드 작성, 리팩토링)
+- 인간 피드백 반영
+- git push, PR 생성, 배포 (승인 후)
+
+### 3-3. 모드 전환 자동화
+
+- [ ] n8n 크론 트리거: 23:00 → SLEEP, 07:30 → AWAKE
+- [ ] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프
+
+---
+
+## Phase 4: 반복 태스크 자동화
+
+### 4-1. 창업지원사업 정보 수집 (3일 주기)
+
+- [ ] 크롤링 대상:
+  - **정부**: K-Startup (k-startup.go.kr), 창업진흥원, 중소벤처기업부, 서울산업진흥원 (SBA)
+  - **민간**: Google for Startups (startup.google.com), D.CAMP (dcamp.kr), 기타 규모 있는 민간 프로그램
+- [ ] 신규 공고 감지 → 자격 자동 매칭 (주인님 프로필 기반)
+- [ ] 마감일 D-7, D-3, D-1 알림 (Telegram 긴급)
+- [ ] 보고서 → Notion 페이지 생성 → Slack 전달
+
+### 4-2. 로또 청약 정보 수집 (3일 주기)
+
+- [ ] 청약홈 (applyhome.co.kr) 모니터링
+- [ ] 신규 공고 → 분석 보고서 자동 생성
+  - 위치, 가격, 경쟁률 예상, 자격 충족 여부
+- [ ] 보고서 → Notion + Telegram 전송 → 인간 승인 → 직접 청약
+
+### 4-3. 블라인드 네이버 인기글 모니터링 (매일)
+
+- [ ] 블라인드 네이버 채널 모니터링 (RSS/검색엔진 우회 — 직접 크롤링은 안티봇에 차단됨)
+- [ ] 인기글 감지 기준: 댓글 50+ OR 좋아요 100+ OR 자극적 키워드 매칭
+- [ ] 감지 시 → 요약 + 원문 링크 → Slack 보고
+- [ ] 단톡방 공유는 주인님이 직접 (카카오톡 API는 비즈니스 인증 없이 불가)
+
+### 4-4. AI 트렌드 리서치 (SLEEP 모드, 매일)
+
+- [ ] 소스: Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, Twitter/X
+- [ ] 일일 트렌드 리포트 생성
+- [ ] 관심 키워드 필터: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM
+- [ ] Notion 페이지 생성 → Slack 전달
+
+### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기)
+
+- [ ] 대상: Google, Meta, Apple, Amazon, Microsoft, Netflix 등 글로벌 인지도 높은 기업
+- [ ] 조건 필터: 주인님 스펙 기반 (TS 풀스택 6년, 석사, 영어 가능)
+- [ ] 한국 오피스 + 해외 포지션 모두 체크 (TODO: 조건 상세 확정)
+- [ ] 매칭되는 공고 발견 시 → Notion 보고서 + Telegram 알림
+
+### 4-6. 대학원 지원 일정 알림
+
+- [ ] **조지아텍 OMSCS**: 지원 일정, 준비물, 마감일 추적
+- [ ] **서울대 GSEP**: 지원 일정, 준비물, 마감일 추적
+- [ ] 마감 D-30, D-14, D-7, D-3 단계별 알림 (Telegram)
+- [ ] 준비 체크리스트 자동 생성
+
+### 4-7. 원격 학위 과정 조사 (초기 리서치 → 이후 주기적 갱신)
+
+- [ ] 원격 석사/학사 편입 과정 조사 (해외 유명 대학 위주)
+- [ ] 조건: 원격 수업 가능, 인지도 높은 학교
+- [ ] Deep Research(헌터)로 초기 포괄 조사 → 보고서
+
+### 4-8. SEO/성능 측정 (RECURRING, 추후)
+
+- [ ] Lighthouse CI 주기적 실행
+- [ ] 성능 저하 감지 시 알림
+
+---
+
+## Phase 5: 학원 업무 자동화
+
+### 5-1. 공통과학 자체 교재 제작 (EIDOS SCIENCE)
+
+- [ ] 기존 교재 구조 분석 (하이탑 레벨 기준)
+- [ ] 단원별 콘텐츠 생성: 개념 설명 + 예제 + 연습문제
+- [ ] 교재 디자인: 검정/골드/화이트 (EIDOS SCIENCE 브랜드)
+- [ ] 주인님 검수 → 최종 PDF 생성
+
+### 5-2. 학생 데이터 관리
+
+- [ ] 학생별 프로필: 학년, 반, 성적 이력, 특이사항
+- [ ] 시험 결과 자동 기록 & 성적 추이 분석
+- [ ] 학생별 강약점 리포트 자동 생성
+- [ ] (TODO: 상세 데이터 항목 확정)
+
+### 5-3. 수업 후 학부모 문자 자동 생성
+
+- [ ] AI가 기존 학생 데이터(성적 추이, 출결, 지난 메모) 기반으로 **선제적 초안 자동 생성**
+- [ ] 주인님은 수업 후 키워드만 추가 입력 → 초안 보강 → 승인(Yes/No)만
+- [ ] 톤: 정중하고 전문가적이면서 학생을 애정하는 느낌
+- [ ] 발송: 문자 발송 API (알리고 등) 또는 Google Messages 웹
+
+### 5-4. 주간 테스트 생성 자동화
+
+- [ ] 과목/단원 지정 → 객관식 위주 시험지 자동 생성
+- [ ] 난이도 조절: 일반반 / 오금고반 / 의대반
+- [ ] 정답지 + 해설 자동 생성
+- [ ] PDF 포맷 출력
+
+---
+
+## Phase 6: 캐시플로우 & 사업화 파이프라인
+
+### 6-0. 개발 인프라
+
+- [ ] **웹 개발 보일러플레이트**: 정형화된 웹 프로젝트를 빠르게 생성하는 템플릿
+  - Next.js + TypeScript + TailwindCSS + Vercel 배포
+  - API: NestJS or Next.js API Routes
+  - DB: MongoDB (기본) / Supabase (대안)
+  - 인증, SEO, 모니터링 기본 포함
+  - `npx create-fas-app` 수준의 CLI 도구화
+- [ ] **SEO/GEO 최적화 컨설팅 자동화**:
+  - 대상 사이트 URL 입력 → Lighthouse + Core Web Vitals 자동 분석
+  - GEO(Generative Engine Optimization) 점수 측정
+  - 개선 사항 자동 리포트 생성 (Notion)
+  - 주기적 재측정 → 변화 추적
+  - 향후 유료 컨설팅 서비스로 확장 가능
+
+### 6-1. 캐시플로우 프로젝트 발굴
+
+- [ ] AI가 주기적으로 수익 가능한 마이크로 프로젝트 발굴
+  - 조건: 주인님 개입 최소, 꾸준한 소액 수입, 웹/앱/스크립트로 구현 가능
+- [ ] 발굴된 아이디어 → 타당성 분석 보고서 (Notion)
+  - 시장 규모, 경쟁 상황, 예상 수익, 구현 난이도
+- [ ] 주인님 승인 시 → Phase 6-3으로 진행
+
+### 6-2. 아이디어 → 사업화 파이프라인
+
+주인님이 아이디어를 제시하면 자동으로:
+
+- [ ] **시장 분석**: 시장 규모, 트렌드, 성장성
+- [ ] **경쟁자 분석**: 기존 서비스, 강약점, 차별화 포인트
+- [ ] **수익 분석**: 수익 모델, BEP, 3년 예상 매출
+- [ ] **마케팅 전략**: 타겟 고객, 채널, 초기 전략
+- [ ] **기술 문서**: 앱 개발팀에 전달할 수준의 상세 기획서
+  - 기능 명세, 화면 설계, API 설계, DB 설계
+- [ ] 전체 산출물 → Notion 프로젝트 페이지
+
+### 6-3. 무중단 구현 프로세스
+
+승인된 프로젝트를 AI가 거의 자율적으로 구현:
+
+- [ ] **문서화 루틴**: 프로젝트별 완벽한 설명/기획/상세 문서 작성
+  - README, PLAN, SPEC, API 문서, 테스트 계획
+- [ ] **구현**: Claude Code + Gemini 교차 검증으로 코드 작성
+- [ ] **테스트**: TDD 기반, 자동 테스트 실행
+- [ ] **배포**: 승인 후 Vercel/자체 서버 배포
+- [ ] **모니터링**: 배포 후 상태 감시
+
+### 6-4. 마케팅 & 트래픽 자동화 (Sales Pipeline)
+
+개발/기획은 AI가 해내지만, 팔려면 마케팅이 필요하다.
+
+- [ ] **SEO 블로그 자동 포스팅**: 학원 홍보, 개발 블로그, 기술 글 → AI 작성 → SEO 최적화 → 자동 발행
+- [ ] **소셜 미디어 자동 홍보**: X(Twitter), LinkedIn에 개발 중인 서비스 홍보 봇
+- [ ] **이메일 마케팅**: 리드 수집 → 자동 시퀀스 발송
+
+### 6-5. 학원 IP 수익화
+
+교재/시험지를 학원 내부용으로만 쓰지 않고 패시브 인컴 창출.
+
+- [ ] 완성된 교재/기출 요약 → PDF 자동 포매팅
+- [ ] 크몽(Kmong), 전자책 플랫폼에 자동 업로드
+- [ ] 판매 현황 모니터링 → Slack 보고
+
+### 6-6. B2B SaaS 전환 (무인 결제 → 자동 리포트)
+
+컨설팅 형태는 주인님 시간이 들어감. 완전 무인 SaaS로 확장.
+
+- [ ] SEO/GEO 분석 서비스: 고객이 웹에서 결제 → FAS가 백그라운드 분석 → 리포트 이메일 자동 발송
+- [ ] 결제 연동: Stripe 또는 Toss Payments API
+- [ ] 리포트 자동 생성 + 발송 파이프라인
+- [ ] 고객 대시보드 (Next.js)
+
+---
+
+## Phase 7: 안정화 + 모니터링 고도화
+
+### 7-1. 로깅 & 감사
+
+- [ ] 모든 에이전트 활동 로그: `logs/{agent}/{date}.log`
+- [ ] 승인 이력: `logs/approvals/{date}.json`
+- [ ] Slack 채널별 자동 로그 전송
+
+### 7-2. 리소스 모니터링
+
+- [ ] **디바이스 리소스**: CPU/RAM/디스크 사용량 추적
+  - 리소스 부족 시 → Telegram 알림 + 구매 제안
+- [ ] **AI 토큰 사용량**: 구독별 사용량 대비 잔여량 추적
+  - 토큰을 최대한 활용하도록 태스크 배분 최적화
+  - 사용량 부족 시 → 추가 태스크 자동 배정
+  - 한도 초과 임박 시 → Telegram 알림 + 플랜 업그레이드 제안
+
+### 7-3. 장애 대응
+
+- [ ] 에이전트 크래시 → 자동 재시작 (3회까지)
+- [ ] 3회 실패 → 인간 알림 + 해당 에이전트 격리
+- [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
+
+### 7-4. 보안
+
+- [ ] API 키 관리: macOS Keychain 또는 1Password CLI
+- [ ] 헌터 격리 유지 확인 (개인정보 유입 모니터링)
+- [ ] 민감 정보 접근 로그 기록
+- [ ] 외부 API 호출 화이트리스트
+
+---
+
+## 추천 구현 순서 (가장 빠른 가치 창출)
+
+핵심 페인 포인트: "평일 회사, 주말 학원 → 개인 시간 거의 0"
+→ 가장 먼저 **시간을 벌어주는 태스크**부터 구현.
+
+```text
+Phase 0 (인프라)
+  → Phase 1 (단일 에이전트 — 필수 뼈대)
+    → Phase 5 부분 (학원: 학부모 문자 + 주간 테스트 — 즉시 시간 회수)
+      → Phase 4 (크롤러 — SLEEP 모드로 정보 탐색 제로화)
+        → Phase 2 & 3 (멀티 에이전트, 교차 검증 — 안정성 확보)
+          → Phase 6 (수익화 — 확보된 시간으로 본격 투자)
+            → Phase 7 (지속 안정화)
+```
+
+## 의존성 그래프
+
+```text
+Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
+          │                          ↓
+          ├→ Phase 4 (Phase 1 이후 병렬 가능)
+          │
+          ├→ Phase 5 (Phase 1 이후 병렬 가능, 우선 착수 권장)
+          │
+          └→ Phase 6 (Phase 2 이후)
+                                     ↓
+                               Phase 7 (지속)
+```
+
+## 리스크 & 대응
+
+| 리스크                              | 영향   | 대응                                  |
+| ----------------------------------- | ------ | ------------------------------------- |
+| 할루시네이션 기반 잘못된 행동       | 신뢰   | NotebookLM(헌터) + 교차검증 2중 체크  |
+| Mac Studio 하드웨어 장애            | 가용성 | Telegram 즉시 알림 → 수동 복구 (캡틴이 SPOF이므로 이중화 미지원, 현실적 대응) |
+| Telegram Bot 응답 누락              | 운영   | 타임아웃 → 자동 안전모드 (읽기전용)   |
+| 헌터 개인정보 유입                  | 보안   | Task API 산이타이징 레이어 + 모니터링 |
+| AI 서비스 장애 (Claude/Gemini 다운) | 가용성 | 다른 AI로 자동 폴백                   |
+| 디바이스 리소스 부족                | 성능   | 모니터링 + 주인님에게 구매 제안       |
+| AI 토큰 사용량 한도 초과            | 생산성 | 모니터링 + 플랜 업그레이드 제안       |
+`````
+
+---
+
+## 파일: README.md
+
+`````markdown
+# Fully Automation System (FAS)
+
+> 24시간 무중단 AI 워커 시스템 — 잠자는 동안에도 일하는 디지털 분신
+
+## 한 줄 요약
+
+2대의 Mac Studio + 다종 AI 모델(Claude, Gemini, OpenClaw)을 조합하여, **사람 개입 최소화**로 24시간 자동 운영되는 멀티 에이전트 시스템.
+
+## 왜 만드는가
+
+- 평일 07:30~21:00 회사, 주말 10:00~21:00 학원 → **개인 시간 거의 0**
+- AI 에이전트가 대신 일해야 프로젝트 진행 가능
+- 수면 시간(6~8시간)을 **정보 수집·분석 시간**으로 전환
+- 깨어 있는 시간에는 **승인만** 하면 되는 구조
+
+## 시스템 구성 개요
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    HUMAN (owner)                     │
+│  MacBook Pro — SSH 접속 & 모니터링 전용               │
+│  Galaxy Watch (텔레그램 긴급 알림)                     │
+│  Galaxy Fold (슬랙/노션/텔레그램 상세 확인)            │
+├─────────────────────────────────────────────────────┤
+│              COMMUNICATION LAYER                      │
+│  Telegram (긴급 알림) │ Slack (업무 소통) │ Notion (보고서) │
+├─────────────────────────────────────────────────────┤
+│              ORCHESTRATOR (n8n)                       │
+│              캡틴 (Mac Studio #2, M4 Ultra)           │
+├──────────┬──────────┬──────────────────────────────┤
+│ Claude   │ Gemini   │ Approval                      │
+│ Code     │ CLI x2   │ Gateway                       │
+│ (Max)    │ (Pro)    │ (TypeScript)                  │
+├──────────┴──────────┴──────────────────────────────┤
+│         TASK API (Tailscale, 개인정보 차단)           │
+├─────────────────────────────────────────────────────┤
+│              헌터 (Mac Studio #1, M1 Ultra)           │
+│  OpenClaw (ChatGPT Pro) — 격리 환경                   │
+│  NotebookLM / Gemini Deep Research (별도 구글 계정)   │
+├─────────────────────────────────────────────────────┤
+│              VALIDATION LAYER                         │
+│  NotebookLM (할루시네이션 검증) + Cross-AI Review      │
+├─────────────────────────────────────────────────────┤
+│              APPROVAL GATEWAY                         │
+│  Low: 자동 │ Mid: AI 교차승인 │ High: 텔레그램→인간   │
+└─────────────────────────────────────────────────────┘
+```
+
+## 하드웨어 배치
+
+| 기기          | 칩 / RAM        | 별명                  | 정체성               | 역할                                               |
+| ------------- | --------------- | --------------------- | -------------------- | -------------------------------------------------- |
+| Mac Studio #2 | M4 Ultra / 36GB | **캡틴(Captain)**     | 신뢰받는 집사        | 메인 워커 + n8n 오케스트레이터 (계정 A)             |
+| Mac Studio #1 | M1 Ultra / 32GB | **헌터(Hunter)**      | 자율 정찰병          | OpenClaw + Claude Code x20 자율 탐색 워커 (계정 B) |
+| MacBook Pro   | M1 Pro / 32GB   | **그림자(Shadow)**    | 주인님의 보좌관      | SSH 감독 & NotebookLM 검증 (주인님 직접 사용)      |
+
+> 에이전트 체계 상세: [docs/agents-charter.md](docs/agents-charter.md)
+
+## 운영 모드
+
+| 모드          | 시간대      | 주요 활동                                               |
+| ------------- | ----------- | ------------------------------------------------------- |
+| **SLEEP**     | 23:00~07:30 | 정보 수집, 트렌드 리서치, Deep Research                 |
+| **AWAKE**     | 07:30~23:00 | 개발 작업, 승인 대기 태스크, 보고서                     |
+| **RECURRING** | 상시        | 크롤링 배치 (창업지원사업, 청약, 블라인드, 취업공고 등) |
+
+## AI 모델 역할 분담
+
+| 모델                       | 위치                                                 | 용도                                          | 강점 활용                         |
+| -------------------------- | ---------------------------------------------------- | --------------------------------------------- | --------------------------------- |
+| **Claude Code** (Max)      | 캡틴 (계정 A)                                        | 메인 개발, 문서 작성, 코드 리뷰               | 코드 품질, 긴 컨텍스트            |
+| **Claude Code** (Max x20)  | 헌터 (계정 B)                                        | 코딩, 고지능 분석 작업                        | 자율 탐색 중 복잡한 분석 지원     |
+| **Gemini CLI** (Pro x2)    | 캡틴                                                 | 리서치, 웹 검색, 교차 검증                    | 구글 생태계, 최신 정보            |
+| **OpenClaw** (ChatGPT Pro) | 헌터 (계정 B)                                        | 웹 자동화, 크롤링 코드 작성, 추상적 업무 처리 | 브라우저 자동화, 자유도 높은 작업 |
+| **NotebookLM**             | 전체 (구글 계정 2개)                                 | 할루시네이션 검증, 논리 일관성 체크           | 소스 기반 검증                    |
+| **Gemini Deep Research**   | 전체 (구글 계정 2개, 계정당 동시 조회 최대 3건 제한) | 초기 자료 조사, 심층 리서치                   | 포괄적 조사                       |
+
+## OpenClaw 활용 원칙
+
+- **개인정보가 필요 없는 작업**만 수행
+- 새 웹사이트 크롤링 시: OpenClaw로 코드 작성 → 안정화되면 캡틴으로 이관
+- 사이트 업데이트 빈번하거나 일회성 브라우저 작업 → OpenClaw에서 직접 실행
+- 텔레그램으로 간단히 명령 → 추상적/자유도 높은 업무 처리
+
+## 소통 채널
+
+| 채널         | 용도                                      | 알림                            |
+| ------------ | ----------------------------------------- | ------------------------------- |
+| **Telegram** | 긴급 알림, 승인 요청                      | Galaxy Watch 진동 (유일한 알림) |
+| **Slack**    | 업무 소통, 디바이스별 채널 그룹핑         | Fold에서 확인                   |
+| **Notion**   | 보고서, 긴 문서 → 페이지 생성 후 URL 전달 | Fold에서 확인                   |
+
+## 교차 승인 체계
+
+```
+위험도 LOW  → 자동 실행 (파일 읽기, 검색, 정보 수집)
+위험도 MID  → AI 교차 승인 (Claude가 작업 → Gemini가 검증 → 자동 승인)
+위험도 HIGH → 인간 승인 (금전, 외부 API 호출, git push, 배포)
+```
+
+## 자동화 태스크 카테고리
+
+### 정보 수집 & 모니터링
+
+- 창업지원사업 크롤링 (정부 + 민간, 3일 주기)
+- 로또 청약 모니터링 (3일 주기)
+- 블라인드 네이버 인기글 감지 (매일)
+- AI 트렌드 리서치 (SLEEP 모드)
+- 글로벌 빅테크 취업 공고 체크 (3일 주기)
+- 대학원 지원 일정 알림 (일정 기반)
+- 원격 석사/학사 편입 과정 조사 (초기 리서치)
+
+### 학원 업무 자동화
+
+- 공통과학 자체 교재 제작 (EIDOS SCIENCE)
+- 학생 데이터 관리
+- 수업 후 학부모 문자 메시지 자동 생성
+- 주간 테스트 생성 자동화
+
+### 개발 & 프로젝트
+
+- FAS 시스템 자체 개발 (이 시스템)
+- 웹 개발 보일러플레이트 (정형화된 웹 프로젝트 빠른 생성)
+- SEO/GEO 최적화 컨설팅 자동화
+- 캐시플로우 프로젝트 발굴 및 무중단 구현
+- 아이디어 → 사업화 파이프라인 (시장/경쟁자/수익 분석, 문서 작성)
+- 마케팅 자동화 (SEO 블로그 포스팅, 소셜 미디어 홍보)
+- 학원 IP 수익화 (교재/시험지 → 전자책 플랫폼 자동 업로드)
+- B2B SaaS 전환 (무인 결제 → 자동 리포트 발송)
+
+### 시스템 운영
+
+- 에이전트 헬스체크 & 자동 재시작
+- 디바이스 리소스 24시간 최대 활용 (남으면 추가 태스크 배정)
+- AI 토큰 사용량 최대 활용 (한도 임박 시 플랜 업그레이드 제안)
+
+## 프로젝트 구조
+
+```
+fully-automation-system/
+├── src/
+│   ├── gateway/          # Task API 서버 (Express, SQLite)
+│   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
+│   ├── notification/     # Telegram Bot + Slack 알림 모듈
+│   ├── watchdog/         # 출력 감시 데몬
+│   └── shared/           # 공유 타입 정의
+├── scripts/
+│   ├── setup/            # 환경 셋업 스크립트
+│   ├── test_notifications.ts  # Telegram/Slack 연동 테스트
+│   ├── start_captain_sessions.sh
+│   ├── stop_all.sh
+│   ├── status.sh
+│   └── agent_wrapper.sh  # 자동 재시작 래퍼
+├── hunter/               # 헌터 전용 설정 (CLAUDE.md, OpenClaw 설정)
+├── shadow/               # 그림자 전용 설정 (CLAUDE.md)
+├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
+├── docs/                 # 상세 기술 문서
+├── tasks/                # 태스크 큐 (pending/in_progress/done/blocked)
+├── docker-compose.yml    # n8n (Colima)
+├── CLAUDE.md             # AI 자율 실행 규칙
+└── PLAN.md               # 구축 계획
+```
+
+## 빠른 시작
+
+```bash
+# 1. 의존성 설치
+pnpm install
+
+# 2. 환경 변수 설정
+cp .env.example .env
+# .env 파일에 Telegram/Slack 토큰 입력
+
+# 3. tmux 환경 셋업
+./scripts/setup/setup_tmux.sh
+
+# 4. 알림 연동 테스트
+npx tsx scripts/test_notifications.ts
+
+# 5. 유닛 테스트 실행
+pnpm test:run
+
+# 6. Gateway 서버 시작
+pnpm run gateway
+
+# 7. 전체 세션 시작
+./scripts/start_captain_sessions.sh
+```
+
+> 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
+
+## 기술 스택
+
+- **오케스트레이션**: n8n (셀프호스팅, Docker/Colima)
+- **에이전트 런타임**: tmux + Claude Code CLI, Gemini CLI, OpenClaw
+- **네트워크**: Tailscale (VPN)
+- **소통**: Telegram Bot API + Slack + Notion API
+- **모니터링**: 커스텀 감시 스크립트 (stdout 감지 → Telegram)
+- **검증**: NotebookLM (헌터, 웹 자동화), AI 교차 리뷰
+- **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)
+- **인프라**: Docker/Colima (n8n, 각종 서비스 격리)
+`````
+
+---
+
+## 파일: SPEC.md
+
+`````markdown
+# SPEC.md — 기술 명세 인덱스
+
+> 상세 기술 명세는 `docs/` 디렉토리에 분리되어 있습니다.
+
+## 문서 목록
+
+| 문서                                               | 내용                                                                          |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md)       | 전체 아키텍처, 하드웨어 배치, 디렉토리 구조, 프로세스 시작 순서               |
+| [docs/agent-control.md](docs/agent-control.md)     | **핵심** — 에이전트 제어 프로토콜 (Agent Wrapper, tmux, one-shot/interactive) |
+| [docs/task-system.md](docs/task-system.md)         | 태스크 큐, 파일 포맷, 배정 알고리즘, 동시성 제어, 스케줄링                    |
+| [docs/gateway.md](docs/gateway.md)                 | 승인 게이트웨이, Task API, 위험도 분류, 산이타이징                            |
+| [docs/hunter-protocol.md](docs/hunter-protocol.md) | 헌터 격리, 통신 프로토콜, Tailscale ACL                                       |
+| [docs/notification.md](docs/notification.md)       | Telegram + Slack + Notion 채널 명세, 라우팅 매트릭스                          |
+| [docs/n8n-workflows.md](docs/n8n-workflows.md)     | n8n 워크플로우 상세, docker-compose, schedules.yml                            |
+| [docs/crawlers.md](docs/crawlers.md)               | 크롤러별 상세 (창업, 청약, 블라인드, 채용, 대학원, AI 트렌드)                 |
+| [docs/academy.md](docs/academy.md)                 | 학원 자동화 (학생 데이터, 학부모 문자, 시험 생성, 교재 제작)                  |
+| [docs/pipeline.md](docs/pipeline.md)               | 캐시플로우 발굴, 아이디어→사업화, 무중단 구현 프로세스                        |
+| [docs/monitoring.md](docs/monitoring.md)           | Watchdog, 리소스 모니터링, AI 토큰 추적, 로그 관리                            |
+| [docs/security.md](docs/security.md)               | 시크릿 관리, 격리, ACL, API 화이트리스트                                      |
+| [docs/cost.md](docs/cost.md)                       | 비용 관리, 최적화 전략                                                        |
+
+## 설정 파일
+
+| 파일                                                     | 내용                                    |
+| -------------------------------------------------------- | --------------------------------------- |
+| [config/agents.yml](config/agents.yml)                   | 에이전트 설정 (역할, 권한, 재시작 정책) |
+| [config/schedules.yml](config/schedules.yml)             | 반복 태스크 스케줄                      |
+| [config/risk_rules.yml](config/risk_rules.yml)           | 위험도 분류 규칙                        |
+| [config/personal_filter.yml](config/personal_filter.yml) | 개인정보 필터링 패턴 (gateway.md 참조)  |
+`````
+
+---
+
+## 파일: devspec.md
+
+`````markdown
+# devspec.md — FAS 개발자 & AI 에이전트 기술 명세
+
+## 시스템 아키텍처
+
+```
+캡틴 (Mac Studio M4 Ultra)                    헌터 (Mac Studio M1 Ultra)
+"신뢰받는 집사" — 계정 A                     "자율 정찰병" — 계정 B
+┌────────────────────────────┐              ┌────────────────────────┐
+│ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
+│   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
+│       ├ Task CRUD API      │  (Tailscale) │                        │
+│       ├ Hunter API (sanitized)             │ tmux: fas-claude-hunter│
+│       └ Health check       │              │   └ Claude Code x20   │
+│                            │              │     (계정 B)           │
+│ tmux: fas-claude           │              │                        │
+│   └ agent_wrapper.sh claude│              │ tmux: fas-watchdog     │
+│     (계정 A)               │              │   └ heartbeat sender   │
+│                            │              └────────────────────────┘
+│ tmux: fas-gemini-a         │    ┌──────────────────────┐
+│   └ Gemini CLI (research)  │    │ External Services    │
+│                            │    │  Telegram Bot API    │
+│ tmux: fas-gemini-b         │───►│  Slack Web API       │
+│   └ Gemini CLI (validator) │    │  Notion API          │
+│                            │    └──────────────────────┘
+│ tmux: fas-watchdog         │
+│   └ output_watcher.ts      │    주인님 ↔ 헌터 직접 소통:
+│                            │    Telegram/Slack (막연한 업무,
+│ tmux: fas-n8n              │     크리티컬 이슈 보고)
+│   └ docker compose (n8n)   │
+└────────────────────────────┘
+에이전트 체계 원천 문서: docs/agents-charter.md
+```
+
+## 기술 스택
+
+| 카테고리 | 기술 | 버전 |
+|---------|------|------|
+| 언어 | TypeScript (ESM) | 5.9+ |
+| 런타임 | Node.js | 20+ |
+| 패키지 매니저 | pnpm | 10+ |
+| 웹 프레임워크 | Express | 5.x |
+| DB | better-sqlite3 (WAL mode) | 12+ |
+| 테스트 | vitest + supertest | 4.x |
+| 컨테이너 | Colima + Docker | - |
+| 오케스트레이션 | n8n (Docker) | latest |
+| 프로세스 관리 | tmux + launchd | - |
+
+## 환경 변수
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `TELEGRAM_BOT_TOKEN` | Y | Telegram Bot API 토큰 |
+| `TELEGRAM_CHAT_ID` | Y | 알림 수신 채팅 ID |
+| `SLACK_BOT_TOKEN` | Y | Slack Bot OAuth 토큰 |
+| `SLACK_SIGNING_SECRET` | N | Slack 이벤트 검증 |
+| `NOTION_API_KEY` | N | Notion API 통합 키 |
+| `GATEWAY_PORT` | N | Gateway 포트 (기본: 3100) |
+| `GATEWAY_HOST` | N | Gateway 호스트 (기본: 0.0.0.0) |
+| `HUNTER_API_KEY` | Y | 헌터 API 인증 키 — 캡틴/헌터 공유 시크릿 (Defense in Depth) |
+| `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
+| `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
+| `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
+| `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
+| `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
+| `N8N_USER` | N | n8n 관리자 ID |
+| `N8N_PASSWORD` | N | n8n 관리자 비밀번호 |
+
+## 주요 모듈
+
+### Gateway (`src/gateway/`)
+- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check
+- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
+- **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
+- **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
+
+### Notification (`src/notification/`)
+- **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
+- **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
+
+### Hunter (`src/hunter/`)
+- **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
+- **task_executor.ts**: 태스크 액션 라우팅 + 실행기 (현재 스텁, OpenClaw 통합 시 교체)
+- **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
+- **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
+- **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
+- **main.ts**: 진입점 (`pnpm run hunter`)
+
+### Watchdog (`src/watchdog/`)
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
+
+## API 엔드포인트
+
+| Method | Path | 설명 |
+|--------|------|------|
+| POST | `/api/tasks` | 태스크 생성 |
+| GET | `/api/tasks` | 태스크 목록 (?status=pending) |
+| GET | `/api/tasks/:id` | 태스크 상세 |
+| PATCH | `/api/tasks/:id/status` | 상태 변경 |
+| POST | `/api/tasks/:id/complete` | 완료 처리 |
+| POST | `/api/tasks/:id/block` | 차단 처리 |
+| GET | `/api/hunter/tasks/pending` | 헌터 전용 (PII 제거됨, 인증+속도제한) |
+| POST | `/api/hunter/tasks/:id/result` | 헌터 결과 제출 (스키마 검증+PII 격리) |
+| POST | `/api/hunter/heartbeat` | 헌터 생존 신호 (인증+속도제한) |
+| GET | `/api/health` | 시스템 상태 |
+| GET | `/api/stats` | 태스크 통계 |
+
+## 개발 환경 셋업
+
+```bash
+# 의존성 설치
+pnpm install
+
+# 환경 변수 설정
+cp .env.example .env   # 이후 토큰 값 입력
+
+# AI CLI 설치 & 인증 확인
+./scripts/setup/setup_ai_cli.sh
+
+# 알림 연동 테스트 (Telegram + Slack)
+npx tsx scripts/test_notifications.ts
+
+# 테스트 실행
+pnpm test:run      # 단발 실행
+pnpm test          # watch 모드
+
+# 서버 실행
+pnpm run gateway   # Gateway + Task API
+pnpm run watcher   # Output Watcher
+pnpm run hunter    # Hunter Agent (on hunter machine)
+
+# tmux 환경
+./scripts/setup/setup_tmux.sh      # tmux-resurrect 설치
+./scripts/start_captain_sessions.sh # 모든 세션 시작
+./scripts/status.sh                # 시스템 상태 확인
+./scripts/stop_all.sh              # 모든 세션 중지
+```
+
+## 셋업 스크립트
+
+| 스크립트 | 설명 |
+|---------|------|
+| `scripts/setup/setup_ai_cli.sh` | AI CLI 설치/인증 상태 확인 (Claude Code, Gemini CLI `@google/gemini-cli`, OpenClaw) |
+| `scripts/setup/setup_tmux.sh` | tmux + resurrect 설치 |
+| `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
+
+## 배포 유의 사항
+
+- Gateway는 Tailscale 내부에서만 접근 가능 (공인 IP 노출 금지)
+- 헌터에는 개인정보가 포함된 태스크를 절대 전달하지 않음 (`sanitizer.ts`)
+- n8n은 Colima(Docker)에서 실행, 볼륨은 로컬 디스크
+- launchd plist로 부팅 시 자동 시작 (`com.fas.captain.plist`)
+- 에이전트 크래시 시 `agent_wrapper.sh`가 지수 백오프로 최대 3회 재시작
+`````
+
+---
+
+## 파일: package.json
+
+`````json
+{
+  "name": "fully-automation-system",
+  "version": "0.1.0",
+  "description": "FAS - 24/7 AI Worker System",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/gateway/server.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit",
+    "gateway": "tsx src/gateway/server.ts",
+    "watcher": "tsx src/watchdog/output_watcher.ts",
+    "hunter": "tsx src/hunter/main.ts"
+  },
+  "keywords": [
+    "automation",
+    "ai-agents"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.30.3",
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/node-telegram-bot-api": "^0.64.14",
+    "@types/supertest": "^7.2.0",
+    "@types/uuid": "^11.0.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "@slack/web-api": "^7.15.0",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "uuid": "^13.0.0",
+    "yaml": "^2.8.2"
+  }
+}
+`````
+
+---
+
+## 파일: pnpm-workspace.yaml
+
+`````yaml
+approveBuilds: better-sqlite3
+`````
+
+---
+
+## 파일: tsconfig.json
+
+`````json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
+`````
+
+---
+
+## 파일: vitest.config.ts
+
+`````typescript
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': './src',
+    },
+  },
+});
+`````
+
+---
+
+## 파일: .gitignore
+
+`````gitignore
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+
+# Runtime state (local only)
+state/
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# SQLite databases (runtime)
+*.sqlite
+*.sqlite-journal
+
+# tmux resurrect local state
+.tmux/resurrect/
+
+# Docker volumes
+.n8n/
+`````
+
+---
+
+## 파일: .env.example
+
+`````example
+# === Telegram ===
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# === Slack ===
+SLACK_BOT_TOKEN=[MASKED_TOKEN]
+SLACK_SIGNING_SECRET=your_signing_secret
+
+# === Notion ===
+NOTION_API_KEY=your_notion_api_key
+NOTION_DAILY_REPORTS_DB=your_database_id
+NOTION_RESEARCH_DB=your_database_id
+NOTION_CRAWL_RESULTS_DB=your_database_id
+
+# === n8n ===
+N8N_USER=admin
+N8N_PASSWORD=changeme
+
+# === Gateway ===
+GATEWAY_PORT=3100
+GATEWAY_HOST=0.0.0.0
+
+# === Hunter (on hunter machine only) ===
+CAPTAIN_API_URL=http://<captain-tailscale-ip>:3100
+HUNTER_POLL_INTERVAL=10000
+HUNTER_LOG_DIR=./logs
+
+# === System ===
+FAS_MODE=awake
+FAS_DEVICE=captain
+NODE_ENV=development
+`````
+
+---
+
+## 파일: .env
+
+`````env
+# === Telegram ===
+TELEGRAM_BOT_TOKEN=[MASKED_VALUE]
+TELEGRAM_CHAT_ID=[MASKED_VALUE]
+
+# === Slack ===
+SLACK_BOT_TOKEN=[MASKED_VALUE]
+SLACK_SIGNING_SECRET=[MASKED_VALUE]
+
+# === Notion ===
+NOTION_API_KEY=[MASKED_VALUE]
+NOTION_DAILY_REPORTS_DB=your_database_id
+NOTION_RESEARCH_DB=your_database_id
+NOTION_CRAWL_RESULTS_DB=your_database_id
+
+# === n8n ===
+N8N_USER=admin
+N8N_PASSWORD=[MASKED_VALUE]
+
+# === Gateway ===
+GATEWAY_PORT=3100
+GATEWAY_HOST=0.0.0.0
+
+# === System ===
+FAS_MODE=awake
+FAS_DEVICE=captain
+NODE_ENV=development
+`````
+
+---
+
+## 파일: docker-compose.yml
+
+`````yaml
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"     # Tailscale network only
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - GENERIC_TIMEZONE=Asia/Seoul
+      - TZ=Asia/Seoul
+      - N8N_LOG_LEVEL=info
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # Mount project directories for task file access
+      - ./tasks:/data/tasks
+      - ./state:/data/state
+      - ./reports:/data/reports
+      - ./config:/data/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  n8n_data:
+    driver: local
 `````
 
 ---
@@ -531,260 +1582,6 @@ schedules:
     type: daily
     time: "07:30"
     workflow: WF-3
-`````
-
----
-
-## 파일: config/tmux.conf
-
-`````conf
-# FAS tmux configuration
-# Load this with: tmux source-file ~/fully-automation-system/config/tmux.conf
-
-# === General ===
-set -g default-terminal "screen-256color"
-set -g history-limit 50000
-set -g mouse on
-set -g base-index 1
-setw -g pane-base-index 1
-
-# === Status bar ===
-set -g status-interval 10
-set -g status-style "bg=#1a1a2e,fg=#e0e0e0"
-set -g status-left "#[fg=#00ff88,bold][FAS] #S "
-set -g status-left-length 30
-set -g status-right "#[fg=#aaaaaa]%Y-%m-%d %H:%M #[fg=#ff6b6b]#{?client_prefix,PREFIX,}"
-set -g status-right-length 50
-
-# === Window naming ===
-# Prevent automatic window renaming so FAS session names stay consistent
-set -g allow-rename off
-setw -g automatic-rename off
-
-# === Keybindings ===
-# Prefix: Ctrl+a (easier than Ctrl+b)
-set -g prefix C-a
-unbind C-b
-bind C-a send-prefix
-
-# Quick pane splitting
-bind | split-window -h
-bind - split-window -v
-
-# Reload config
-bind r source-file ~/fully-automation-system/config/tmux.conf \; display "FAS tmux config reloaded"
-
-# === Logging ===
-# Capture pane output to log files (useful for agent output monitoring)
-# Usage: prefix + P to toggle logging
-bind P pipe-pane -o "cat >> ~/fully-automation-system/logs/tmux-#{session_name}-#{window_name}.log" \; display "Logging toggled"
-
-# === Session persistence ===
-# tmux-resurrect compatible settings
-set -g @resurrect-dir '~/fully-automation-system/.tmux/resurrect'
-set -g @resurrect-capture-pane-contents 'on'
-set -g @resurrect-strategy-nvim 'session'
-`````
-
----
-
-## 파일: devspec.md
-
-`````markdown
-# devspec.md — FAS 개발자 & AI 에이전트 기술 명세
-
-## 시스템 아키텍처
-
-```
-캡틴 (Mac Studio M4 Ultra)                    헌터 (Mac Studio M1 Ultra)
-"신뢰받는 집사" — 계정 A                     "자율 정찰병" — 계정 B
-┌────────────────────────────┐              ┌────────────────────────┐
-│ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
-│   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
-│       ├ Task CRUD API      │  (Tailscale) │                        │
-│       ├ Hunter API (sanitized)             │ tmux: fas-claude-hunter│
-│       └ Health check       │              │   └ Claude Code x20   │
-│                            │              │     (계정 B)           │
-│ tmux: fas-claude           │              │                        │
-│   └ agent_wrapper.sh claude│              │ tmux: fas-watchdog     │
-│     (계정 A)               │              │   └ heartbeat sender   │
-│                            │              └────────────────────────┘
-│ tmux: fas-gemini-a         │    ┌──────────────────────┐
-│   └ Gemini CLI (research)  │    │ External Services    │
-│                            │    │  Telegram Bot API    │
-│ tmux: fas-gemini-b         │───►│  Slack Web API       │
-│   └ Gemini CLI (validator) │    │  Notion API          │
-│                            │    └──────────────────────┘
-│ tmux: fas-watchdog         │
-│   └ output_watcher.ts      │    주인님 ↔ 헌터 직접 소통:
-│                            │    Telegram/Slack (막연한 업무,
-│ tmux: fas-n8n              │     크리티컬 이슈 보고)
-│   └ docker compose (n8n)   │
-└────────────────────────────┘
-에이전트 체계 원천 문서: docs/agents-charter.md
-```
-
-## 기술 스택
-
-| 카테고리 | 기술 | 버전 |
-|---------|------|------|
-| 언어 | TypeScript (ESM) | 5.9+ |
-| 런타임 | Node.js | 20+ |
-| 패키지 매니저 | pnpm | 10+ |
-| 웹 프레임워크 | Express | 5.x |
-| DB | better-sqlite3 (WAL mode) | 12+ |
-| 테스트 | vitest + supertest | 4.x |
-| 컨테이너 | Colima + Docker | - |
-| 오케스트레이션 | n8n (Docker) | latest |
-| 프로세스 관리 | tmux + launchd | - |
-
-## 환경 변수
-
-| 변수 | 필수 | 설명 |
-|------|------|------|
-| `TELEGRAM_BOT_TOKEN` | Y | Telegram Bot API 토큰 |
-| `TELEGRAM_CHAT_ID` | Y | 알림 수신 채팅 ID |
-| `SLACK_BOT_TOKEN` | Y | Slack Bot OAuth 토큰 |
-| `SLACK_SIGNING_SECRET` | N | Slack 이벤트 검증 |
-| `NOTION_API_KEY` | N | Notion API 통합 키 |
-| `GATEWAY_PORT` | N | Gateway 포트 (기본: 3100) |
-| `GATEWAY_HOST` | N | Gateway 호스트 (기본: 0.0.0.0) |
-| `HUNTER_API_KEY` | Y | 헌터 API 인증 키 — 캡틴/헌터 공유 시크릿 (Defense in Depth) |
-| `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
-| `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
-| `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
-| `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
-| `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
-| `N8N_USER` | N | n8n 관리자 ID |
-| `N8N_PASSWORD` | N | n8n 관리자 비밀번호 |
-
-## 주요 모듈
-
-### Gateway (`src/gateway/`)
-- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check
-- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
-- **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
-- **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
-
-### Notification (`src/notification/`)
-- **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
-- **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
-
-### Hunter (`src/hunter/`)
-- **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + 실행기 (현재 스텁, OpenClaw 통합 시 교체)
-- **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
-- **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
-- **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
-- **main.ts**: 진입점 (`pnpm run hunter`)
-
-### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
-
-## API 엔드포인트
-
-| Method | Path | 설명 |
-|--------|------|------|
-| POST | `/api/tasks` | 태스크 생성 |
-| GET | `/api/tasks` | 태스크 목록 (?status=pending) |
-| GET | `/api/tasks/:id` | 태스크 상세 |
-| PATCH | `/api/tasks/:id/status` | 상태 변경 |
-| POST | `/api/tasks/:id/complete` | 완료 처리 |
-| POST | `/api/tasks/:id/block` | 차단 처리 |
-| GET | `/api/hunter/tasks/pending` | 헌터 전용 (PII 제거됨, 인증+속도제한) |
-| POST | `/api/hunter/tasks/:id/result` | 헌터 결과 제출 (스키마 검증+PII 격리) |
-| POST | `/api/hunter/heartbeat` | 헌터 생존 신호 (인증+속도제한) |
-| GET | `/api/health` | 시스템 상태 |
-| GET | `/api/stats` | 태스크 통계 |
-
-## 개발 환경 셋업
-
-```bash
-# 의존성 설치
-pnpm install
-
-# 환경 변수 설정
-cp .env.example .env   # 이후 토큰 값 입력
-
-# AI CLI 설치 & 인증 확인
-./scripts/setup/setup_ai_cli.sh
-
-# 알림 연동 테스트 (Telegram + Slack)
-npx tsx scripts/test_notifications.ts
-
-# 테스트 실행
-pnpm test:run      # 단발 실행
-pnpm test          # watch 모드
-
-# 서버 실행
-pnpm run gateway   # Gateway + Task API
-pnpm run watcher   # Output Watcher
-pnpm run hunter    # Hunter Agent (on hunter machine)
-
-# tmux 환경
-./scripts/setup/setup_tmux.sh      # tmux-resurrect 설치
-./scripts/start_captain_sessions.sh # 모든 세션 시작
-./scripts/status.sh                # 시스템 상태 확인
-./scripts/stop_all.sh              # 모든 세션 중지
-```
-
-## 셋업 스크립트
-
-| 스크립트 | 설명 |
-|---------|------|
-| `scripts/setup/setup_ai_cli.sh` | AI CLI 설치/인증 상태 확인 (Claude Code, Gemini CLI `@google/gemini-cli`, OpenClaw) |
-| `scripts/setup/setup_tmux.sh` | tmux + resurrect 설치 |
-| `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
-
-## 배포 유의 사항
-
-- Gateway는 Tailscale 내부에서만 접근 가능 (공인 IP 노출 금지)
-- 헌터에는 개인정보가 포함된 태스크를 절대 전달하지 않음 (`sanitizer.ts`)
-- n8n은 Colima(Docker)에서 실행, 볼륨은 로컬 디스크
-- launchd plist로 부팅 시 자동 시작 (`com.fas.captain.plist`)
-- 에이전트 크래시 시 `agent_wrapper.sh`가 지수 백오프로 최대 3회 재시작
-`````
-
----
-
-## 파일: docker-compose.yml
-
-`````yaml
-version: '3.8'
-
-services:
-  n8n:
-    image: n8nio/n8n:latest
-    restart: unless-stopped
-    ports:
-      - "5678:5678"     # Tailscale network only
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
-      - GENERIC_TIMEZONE=Asia/Seoul
-      - TZ=Asia/Seoul
-      - N8N_LOG_LEVEL=info
-      - N8N_DIAGNOSTICS_ENABLED=false
-      - WEBHOOK_URL=http://localhost:5678/
-    volumes:
-      - n8n_data:/home/node/.n8n
-      # Mount project directories for task file access
-      - ./tasks:/data/tasks
-      - ./state:/data/state
-      - ./reports:/data/reports
-      - ./config:/data/config:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-volumes:
-  n8n_data:
-    driver: local
 `````
 
 ---
@@ -4201,16 +4998,16 @@ ideas_backlog:
 - [ ] `.env.example`에서 구체적 IP 제거
 - [ ] 테스트 코드에서 `localhost` 사용
 
-### H-2. 문서 내 개인 식별 정보 ("[MASKED_OWNER]")
+### H-2. 문서 내 개인 식별 정보 ("sunman")
 
 **위치**:
-- `README.md:20` — `HUMAN ([MASKED_OWNER])`
-- `docs/architecture.md:7` — `Human ([MASKED_OWNER])`
+- `README.md:20` — `HUMAN (sunman)`
+- `docs/architecture.md:7` — `Human (sunman)`
 
 **위험**: 닉네임 + 기기 모델(Galaxy Watch/Fold) 조합으로 개인 식별 가능
 
 **조치**:
-- [ ] 모든 문서에서 "[MASKED_OWNER]" → "owner" 또는 "user"로 변경
+- [ ] 모든 문서에서 "sunman" → "owner" 또는 "user"로 변경
 - [ ] 헌터 배포 패키지에서 docs/ 제외
 
 ### H-3. 파일 경로 내 사용자 정보
@@ -5029,6 +5826,70 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 
 ---
 
+## 파일: hunter/README.md
+
+`````markdown
+# Hunter (헌터) — 자율 정찰병
+
+Mac Studio #1 (M1 Ultra / 32GB)에서 24/7 무중단 가동되는 자율 탐색 에이전트.
+
+## 목적
+
+외부 세계로 나아가 주인님에게 도움될 정보, 트렌드, 기회를 적극적으로 찾는 일꾼.
+직접 지시 없이도 주인님의 의중을 파악하여 자율적으로 행동한다.
+
+## 구조
+
+```
+hunter/
+├── CLAUDE.md              # 헌터 전용 Claude Code 규칙
+├── README.md              # (이 파일)
+└── openclaw/
+    ├── system_prompt.md   # OpenClaw(ChatGPT Pro) 초기 지시문
+    └── browsing_rules.md  # 브라우징 규칙, 봇탐지 우회, 사이트 허용/금지 목록
+```
+
+## 주요 도구
+
+| 도구 | 용도 |
+|------|------|
+| OpenClaw (ChatGPT Pro) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 |
+| Claude Code Max x20 | 코딩, 고지능 분석 작업 (계정 B) |
+| Gemini CLI | 소규모 검증, 비크리티컬 결정 대행 |
+
+## 보안
+
+- **개인정보 완전 차단** — 주인님의 개인정보에 접근 불가
+- **소스코드 격리** — FAS 소스코드 수신/보유 금지
+- **계정 격리** — 계정 B(헌터 전용) 전용
+
+상세: [docs/agents-charter.md](../docs/agents-charter.md)
+`````
+
+---
+
+## 파일: hunter/openclaw/README.md
+
+`````markdown
+# OpenClaw Configuration
+
+헌터의 메인 브라우저 엔진(ChatGPT Pro OAuth) 설정 파일.
+
+## 파일
+
+| 파일 | 용도 |
+|------|------|
+| `system_prompt.md` | OpenClaw 초기 지시문 — 헌터의 정체성, 원칙, 임무, 보안 규칙 |
+| `browsing_rules.md` | 브라우징 규칙 — 봇탐지 우회, 사이트 허용/금지, 데이터 수집 규칙 |
+
+## 사용법
+
+이 파일들은 헌터 배포 시 OpenClaw의 시스템 프롬프트와 설정으로 주입된다.
+헌터 초기화 후 재배포 시에도 함께 전달된다.
+`````
+
+---
+
 ## 파일: hunter/openclaw/browsing_rules.md
 
 `````markdown
@@ -5142,28 +6003,6 @@ Fully Automation System (FAS) — 24시간 무중단 AI 워커 시스템
 
 ---
 
-## 파일: hunter/openclaw/README.md
-
-`````markdown
-# OpenClaw Configuration
-
-헌터의 메인 브라우저 엔진(ChatGPT Pro OAuth) 설정 파일.
-
-## 파일
-
-| 파일 | 용도 |
-|------|------|
-| `system_prompt.md` | OpenClaw 초기 지시문 — 헌터의 정체성, 원칙, 임무, 보안 규칙 |
-| `browsing_rules.md` | 브라우징 규칙 — 봇탐지 우회, 사이트 허용/금지, 데이터 수집 규칙 |
-
-## 사용법
-
-이 파일들은 헌터 배포 시 OpenClaw의 시스템 프롬프트와 설정으로 주입된다.
-헌터 초기화 후 재배포 시에도 함께 전달된다.
-`````
-
----
-
 ## 파일: hunter/openclaw/system_prompt.md
 
 `````markdown
@@ -5260,849 +6099,6 @@ When receiving tasks via Task API:
 
 ---
 
-## 파일: hunter/README.md
-
-`````markdown
-# Hunter (헌터) — 자율 정찰병
-
-Mac Studio #1 (M1 Ultra / 32GB)에서 24/7 무중단 가동되는 자율 탐색 에이전트.
-
-## 목적
-
-외부 세계로 나아가 주인님에게 도움될 정보, 트렌드, 기회를 적극적으로 찾는 일꾼.
-직접 지시 없이도 주인님의 의중을 파악하여 자율적으로 행동한다.
-
-## 구조
-
-```
-hunter/
-├── CLAUDE.md              # 헌터 전용 Claude Code 규칙
-├── README.md              # (이 파일)
-└── openclaw/
-    ├── system_prompt.md   # OpenClaw(ChatGPT Pro) 초기 지시문
-    └── browsing_rules.md  # 브라우징 규칙, 봇탐지 우회, 사이트 허용/금지 목록
-```
-
-## 주요 도구
-
-| 도구 | 용도 |
-|------|------|
-| OpenClaw (ChatGPT Pro) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 |
-| Claude Code Max x20 | 코딩, 고지능 분석 작업 (계정 B) |
-| Gemini CLI | 소규모 검증, 비크리티컬 결정 대행 |
-
-## 보안
-
-- **개인정보 완전 차단** — 주인님의 개인정보에 접근 불가
-- **소스코드 격리** — FAS 소스코드 수신/보유 금지
-- **계정 격리** — 계정 B(헌터 전용) 전용
-
-상세: [docs/agents-charter.md](../docs/agents-charter.md)
-`````
-
----
-
-## 파일: package.json
-
-`````json
-{
-  "name": "fully-automation-system",
-  "version": "0.1.0",
-  "description": "FAS - 24/7 AI Worker System",
-  "type": "module",
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx watch src/gateway/server.ts",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "lint": "tsc --noEmit",
-    "gateway": "tsx src/gateway/server.ts",
-    "watcher": "tsx src/watchdog/output_watcher.ts",
-    "hunter": "tsx src/hunter/main.ts"
-  },
-  "keywords": [
-    "automation",
-    "ai-agents"
-  ],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.30.3",
-  "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.5.0",
-    "@types/node-telegram-bot-api": "^0.64.14",
-    "@types/supertest": "^7.2.0",
-    "@types/uuid": "^11.0.0",
-    "supertest": "^7.2.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
-  },
-  "dependencies": {
-    "@slack/web-api": "^7.15.0",
-    "better-sqlite3": "^12.8.0",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "node-telegram-bot-api": "^0.67.0",
-    "uuid": "^13.0.0",
-    "yaml": "^2.8.2"
-  }
-}
-`````
-
----
-
-## 파일: PLAN.md
-
-`````markdown
-# PLAN.md — Fully Automation System 구축 계획
-
-## 전체 로드맵
-
-```
-Phase 0: 인프라 기반 세팅               (1~2일)
-Phase 1: 단일 에이전트 자동화            (3~5일)
-Phase 2: 멀티 에이전트 + 교차 승인       (1~2주)
-Phase 3: SLEEP/AWAKE 모드 운영          (1주)
-Phase 4: 반복 태스크 자동화              (1~2주)
-Phase 5: 학원 업무 자동화                (1~2주)
-Phase 6: 캐시플로우 & 사업화 파이프라인   (지속)
-Phase 7: 안정화 + 모니터링 고도화        (지속)
-```
-
----
-
-## Phase 0: 인프라 기반 세팅
-
-### 0-1. Mac Studio 네트워크 세팅 ✅
-
-- [x] 캡틴, 헌터에 Tailscale 설치 및 연결
-- [x] SSH 키 교환 (MacBook Pro ↔ 캡틴 ↔ 헌터)
-- [x] 고정 Tailscale IP 기록 및 alias 설정
-- [x] 방화벽 규칙: Tailscale 서브넷만 허용
-
-### 0-2. tmux 환경 구성 ✅
-
-- [x] 캡틴, 헌터에 tmux 설치
-- [x] 자동 세션 복구 스크립트 (`tmux-resurrect` 또는 커스텀)
-- [x] 세션 네이밍 컨벤션:
-  - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-gemini-b`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
-  - 헌터: `fas-openclaw`, `fas-watchdog`
-
-### 0-3. 소통 채널 구축 ✅
-
-- [x] **Telegram Bot** 코드 구현 — 긴급 알림 전용
-  - [x] 알림 전송 모듈 (TypeScript) — `src/notification/telegram.ts`
-  - [x] `send(text, type)` + `wait_for_approval(request_id, timeout_ms)`
-  - [x] BotFather에서 실제 봇 생성 + Chat ID 확인
-  - [x] Galaxy Watch 텔레그램 알림 허용 설정
-- [x] **Slack** 코드 구현 — 업무 소통
-  - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
-  - [x] 통합 라우터 — `src/notification/router.ts`
-  - [x] Slack 워크스페이스 생성 + Bot 토큰 발급
-- [ ] **Notion** 연동 — 보고서/긴 문서 *(Phase 2에서 구현 예정)*
-
-### 0-4. Docker 환경 (캡틴) ✅
-
-- [x] 캡틴에 Colima + Docker 설치 완료 (Docker 29.2.1)
-- [x] n8n Docker Compose 파일 작성 — `docker-compose.yml`
-- [x] 볼륨 매핑: tasks, state, reports, config
-
-### 0-5. AI CLI 설치 & 인증 ✅
-
-- [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
-- [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
-- [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
-- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 별도 진행)*
-
-### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
-
-- [x] 캡틴에 Task API 서버 구축 (Express, 포트 3100) — `src/gateway/server.ts`
-  - `POST /api/tasks` — 태스크 생성
-  - `GET /api/tasks` — 태스크 목록 (상태 필터)
-  - `GET /api/hunter/tasks/pending` — 헌터 전용 (산이타이징된 태스크)
-  - `POST /api/hunter/tasks/:id/result` — 헌터 결과 제출
-  - `POST /api/hunter/heartbeat` — 헌터 생존 체크
-  - `GET /api/health` — 헬스체크
-- [x] 개인정보 산이타이징 레이어 — `src/gateway/sanitizer.ts`
-- [x] SQLite 태스크 저장소 — `src/gateway/task_store.ts`
-- [x] 헌터는 캡틴 파일시스템에 직접 접근 불가 (API 통신만 허용)
-
----
-
-## Phase 1: 단일 에이전트 자동화
-
-### 1-1. Claude Code 상시 실행 체계 (캡틴) ✅
-
-- [x] tmux 세션 자동 시작 스크립트 (launchd) — `scripts/setup/com.fas.captain.plist`
-- [x] Claude Code 출력 감시 → Telegram/Slack 전송 스크립트 — `src/watchdog/output_watcher.ts`
-  - 승인 요청 패턴 감지: `[APPROVAL_NEEDED]`, `[BLOCKED]`
-  - 마일스톤 완료 패턴: `[MILESTONE]`, `[DONE]`, `[ERROR]`
-- [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
-- [x] CLAUDE.md에 자율 실행 범위 명시
-
-### 1-2. Gemini CLI 상시 실행 체계 (캡틴)
-
-- [ ] 계정 A: 리서치 전용 세션
-- [ ] 계정 B: 교차 검증 전용 세션
-- [ ] 출력 로깅 + Telegram/Slack 연동
-
-### 1-3. OpenClaw 안정화 (헌터)
-
-- [ ] ChatGPT Pro 연동 완료
-- [ ] 개인정보 유입 방지 확인
-- [ ] 기본 태스크 실행 테스트
-- [ ] NotebookLM 웹 자동화 테스트
-- [ ] Gemini Deep Research 웹 자동화 테스트
-
-### 1-4. 작업 큐 시스템 (간이)
-
-- [ ] `tasks/` 디렉토리 기반 파일 큐
-  - `tasks/pending/`, `tasks/in_progress/`, `tasks/done/`, `tasks/blocked/`
-- [ ] 태스크 파일 포맷:
-  ```yaml
-  id: task_001
-  title: "창업지원사업 정보 수집 자동화"
-  priority: high
-  assigned_to: gemini_a
-  mode: sleep # sleep | awake | recurring
-  risk_level: low # low | mid | high
-  requires_personal_info: false # true면 헌터 배정 금지
-  created_at: 2026-03-17
-  deadline: null
-  depends_on: []
-  ```
-- [ ] 에이전트별 태스크 폴링 스크립트
-
----
-
-## Phase 2: 멀티 에이전트 + 교차 승인
-
-### 2-1. 교차 승인 프로토콜 구현
-
-- [ ] 승인 요청 표준 포맷 정의
-- [ ] 승인 게이트웨이 서비스 (TypeScript)
-  - `LOW` → 즉시 실행, 로그만 기록
-  - `MID` → 다른 AI에게 검증 요청 → 승인/거부
-  - `HIGH` → Telegram으로 인간에게 전송 → 응답 대기
-- [ ] 교차 검증 로직:
-  - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
-  - 불일치 시 → NotebookLM(헌터)에게 검증 요청
-  - 최종 불일치 시 → 무조건 인간 승인
-
-### 2-2. n8n 워크플로우 설계
-
-- [ ] 마스터 오케스트레이션 워크플로우
-- [ ] 에이전트 헬스체크 워크플로우 (5분마다)
-- [ ] 리소스 모니터링 워크플로우 (CPU/RAM/디스크)
-- [ ] AI 토큰 사용량 추적 워크플로우
-
-### 2-3. 할루시네이션 방지 파이프라인
-
-- [ ] NotebookLM 연동 (구글 계정 2개, 섀도우/캡틴/헌터 모두 사용 가능):
-  - 에이전트 산출물을 NotebookLM에 업로드하여 검증
-  - 헌터: OpenClaw 웹 자동화로 실행
-  - 캡틴/섀도우: Gemini API 또는 웹 자동화 코드로 실행
-  - 검증 실패 시 → `blocked` 상태 + 사유 기록
-- [ ] Cross-AI 팩트체크 (Claude ↔ Gemini)
-- [ ] Deep Research 활용 (구글 계정 2개, 동시 3건 제한):
-  - 새 도메인 진입 시 초기 자료 수집
-  - 결과를 `research/` 디렉토리에 구조화 저장
-  - 사용량 한도 도달 시 → 주인님에게 보고 → 플랜 업그레이드 또는 추가 계정 구매
-
----
-
-## Phase 3: SLEEP/AWAKE 모드 운영
-
-### 3-1. SLEEP 모드 (23:00~07:30)
-
-자동 실행 태스크만 수행, 인간 승인 불필요한 작업 위주.
-
-**허용 활동:**
-
-- 웹 크롤링 / 정보 수집
-- Deep Research 실행 (헌터)
-- 트렌드 분석 리포트 생성
-- 코드 리뷰 (기존 PR)
-- 테스트 실행 및 결과 기록
-- NotebookLM 검증 실행 (헌터)
-- 내일 AWAKE 모드 태스크 준비
-
-**금지 활동:**
-
-- git push / 배포
-- 외부 서비스 API 호출 (결제 관련)
-- 새 PR 생성
-- 인간 승인 필요 태스크
-
-**SLEEP 모드 산출물:**
-
-- `reports/daily/{date}_overnight_report.md`
-- Notion 페이지로 생성 → Slack으로 URL 전달
-
-### 3-2. AWAKE 모드 (07:30~23:00)
-
-**07:30 모닝 브리핑 (Telegram + Slack):**
-
-- Telegram: 핵심 요약 + 승인 대기 목록 (Galaxy Watch 진동)
-- Slack: 상세 내용
-- Notion: 밤새 작업 전체 리포트
-
-**활동:**
-
-- 개발 작업 (코드 작성, 리팩토링)
-- 인간 피드백 반영
-- git push, PR 생성, 배포 (승인 후)
-
-### 3-3. 모드 전환 자동화
-
-- [ ] n8n 크론 트리거: 23:00 → SLEEP, 07:30 → AWAKE
-- [ ] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프
-
----
-
-## Phase 4: 반복 태스크 자동화
-
-### 4-1. 창업지원사업 정보 수집 (3일 주기)
-
-- [ ] 크롤링 대상:
-  - **정부**: K-Startup (k-startup.go.kr), 창업진흥원, 중소벤처기업부, 서울산업진흥원 (SBA)
-  - **민간**: Google for Startups (startup.google.com), D.CAMP (dcamp.kr), 기타 규모 있는 민간 프로그램
-- [ ] 신규 공고 감지 → 자격 자동 매칭 (주인님 프로필 기반)
-- [ ] 마감일 D-7, D-3, D-1 알림 (Telegram 긴급)
-- [ ] 보고서 → Notion 페이지 생성 → Slack 전달
-
-### 4-2. 로또 청약 정보 수집 (3일 주기)
-
-- [ ] 청약홈 (applyhome.co.kr) 모니터링
-- [ ] 신규 공고 → 분석 보고서 자동 생성
-  - 위치, 가격, 경쟁률 예상, 자격 충족 여부
-- [ ] 보고서 → Notion + Telegram 전송 → 인간 승인 → 직접 청약
-
-### 4-3. 블라인드 네이버 인기글 모니터링 (매일)
-
-- [ ] 블라인드 네이버 채널 모니터링 (RSS/검색엔진 우회 — 직접 크롤링은 안티봇에 차단됨)
-- [ ] 인기글 감지 기준: 댓글 50+ OR 좋아요 100+ OR 자극적 키워드 매칭
-- [ ] 감지 시 → 요약 + 원문 링크 → Slack 보고
-- [ ] 단톡방 공유는 주인님이 직접 (카카오톡 API는 비즈니스 인증 없이 불가)
-
-### 4-4. AI 트렌드 리서치 (SLEEP 모드, 매일)
-
-- [ ] 소스: Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, Twitter/X
-- [ ] 일일 트렌드 리포트 생성
-- [ ] 관심 키워드 필터: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM
-- [ ] Notion 페이지 생성 → Slack 전달
-
-### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기)
-
-- [ ] 대상: Google, Meta, Apple, Amazon, Microsoft, Netflix 등 글로벌 인지도 높은 기업
-- [ ] 조건 필터: 주인님 스펙 기반 (TS 풀스택 6년, 석사, 영어 가능)
-- [ ] 한국 오피스 + 해외 포지션 모두 체크 (TODO: 조건 상세 확정)
-- [ ] 매칭되는 공고 발견 시 → Notion 보고서 + Telegram 알림
-
-### 4-6. 대학원 지원 일정 알림
-
-- [ ] **조지아텍 OMSCS**: 지원 일정, 준비물, 마감일 추적
-- [ ] **서울대 GSEP**: 지원 일정, 준비물, 마감일 추적
-- [ ] 마감 D-30, D-14, D-7, D-3 단계별 알림 (Telegram)
-- [ ] 준비 체크리스트 자동 생성
-
-### 4-7. 원격 학위 과정 조사 (초기 리서치 → 이후 주기적 갱신)
-
-- [ ] 원격 석사/학사 편입 과정 조사 (해외 유명 대학 위주)
-- [ ] 조건: 원격 수업 가능, 인지도 높은 학교
-- [ ] Deep Research(헌터)로 초기 포괄 조사 → 보고서
-
-### 4-8. SEO/성능 측정 (RECURRING, 추후)
-
-- [ ] Lighthouse CI 주기적 실행
-- [ ] 성능 저하 감지 시 알림
-
----
-
-## Phase 5: 학원 업무 자동화
-
-### 5-1. 공통과학 자체 교재 제작 (EIDOS SCIENCE)
-
-- [ ] 기존 교재 구조 분석 (하이탑 레벨 기준)
-- [ ] 단원별 콘텐츠 생성: 개념 설명 + 예제 + 연습문제
-- [ ] 교재 디자인: 검정/골드/화이트 (EIDOS SCIENCE 브랜드)
-- [ ] 주인님 검수 → 최종 PDF 생성
-
-### 5-2. 학생 데이터 관리
-
-- [ ] 학생별 프로필: 학년, 반, 성적 이력, 특이사항
-- [ ] 시험 결과 자동 기록 & 성적 추이 분석
-- [ ] 학생별 강약점 리포트 자동 생성
-- [ ] (TODO: 상세 데이터 항목 확정)
-
-### 5-3. 수업 후 학부모 문자 자동 생성
-
-- [ ] AI가 기존 학생 데이터(성적 추이, 출결, 지난 메모) 기반으로 **선제적 초안 자동 생성**
-- [ ] 주인님은 수업 후 키워드만 추가 입력 → 초안 보강 → 승인(Yes/No)만
-- [ ] 톤: 정중하고 전문가적이면서 학생을 애정하는 느낌
-- [ ] 발송: 문자 발송 API (알리고 등) 또는 Google Messages 웹
-
-### 5-4. 주간 테스트 생성 자동화
-
-- [ ] 과목/단원 지정 → 객관식 위주 시험지 자동 생성
-- [ ] 난이도 조절: 일반반 / 오금고반 / 의대반
-- [ ] 정답지 + 해설 자동 생성
-- [ ] PDF 포맷 출력
-
----
-
-## Phase 6: 캐시플로우 & 사업화 파이프라인
-
-### 6-0. 개발 인프라
-
-- [ ] **웹 개발 보일러플레이트**: 정형화된 웹 프로젝트를 빠르게 생성하는 템플릿
-  - Next.js + TypeScript + TailwindCSS + Vercel 배포
-  - API: NestJS or Next.js API Routes
-  - DB: MongoDB (기본) / Supabase (대안)
-  - 인증, SEO, 모니터링 기본 포함
-  - `npx create-fas-app` 수준의 CLI 도구화
-- [ ] **SEO/GEO 최적화 컨설팅 자동화**:
-  - 대상 사이트 URL 입력 → Lighthouse + Core Web Vitals 자동 분석
-  - GEO(Generative Engine Optimization) 점수 측정
-  - 개선 사항 자동 리포트 생성 (Notion)
-  - 주기적 재측정 → 변화 추적
-  - 향후 유료 컨설팅 서비스로 확장 가능
-
-### 6-1. 캐시플로우 프로젝트 발굴
-
-- [ ] AI가 주기적으로 수익 가능한 마이크로 프로젝트 발굴
-  - 조건: 주인님 개입 최소, 꾸준한 소액 수입, 웹/앱/스크립트로 구현 가능
-- [ ] 발굴된 아이디어 → 타당성 분석 보고서 (Notion)
-  - 시장 규모, 경쟁 상황, 예상 수익, 구현 난이도
-- [ ] 주인님 승인 시 → Phase 6-3으로 진행
-
-### 6-2. 아이디어 → 사업화 파이프라인
-
-주인님이 아이디어를 제시하면 자동으로:
-
-- [ ] **시장 분석**: 시장 규모, 트렌드, 성장성
-- [ ] **경쟁자 분석**: 기존 서비스, 강약점, 차별화 포인트
-- [ ] **수익 분석**: 수익 모델, BEP, 3년 예상 매출
-- [ ] **마케팅 전략**: 타겟 고객, 채널, 초기 전략
-- [ ] **기술 문서**: 앱 개발팀에 전달할 수준의 상세 기획서
-  - 기능 명세, 화면 설계, API 설계, DB 설계
-- [ ] 전체 산출물 → Notion 프로젝트 페이지
-
-### 6-3. 무중단 구현 프로세스
-
-승인된 프로젝트를 AI가 거의 자율적으로 구현:
-
-- [ ] **문서화 루틴**: 프로젝트별 완벽한 설명/기획/상세 문서 작성
-  - README, PLAN, SPEC, API 문서, 테스트 계획
-- [ ] **구현**: Claude Code + Gemini 교차 검증으로 코드 작성
-- [ ] **테스트**: TDD 기반, 자동 테스트 실행
-- [ ] **배포**: 승인 후 Vercel/자체 서버 배포
-- [ ] **모니터링**: 배포 후 상태 감시
-
-### 6-4. 마케팅 & 트래픽 자동화 (Sales Pipeline)
-
-개발/기획은 AI가 해내지만, 팔려면 마케팅이 필요하다.
-
-- [ ] **SEO 블로그 자동 포스팅**: 학원 홍보, 개발 블로그, 기술 글 → AI 작성 → SEO 최적화 → 자동 발행
-- [ ] **소셜 미디어 자동 홍보**: X(Twitter), LinkedIn에 개발 중인 서비스 홍보 봇
-- [ ] **이메일 마케팅**: 리드 수집 → 자동 시퀀스 발송
-
-### 6-5. 학원 IP 수익화
-
-교재/시험지를 학원 내부용으로만 쓰지 않고 패시브 인컴 창출.
-
-- [ ] 완성된 교재/기출 요약 → PDF 자동 포매팅
-- [ ] 크몽(Kmong), 전자책 플랫폼에 자동 업로드
-- [ ] 판매 현황 모니터링 → Slack 보고
-
-### 6-6. B2B SaaS 전환 (무인 결제 → 자동 리포트)
-
-컨설팅 형태는 주인님 시간이 들어감. 완전 무인 SaaS로 확장.
-
-- [ ] SEO/GEO 분석 서비스: 고객이 웹에서 결제 → FAS가 백그라운드 분석 → 리포트 이메일 자동 발송
-- [ ] 결제 연동: Stripe 또는 Toss Payments API
-- [ ] 리포트 자동 생성 + 발송 파이프라인
-- [ ] 고객 대시보드 (Next.js)
-
----
-
-## Phase 7: 안정화 + 모니터링 고도화
-
-### 7-1. 로깅 & 감사
-
-- [ ] 모든 에이전트 활동 로그: `logs/{agent}/{date}.log`
-- [ ] 승인 이력: `logs/approvals/{date}.json`
-- [ ] Slack 채널별 자동 로그 전송
-
-### 7-2. 리소스 모니터링
-
-- [ ] **디바이스 리소스**: CPU/RAM/디스크 사용량 추적
-  - 리소스 부족 시 → Telegram 알림 + 구매 제안
-- [ ] **AI 토큰 사용량**: 구독별 사용량 대비 잔여량 추적
-  - 토큰을 최대한 활용하도록 태스크 배분 최적화
-  - 사용량 부족 시 → 추가 태스크 자동 배정
-  - 한도 초과 임박 시 → Telegram 알림 + 플랜 업그레이드 제안
-
-### 7-3. 장애 대응
-
-- [ ] 에이전트 크래시 → 자동 재시작 (3회까지)
-- [ ] 3회 실패 → 인간 알림 + 해당 에이전트 격리
-- [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
-
-### 7-4. 보안
-
-- [ ] API 키 관리: macOS Keychain 또는 1Password CLI
-- [ ] 헌터 격리 유지 확인 (개인정보 유입 모니터링)
-- [ ] 민감 정보 접근 로그 기록
-- [ ] 외부 API 호출 화이트리스트
-
----
-
-## 추천 구현 순서 (가장 빠른 가치 창출)
-
-핵심 페인 포인트: "평일 회사, 주말 학원 → 개인 시간 거의 0"
-→ 가장 먼저 **시간을 벌어주는 태스크**부터 구현.
-
-```text
-Phase 0 (인프라)
-  → Phase 1 (단일 에이전트 — 필수 뼈대)
-    → Phase 5 부분 (학원: 학부모 문자 + 주간 테스트 — 즉시 시간 회수)
-      → Phase 4 (크롤러 — SLEEP 모드로 정보 탐색 제로화)
-        → Phase 2 & 3 (멀티 에이전트, 교차 검증 — 안정성 확보)
-          → Phase 6 (수익화 — 확보된 시간으로 본격 투자)
-            → Phase 7 (지속 안정화)
-```
-
-## 의존성 그래프
-
-```text
-Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
-          │                          ↓
-          ├→ Phase 4 (Phase 1 이후 병렬 가능)
-          │
-          ├→ Phase 5 (Phase 1 이후 병렬 가능, 우선 착수 권장)
-          │
-          └→ Phase 6 (Phase 2 이후)
-                                     ↓
-                               Phase 7 (지속)
-```
-
-## 리스크 & 대응
-
-| 리스크                              | 영향   | 대응                                  |
-| ----------------------------------- | ------ | ------------------------------------- |
-| 할루시네이션 기반 잘못된 행동       | 신뢰   | NotebookLM(헌터) + 교차검증 2중 체크  |
-| Mac Studio 하드웨어 장애            | 가용성 | Telegram 즉시 알림 → 수동 복구 (캡틴이 SPOF이므로 이중화 미지원, 현실적 대응) |
-| Telegram Bot 응답 누락              | 운영   | 타임아웃 → 자동 안전모드 (읽기전용)   |
-| 헌터 개인정보 유입                  | 보안   | Task API 산이타이징 레이어 + 모니터링 |
-| AI 서비스 장애 (Claude/Gemini 다운) | 가용성 | 다른 AI로 자동 폴백                   |
-| 디바이스 리소스 부족                | 성능   | 모니터링 + 주인님에게 구매 제안       |
-| AI 토큰 사용량 한도 초과            | 생산성 | 모니터링 + 플랜 업그레이드 제안       |
-`````
-
----
-
-## 파일: pnpm-workspace.yaml
-
-`````yaml
-approveBuilds: better-sqlite3
-`````
-
----
-
-## 파일: README.md
-
-`````markdown
-# Fully Automation System (FAS)
-
-> 24시간 무중단 AI 워커 시스템 — 잠자는 동안에도 일하는 디지털 분신
-
-## 한 줄 요약
-
-2대의 Mac Studio + 다종 AI 모델(Claude, Gemini, OpenClaw)을 조합하여, **사람 개입 최소화**로 24시간 자동 운영되는 멀티 에이전트 시스템.
-
-## 왜 만드는가
-
-- 평일 07:30~21:00 회사, 주말 10:00~21:00 학원 → **개인 시간 거의 0**
-- AI 에이전트가 대신 일해야 프로젝트 진행 가능
-- 수면 시간(6~8시간)을 **정보 수집·분석 시간**으로 전환
-- 깨어 있는 시간에는 **승인만** 하면 되는 구조
-
-## 시스템 구성 개요
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    HUMAN (owner)                     │
-│  MacBook Pro — SSH 접속 & 모니터링 전용               │
-│  Galaxy Watch (텔레그램 긴급 알림)                     │
-│  Galaxy Fold (슬랙/노션/텔레그램 상세 확인)            │
-├─────────────────────────────────────────────────────┤
-│              COMMUNICATION LAYER                      │
-│  Telegram (긴급 알림) │ Slack (업무 소통) │ Notion (보고서) │
-├─────────────────────────────────────────────────────┤
-│              ORCHESTRATOR (n8n)                       │
-│              캡틴 (Mac Studio #2, M4 Ultra)           │
-├──────────┬──────────┬──────────────────────────────┤
-│ Claude   │ Gemini   │ Approval                      │
-│ Code     │ CLI x2   │ Gateway                       │
-│ (Max)    │ (Pro)    │ (TypeScript)                  │
-├──────────┴──────────┴──────────────────────────────┤
-│         TASK API (Tailscale, 개인정보 차단)           │
-├─────────────────────────────────────────────────────┤
-│              헌터 (Mac Studio #1, M1 Ultra)           │
-│  OpenClaw (ChatGPT Pro) — 격리 환경                   │
-│  NotebookLM / Gemini Deep Research (별도 구글 계정)   │
-├─────────────────────────────────────────────────────┤
-│              VALIDATION LAYER                         │
-│  NotebookLM (할루시네이션 검증) + Cross-AI Review      │
-├─────────────────────────────────────────────────────┤
-│              APPROVAL GATEWAY                         │
-│  Low: 자동 │ Mid: AI 교차승인 │ High: 텔레그램→인간   │
-└─────────────────────────────────────────────────────┘
-```
-
-## 하드웨어 배치
-
-| 기기          | 칩 / RAM        | 별명                  | 정체성               | 역할                                               |
-| ------------- | --------------- | --------------------- | -------------------- | -------------------------------------------------- |
-| Mac Studio #2 | M4 Ultra / 36GB | **캡틴(Captain)**     | 신뢰받는 집사        | 메인 워커 + n8n 오케스트레이터 (계정 A)             |
-| Mac Studio #1 | M1 Ultra / 32GB | **헌터(Hunter)**      | 자율 정찰병          | OpenClaw + Claude Code x20 자율 탐색 워커 (계정 B) |
-| MacBook Pro   | M1 Pro / 32GB   | **그림자(Shadow)**    | 주인님의 보좌관      | SSH 감독 & NotebookLM 검증 (주인님 직접 사용)      |
-
-> 에이전트 체계 상세: [docs/agents-charter.md](docs/agents-charter.md)
-
-## 운영 모드
-
-| 모드          | 시간대      | 주요 활동                                               |
-| ------------- | ----------- | ------------------------------------------------------- |
-| **SLEEP**     | 23:00~07:30 | 정보 수집, 트렌드 리서치, Deep Research                 |
-| **AWAKE**     | 07:30~23:00 | 개발 작업, 승인 대기 태스크, 보고서                     |
-| **RECURRING** | 상시        | 크롤링 배치 (창업지원사업, 청약, 블라인드, 취업공고 등) |
-
-## AI 모델 역할 분담
-
-| 모델                       | 위치                                                 | 용도                                          | 강점 활용                         |
-| -------------------------- | ---------------------------------------------------- | --------------------------------------------- | --------------------------------- |
-| **Claude Code** (Max)      | 캡틴 (계정 A)                                        | 메인 개발, 문서 작성, 코드 리뷰               | 코드 품질, 긴 컨텍스트            |
-| **Claude Code** (Max x20)  | 헌터 (계정 B)                                        | 코딩, 고지능 분석 작업                        | 자율 탐색 중 복잡한 분석 지원     |
-| **Gemini CLI** (Pro x2)    | 캡틴                                                 | 리서치, 웹 검색, 교차 검증                    | 구글 생태계, 최신 정보            |
-| **OpenClaw** (ChatGPT Pro) | 헌터 (계정 B)                                        | 웹 자동화, 크롤링 코드 작성, 추상적 업무 처리 | 브라우저 자동화, 자유도 높은 작업 |
-| **NotebookLM**             | 전체 (구글 계정 2개)                                 | 할루시네이션 검증, 논리 일관성 체크           | 소스 기반 검증                    |
-| **Gemini Deep Research**   | 전체 (구글 계정 2개, 계정당 동시 조회 최대 3건 제한) | 초기 자료 조사, 심층 리서치                   | 포괄적 조사                       |
-
-## OpenClaw 활용 원칙
-
-- **개인정보가 필요 없는 작업**만 수행
-- 새 웹사이트 크롤링 시: OpenClaw로 코드 작성 → 안정화되면 캡틴으로 이관
-- 사이트 업데이트 빈번하거나 일회성 브라우저 작업 → OpenClaw에서 직접 실행
-- 텔레그램으로 간단히 명령 → 추상적/자유도 높은 업무 처리
-
-## 소통 채널
-
-| 채널         | 용도                                      | 알림                            |
-| ------------ | ----------------------------------------- | ------------------------------- |
-| **Telegram** | 긴급 알림, 승인 요청                      | Galaxy Watch 진동 (유일한 알림) |
-| **Slack**    | 업무 소통, 디바이스별 채널 그룹핑         | Fold에서 확인                   |
-| **Notion**   | 보고서, 긴 문서 → 페이지 생성 후 URL 전달 | Fold에서 확인                   |
-
-## 교차 승인 체계
-
-```
-위험도 LOW  → 자동 실행 (파일 읽기, 검색, 정보 수집)
-위험도 MID  → AI 교차 승인 (Claude가 작업 → Gemini가 검증 → 자동 승인)
-위험도 HIGH → 인간 승인 (금전, 외부 API 호출, git push, 배포)
-```
-
-## 자동화 태스크 카테고리
-
-### 정보 수집 & 모니터링
-
-- 창업지원사업 크롤링 (정부 + 민간, 3일 주기)
-- 로또 청약 모니터링 (3일 주기)
-- 블라인드 네이버 인기글 감지 (매일)
-- AI 트렌드 리서치 (SLEEP 모드)
-- 글로벌 빅테크 취업 공고 체크 (3일 주기)
-- 대학원 지원 일정 알림 (일정 기반)
-- 원격 석사/학사 편입 과정 조사 (초기 리서치)
-
-### 학원 업무 자동화
-
-- 공통과학 자체 교재 제작 (EIDOS SCIENCE)
-- 학생 데이터 관리
-- 수업 후 학부모 문자 메시지 자동 생성
-- 주간 테스트 생성 자동화
-
-### 개발 & 프로젝트
-
-- FAS 시스템 자체 개발 (이 시스템)
-- 웹 개발 보일러플레이트 (정형화된 웹 프로젝트 빠른 생성)
-- SEO/GEO 최적화 컨설팅 자동화
-- 캐시플로우 프로젝트 발굴 및 무중단 구현
-- 아이디어 → 사업화 파이프라인 (시장/경쟁자/수익 분석, 문서 작성)
-- 마케팅 자동화 (SEO 블로그 포스팅, 소셜 미디어 홍보)
-- 학원 IP 수익화 (교재/시험지 → 전자책 플랫폼 자동 업로드)
-- B2B SaaS 전환 (무인 결제 → 자동 리포트 발송)
-
-### 시스템 운영
-
-- 에이전트 헬스체크 & 자동 재시작
-- 디바이스 리소스 24시간 최대 활용 (남으면 추가 태스크 배정)
-- AI 토큰 사용량 최대 활용 (한도 임박 시 플랜 업그레이드 제안)
-
-## 프로젝트 구조
-
-```
-fully-automation-system/
-├── src/
-│   ├── gateway/          # Task API 서버 (Express, SQLite)
-│   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
-│   ├── notification/     # Telegram Bot + Slack 알림 모듈
-│   ├── watchdog/         # 출력 감시 데몬
-│   └── shared/           # 공유 타입 정의
-├── scripts/
-│   ├── setup/            # 환경 셋업 스크립트
-│   ├── test_notifications.ts  # Telegram/Slack 연동 테스트
-│   ├── start_captain_sessions.sh
-│   ├── stop_all.sh
-│   ├── status.sh
-│   └── agent_wrapper.sh  # 자동 재시작 래퍼
-├── hunter/               # 헌터 전용 설정 (CLAUDE.md, OpenClaw 설정)
-├── shadow/               # 그림자 전용 설정 (CLAUDE.md)
-├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
-├── docs/                 # 상세 기술 문서
-├── tasks/                # 태스크 큐 (pending/in_progress/done/blocked)
-├── docker-compose.yml    # n8n (Colima)
-├── CLAUDE.md             # AI 자율 실행 규칙
-└── PLAN.md               # 구축 계획
-```
-
-## 빠른 시작
-
-```bash
-# 1. 의존성 설치
-pnpm install
-
-# 2. 환경 변수 설정
-cp .env.example .env
-# .env 파일에 Telegram/Slack 토큰 입력
-
-# 3. tmux 환경 셋업
-./scripts/setup/setup_tmux.sh
-
-# 4. 알림 연동 테스트
-npx tsx scripts/test_notifications.ts
-
-# 5. 유닛 테스트 실행
-pnpm test:run
-
-# 6. Gateway 서버 시작
-pnpm run gateway
-
-# 7. 전체 세션 시작
-./scripts/start_captain_sessions.sh
-```
-
-> 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
-
-## 기술 스택
-
-- **오케스트레이션**: n8n (셀프호스팅, Docker/Colima)
-- **에이전트 런타임**: tmux + Claude Code CLI, Gemini CLI, OpenClaw
-- **네트워크**: Tailscale (VPN)
-- **소통**: Telegram Bot API + Slack + Notion API
-- **모니터링**: 커스텀 감시 스크립트 (stdout 감지 → Telegram)
-- **검증**: NotebookLM (헌터, 웹 자동화), AI 교차 리뷰
-- **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)
-- **인프라**: Docker/Colima (n8n, 각종 서비스 격리)
-`````
-
----
-
-## 파일: scripts/README.md
-
-`````markdown
-# scripts/ — FAS 스크립트
-
-## 스크립트 목록
-
-| 스크립트 | 목적 |
-|---------|------|
-| `start_captain_sessions.sh` | 캡틴의 모든 tmux 세션 시작 |
-| `stop_all.sh` | 모든 FAS 세션 종료 |
-| `status.sh` | 시스템 상태 확인 (세션, Gateway, Docker, 리소스) |
-| `agent_wrapper.sh` | 에이전트 자동 재시작 래퍼 (지수 백오프) |
-
-## setup/ 디렉토리
-
-| 스크립트 | 목적 |
-|---------|------|
-| `setup_tmux.sh` | tmux-resurrect 설치, tmux.conf 설정 |
-| `setup_colima.sh` | Colima + Docker 설치 (brew) |
-| `setup_ai_cli.sh` | AI CLI 인증 상태 확인 가이드 |
-| `com.fas.captain.plist` | launchd 자동 시작 설정 |
-`````
-
----
-
-## 파일: scripts/setup/com.fas.captain.plist
-
-`````xml
-<!-- FAS Captain launchd plist
-     Auto-starts FAS tmux sessions on login.
-
-     Install:
-       cp scripts/setup/com.fas.captain.plist ~/Library/LaunchAgents/
-       launchctl load ~/Library/LaunchAgents/com.fas.captain.plist
-
-     Uninstall:
-       launchctl unload ~/Library/LaunchAgents/com.fas.captain.plist
-       rm ~/Library/LaunchAgents/com.fas.captain.plist
--->
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.fas.captain</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>-l</string>
-        <string>-c</string>
-        <string>/Users/[MASKED_USER]/fully-automation-system/scripts/start_captain_sessions.sh</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/Users/[MASKED_USER]/fully-automation-system/logs/launchd_captain.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/[MASKED_USER]/fully-automation-system/logs/launchd_captain_error.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>/Users/user</string>
-    </dict>
-</dict>
-</plist>
-`````
-
----
-
 ## 파일: shadow/CLAUDE.md
 
 `````markdown
@@ -6193,120 +6189,113 @@ shadow/
 
 ---
 
-## 파일: SPEC.md
+## 파일: scripts/README.md
 
 `````markdown
-# SPEC.md — 기술 명세 인덱스
+# scripts/ — FAS 스크립트
 
-> 상세 기술 명세는 `docs/` 디렉토리에 분리되어 있습니다.
+## 스크립트 목록
 
-## 문서 목록
+| 스크립트 | 목적 |
+|---------|------|
+| `start_captain_sessions.sh` | 캡틴의 모든 tmux 세션 시작 |
+| `stop_all.sh` | 모든 FAS 세션 종료 |
+| `status.sh` | 시스템 상태 확인 (세션, Gateway, Docker, 리소스) |
+| `agent_wrapper.sh` | 에이전트 자동 재시작 래퍼 (지수 백오프) |
 
-| 문서                                               | 내용                                                                          |
-| -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md)       | 전체 아키텍처, 하드웨어 배치, 디렉토리 구조, 프로세스 시작 순서               |
-| [docs/agent-control.md](docs/agent-control.md)     | **핵심** — 에이전트 제어 프로토콜 (Agent Wrapper, tmux, one-shot/interactive) |
-| [docs/task-system.md](docs/task-system.md)         | 태스크 큐, 파일 포맷, 배정 알고리즘, 동시성 제어, 스케줄링                    |
-| [docs/gateway.md](docs/gateway.md)                 | 승인 게이트웨이, Task API, 위험도 분류, 산이타이징                            |
-| [docs/hunter-protocol.md](docs/hunter-protocol.md) | 헌터 격리, 통신 프로토콜, Tailscale ACL                                       |
-| [docs/notification.md](docs/notification.md)       | Telegram + Slack + Notion 채널 명세, 라우팅 매트릭스                          |
-| [docs/n8n-workflows.md](docs/n8n-workflows.md)     | n8n 워크플로우 상세, docker-compose, schedules.yml                            |
-| [docs/crawlers.md](docs/crawlers.md)               | 크롤러별 상세 (창업, 청약, 블라인드, 채용, 대학원, AI 트렌드)                 |
-| [docs/academy.md](docs/academy.md)                 | 학원 자동화 (학생 데이터, 학부모 문자, 시험 생성, 교재 제작)                  |
-| [docs/pipeline.md](docs/pipeline.md)               | 캐시플로우 발굴, 아이디어→사업화, 무중단 구현 프로세스                        |
-| [docs/monitoring.md](docs/monitoring.md)           | Watchdog, 리소스 모니터링, AI 토큰 추적, 로그 관리                            |
-| [docs/security.md](docs/security.md)               | 시크릿 관리, 격리, ACL, API 화이트리스트                                      |
-| [docs/cost.md](docs/cost.md)                       | 비용 관리, 최적화 전략                                                        |
+## setup/ 디렉토리
 
-## 설정 파일
-
-| 파일                                                     | 내용                                    |
-| -------------------------------------------------------- | --------------------------------------- |
-| [config/agents.yml](config/agents.yml)                   | 에이전트 설정 (역할, 권한, 재시작 정책) |
-| [config/schedules.yml](config/schedules.yml)             | 반복 태스크 스케줄                      |
-| [config/risk_rules.yml](config/risk_rules.yml)           | 위험도 분류 규칙                        |
-| [config/personal_filter.yml](config/personal_filter.yml) | 개인정보 필터링 패턴 (gateway.md 참조)  |
+| 스크립트 | 목적 |
+|---------|------|
+| `setup_tmux.sh` | tmux-resurrect 설치, tmux.conf 설정 |
+| `setup_colima.sh` | Colima + Docker 설치 (brew) |
+| `setup_ai_cli.sh` | AI CLI 인증 상태 확인 가이드 |
+| `com.fas.captain.plist` | launchd 자동 시작 설정 |
 `````
 
 ---
 
-## 파일: src/README.md
+## 파일: scripts/setup/com.fas.captain.plist
 
-`````markdown
-# src/ — FAS 소스 코드
+`````xml
+<!-- FAS Captain launchd plist
+     Auto-starts FAS tmux sessions on login.
 
-## 모듈 구조
+     Install:
+       cp scripts/setup/com.fas.captain.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.fas.captain.plist
 
-| 디렉토리 | 목적 | 상태 |
-|---------|------|------|
-| [gateway/](gateway/) | Task API 서버 (Express + SQLite) | ✅ 구현 완료 |
-| [notification/](notification/) | Telegram + Slack 알림 | ✅ 구현 완료 |
-| [watchdog/](watchdog/) | 출력 감시 데몬 | ✅ 구현 완료 |
-| [shared/](shared/) | 공유 타입 정의 | ✅ 구현 완료 |
-| agents/ | 에이전트 래퍼 | 🔜 Phase 1-2~ |
-| orchestrator/ | n8n 커스텀 노드 | 🔜 Phase 2 |
-| crawlers/ | 크롤러 | 🔜 Phase 4 |
-| academy/ | 학원 자동화 | 🔜 Phase 5 |
-| pipeline/ | 사업화 파이프라인 | 🔜 Phase 6 |
-| validation/ | 할루시네이션 방지 | 🔜 Phase 2-3 |
+     Uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.fas.captain.plist
+       rm ~/Library/LaunchAgents/com.fas.captain.plist
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fas.captain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>/Users/[MASKED_USER]/fully-automation-system/scripts/start_captain_sessions.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/[MASKED_USER]/fully-automation-system/logs/launchd_captain.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/[MASKED_USER]/fully-automation-system/logs/launchd_captain_error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/user</string>
+    </dict>
+</dict>
+</plist>
 `````
 
 ---
 
-## 파일: tsconfig.json
+## 파일: .claude/settings.local.json
 
 `````json
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "outDir": "dist",
-    "rootDir": "src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(colima status:*)",
+      "Bash(bash scripts/setup/setup_ai_cli.sh)",
+      "Bash(gemini:*)",
+      "Bash(ssh hunter:*)",
+      "Bash(git:*)",
+      "Bash(find /Users/[MASKED_USER]/fully-automation-system -name .env* -o -name *secret* -o -name *key*)",
+      "Bash(grep:*)",
+      "Bash(md5:*)",
+      "Bash(cp /Users/[MASKED_USER]/.claude/projects/-Users-user-fully-automation-system/memory/project_operation_protocol.md /Users/[MASKED_USER]/fully-automation-system/memory/)",
+      "Bash(cp /Users/[MASKED_USER]/.claude/projects/-Users-user-fully-automation-system/memory/feedback_auto_commit.md /Users/[MASKED_USER]/fully-automation-system/memory/)",
+      "Bash(cp /Users/[MASKED_USER]/.claude/projects/-Users-user-fully-automation-system/memory/feedback_auto_push.md /Users/[MASKED_USER]/fully-automation-system/memory/)",
+      "Bash(mkdir -p ~/.claude)",
+      "Bash(ln -s \"$HOME/Library/Mobile Documents/com~apple~CloudDocs/claude-commands\" \"$HOME/.claude/commands\")",
+      "Bash(find /Users/[MASKED_USER]/fully-automation-system/memory -type f -name *.md)",
+      "Bash(find /Users/[MASKED_USER]/fully-automation-system/src -type f \\\\\\(-name *.ts -o -name *.js \\\\\\))",
+      "Bash(find . -type f -not -path ./.git/* -not -path ./node_modules/* -not -path ./reviews/* -not -path ./pnpm-lock.yaml -not -path ./dist/* -not -path ./logs/* -not -path ./state/* -not -path ./.env -not -name *.lock -not -name .DS_Store -exec wc -l {} +)",
+      "Bash(bash /Users/[MASKED_USER]/.claude/statusline-command.sh)"
+    ]
+  }
 }
-`````
-
----
-
-## 파일: vitest.config.ts
-
-`````typescript
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts'],
-    },
-  },
-  resolve: {
-    alias: {
-      '@': './src',
-    },
-  },
-});
 `````
 
 ---

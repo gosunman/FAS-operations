@@ -1,512 +1,7 @@
-# FAS 전체 코드 리뷰 — Part 3: 테스트 & 스크립트 (Tests & Scripts)
-> 이 파일은 민감정보가 마스킹된 상태입니다.
-> 파일 수: 19개 | 생성일: 2026-03-17
+# FAS 프로젝트 — 테스트 및 스크립트
 
-## 파일: scripts/agent_wrapper.sh
-
-`````bash
-#!/usr/bin/env bash
-# FAS Agent Wrapper — Auto-restart on crash
-# Usage: agent_wrapper.sh <command> [args...]
-#
-# Features:
-#   - Restarts the agent up to MAX_RETRIES times on crash
-#   - Exponential backoff between retries
-#   - Logs crash events
-#   - Escalates to [BLOCKED] after max retries
-
-set -euo pipefail
-
-MAX_RETRIES="${FAS_MAX_RETRIES:-3}"
-BASE_DELAY="${FAS_RETRY_DELAY:-5}"
-LOG_DIR="${FAS_LOG_DIR:-$HOME/fully-automation-system/logs}"
-
-if [ $# -eq 0 ]; then
-  echo "Usage: agent_wrapper.sh <command> [args...]"
-  echo "Example: agent_wrapper.sh claude --resume"
-  exit 1
-fi
-
-COMMAND="$*"
-AGENT_NAME="${1##*/}" # basename of command
-RETRY_COUNT=0
-mkdir -p "$LOG_DIR"
-
-echo "[Wrapper] Starting agent: $COMMAND"
-echo "[Wrapper] Max retries: $MAX_RETRIES, Base delay: ${BASE_DELAY}s"
-
-while true; do
-  START_TIME=$(date +%s)
-
-  # Run the agent command
-  set +e
-  $COMMAND
-  EXIT_CODE=$?
-  set -e
-
-  END_TIME=$(date +%s)
-  RUNTIME=$((END_TIME - START_TIME))
-
-  # If it ran for more than 60 seconds, reset retry counter
-  # (it was running fine, this is a new crash)
-  if [ "$RUNTIME" -gt 60 ]; then
-    RETRY_COUNT=0
-  fi
-
-  RETRY_COUNT=$((RETRY_COUNT + 1))
-  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-
-  echo "[$TIMESTAMP] [Wrapper] Agent '$AGENT_NAME' exited with code $EXIT_CODE after ${RUNTIME}s (attempt $RETRY_COUNT/$MAX_RETRIES)"
-
-  # Log crash
-  echo "$TIMESTAMP exit_code=$EXIT_CODE runtime=${RUNTIME}s attempt=$RETRY_COUNT" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
-
-  # Check max retries
-  if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-    echo "[BLOCKED] Agent '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
-    echo "$TIMESTAMP [BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
-
-    # Wait for manual restart signal (user can Ctrl+C and re-run)
-    echo "[Wrapper] Waiting 300 seconds before final retry..."
-    sleep 300
-    RETRY_COUNT=0
-  fi
-
-  # Exponential backoff: base * 2^(retry-1)
-  DELAY=$((BASE_DELAY * (1 << (RETRY_COUNT - 1))))
-  echo "[Wrapper] Restarting in ${DELAY}s..."
-  sleep "$DELAY"
-done
-`````
-
----
-
-## 파일: scripts/setup/setup_ai_cli.sh
-
-`````bash
-#!/usr/bin/env bash
-# AI CLI authentication setup guide
-# This script checks auth status and guides manual setup steps
-
-set -euo pipefail
-
-echo "=========================================="
-echo " FAS AI CLI Authentication Setup"
-echo "=========================================="
-echo ""
-
-# === 1. Claude Code ===
-echo "📎 [1/4] Claude Code (Captain)"
-echo "------------------------------------------"
-if command -v claude &>/dev/null; then
-  echo "  ✅ Claude Code CLI installed"
-  echo "  🔑 Auth: Run 'claude' and follow OAuth login (Max plan)"
-else
-  echo "  ❌ Claude Code not installed"
-  echo "  📋 Install: npm install -g @anthropic-ai/claude-code"
-fi
-echo ""
-
-# === 2. Gemini CLI ===
-echo "🔮 [2/4] Gemini CLI (Captain — 2 accounts)"
-echo "------------------------------------------"
-if command -v gemini &>/dev/null; then
-  echo "  ✅ Gemini CLI installed"
-else
-  echo "  ❌ Gemini CLI not installed"
-  echo "  📋 Install: npm install -g @google/gemini-cli"
-fi
-echo ""
-echo "  Account A (Research): Set GEMINI_API_KEY_A in .env"
-echo "  Account B (Validator): Set GEMINI_API_KEY_B in .env"
-echo ""
-echo "  💡 Profile separation:"
-echo "    - Create ~/.gemini/profile_a.json and profile_b.json"
-echo "    - Each session uses GEMINI_PROFILE env var to switch"
-echo ""
-
-# === 3. OpenClaw (Hunter) ===
-echo "🐱 [3/4] OpenClaw / ChatGPT Pro (Hunter)"
-echo "------------------------------------------"
-echo "  ⚠️  Setup on HUNTER machine (not Captain)"
-echo "  📋 Steps:"
-echo "    1. SSH to hunter: ssh hunter"
-echo "    2. Install OpenClaw (browser automation for ChatGPT)"
-echo "    3. Login with ChatGPT Pro account (isolated Google account)"
-echo "    4. Verify: no personal info in hunter's environment"
-echo ""
-
-# === 4. Environment file ===
-echo "📄 [4/4] Environment Variables"
-echo "------------------------------------------"
-if [ -f .env ]; then
-  echo "  ✅ .env file exists"
-  echo "  Checking required vars..."
-
-  REQUIRED_VARS=(
-    "TELEGRAM_BOT_TOKEN"
-    "TELEGRAM_CHAT_ID"
-    "SLACK_BOT_TOKEN"
-    "GATEWAY_PORT"
-  )
-
-  for var in "${REQUIRED_VARS[@]}"; do
-    if grep -q "^${var}=" .env 2>/dev/null; then
-      echo "    ✅ $var is set"
-    else
-      echo "    ❌ $var is missing"
-    fi
-  done
-else
-  echo "  ❌ .env file not found"
-  echo "  📋 Create from template: cp .env.example .env"
-fi
-
-echo ""
-echo "=========================================="
-echo " Manual steps required:"
-echo "  1. Create Telegram bot via @BotFather"
-echo "  2. Create Slack workspace + bot token"
-echo "  3. Copy .env.example to .env and fill in values"
-echo "  4. Run 'claude' to complete OAuth login"
-echo "=========================================="
-`````
-
----
-
-## 파일: scripts/setup/setup_colima.sh
-
-`````bash
-#!/usr/bin/env bash
-# Install and configure Colima + Docker for FAS
-# Requires: Homebrew
-#
-# Colima provides lightweight Docker runtime on macOS (Apple Silicon native)
-
-set -euo pipefail
-
-echo "[FAS] Setting up Colima + Docker..."
-
-# === 1. Install dependencies ===
-if ! command -v colima &>/dev/null; then
-  echo "[FAS] Installing Colima..."
-  brew install colima
-else
-  echo "[FAS] Colima already installed: $(colima version | head -1)"
-fi
-
-if ! command -v docker &>/dev/null; then
-  echo "[FAS] Installing Docker CLI + Compose..."
-  brew install docker docker-compose
-else
-  echo "[FAS] Docker already installed: $(docker --version)"
-fi
-
-# === 2. Start Colima with optimized settings for Mac Studio ===
-# CPU: 2 cores (n8n doesn't need much)
-# Memory: 4GB (n8n + headroom)
-# Disk: 20GB
-if ! colima status 2>/dev/null | grep -q "Running"; then
-  echo "[FAS] Starting Colima..."
-  colima start \
-    --cpu 2 \
-    --memory 4 \
-    --disk 20 \
-    --arch aarch64 \
-    --vm-type vz \
-    --mount-type virtiofs
-  echo "[FAS] Colima started."
-else
-  echo "[FAS] Colima already running."
-fi
-
-# === 3. Verify Docker ===
-echo "[FAS] Docker info:"
-docker info --format '  Runtime: {{.ServerVersion}}'
-docker info --format '  OS: {{.OperatingSystem}}'
-docker info --format '  CPUs: {{.NCPU}}'
-docker info --format '  Memory: {{.MemTotal}}'
-
-echo ""
-echo "[FAS] Colima + Docker setup complete!"
-echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
-`````
-
----
-
-## 파일: scripts/setup/setup_tmux.sh
-
-`````bash
-#!/usr/bin/env bash
-# FAS tmux environment setup script
-# Sets up tmux configuration and session naming conventions
-#
-# Captain sessions: fas-claude, fas-gemini-a, fas-gemini-b, fas-n8n, fas-gateway, fas-watchdog
-# Hunter sessions:  fas-openclaw, fas-watchdog
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-echo "[FAS] Setting up tmux environment..."
-
-# === 1. Install tmux-resurrect (if not already installed) ===
-TMUX_PLUGINS_DIR="$HOME/.tmux/plugins"
-RESURRECT_DIR="$TMUX_PLUGINS_DIR/tmux-resurrect"
-
-if [ ! -d "$RESURRECT_DIR" ]; then
-  echo "[FAS] Installing tmux-resurrect..."
-  mkdir -p "$TMUX_PLUGINS_DIR"
-  git clone https://github.com/tmux-plugins/tmux-resurrect "$RESURRECT_DIR"
-  echo "[FAS] tmux-resurrect installed at $RESURRECT_DIR"
-else
-  echo "[FAS] tmux-resurrect already installed."
-fi
-
-# === 2. Create resurrect state directory ===
-mkdir -p "$PROJECT_ROOT/.tmux/resurrect"
-
-# === 3. Source FAS tmux config ===
-TMUX_CONF="$HOME/.tmux.conf"
-FAS_CONF_LINE="source-file $PROJECT_ROOT/config/tmux.conf"
-
-if [ -f "$TMUX_CONF" ]; then
-  if ! grep -q "fully-automation-system" "$TMUX_CONF"; then
-    echo "" >> "$TMUX_CONF"
-    echo "# FAS tmux configuration" >> "$TMUX_CONF"
-    echo "$FAS_CONF_LINE" >> "$TMUX_CONF"
-    echo "[FAS] Added FAS config to existing $TMUX_CONF"
-  else
-    echo "[FAS] FAS config already referenced in $TMUX_CONF"
-  fi
-else
-  echo "# FAS tmux configuration" > "$TMUX_CONF"
-  echo "$FAS_CONF_LINE" >> "$TMUX_CONF"
-  echo "[FAS] Created $TMUX_CONF with FAS config"
-fi
-
-# === 4. Load resurrect plugin in tmux.conf ===
-if [ -d "$RESURRECT_DIR" ] && ! grep -q "tmux-resurrect" "$TMUX_CONF"; then
-  echo "run-shell $RESURRECT_DIR/resurrect.tmux" >> "$TMUX_CONF"
-  echo "[FAS] Added tmux-resurrect plugin to $TMUX_CONF"
-fi
-
-echo "[FAS] tmux setup complete!"
-echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
-`````
-
----
-
-## 파일: scripts/start_captain_sessions.sh
-
-`````bash
-#!/usr/bin/env bash
-# Start all FAS tmux sessions on Captain
-# Naming convention: fas-{service}
-#
-# Sessions:
-#   fas-claude    - Claude Code (interactive AI agent)
-#   fas-gemini-a  - Gemini CLI Account A (research)
-#   fas-gemini-b  - Gemini CLI Account B (validator)
-#   fas-n8n       - n8n orchestrator (Docker/Colima)
-#   fas-gateway   - Express Gateway + Task API
-#   fas-watchdog  - System watchdog daemon
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-echo "[FAS] Starting Captain tmux sessions..."
-
-# Helper: create session if it doesn't exist
-create_session() {
-  local session_name="$1"
-  local start_command="$2"
-  local working_dir="${3:-$PROJECT_ROOT}"
-
-  if tmux has-session -t "$session_name" 2>/dev/null; then
-    echo "[FAS] Session '$session_name' already exists, skipping."
-  else
-    tmux new-session -d -s "$session_name" -c "$working_dir"
-    if [ -n "$start_command" ]; then
-      tmux send-keys -t "$session_name" "$start_command" C-m
-    fi
-    echo "[FAS] Created session '$session_name'"
-  fi
-}
-
-# === Create sessions ===
-
-# Gateway + Task API (start first, other services depend on it)
-create_session "fas-gateway" "pnpm run gateway" "$PROJECT_ROOT"
-
-# Watchdog
-create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
-
-# n8n (Docker/Colima) — only if colima is installed
-if command -v colima &>/dev/null; then
-  create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
-else
-  echo "[FAS] Colima not installed, skipping fas-n8n session."
-fi
-
-# Claude Code — interactive session, no auto-command
-create_session "fas-claude" "" "$PROJECT_ROOT"
-
-# Gemini CLI sessions — placeholder until auth is configured
-create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT"
-create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJECT_ROOT"
-
-echo ""
-echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
-echo "[FAS] Attach to a session: tmux attach -t fas-claude"
-`````
-
----
-
-## 파일: scripts/status.sh
-
-`````bash
-#!/usr/bin/env bash
-# Show status of all FAS tmux sessions and services
-
-set -euo pipefail
-
-echo "=========================================="
-echo " FAS System Status"
-echo "=========================================="
-echo ""
-
-# === tmux sessions ===
-echo "📺 tmux Sessions:"
-echo "------------------------------------------"
-if tmux list-sessions 2>/dev/null | grep -q "fas-"; then
-  tmux list-sessions 2>/dev/null | grep "fas-" | while read -r line; do
-    echo "  ✅ $line"
-  done
-else
-  echo "  ❌ No FAS sessions running"
-fi
-echo ""
-
-# === Gateway health check ===
-echo "🌐 Gateway (port 3100):"
-echo "------------------------------------------"
-if curl -s --max-time 2 http://localhost:3100/api/health >/dev/null 2>&1; then
-  HEALTH=$(curl -s --max-time 2 http://localhost:3100/api/health)
-  echo "  ✅ Online - $HEALTH"
-else
-  echo "  ❌ Offline"
-fi
-echo ""
-
-# === Docker/n8n ===
-echo "🐳 Docker (Colima):"
-echo "------------------------------------------"
-if command -v colima &>/dev/null && colima status 2>/dev/null | grep -q "Running"; then
-  echo "  ✅ Colima running"
-  if command -v docker &>/dev/null; then
-    docker ps --format "  📦 {{.Names}} ({{.Status}})" 2>/dev/null || echo "  ❌ Docker not responding"
-  fi
-else
-  echo "  ❌ Colima not running"
-fi
-echo ""
-
-# === System resources ===
-echo "💻 System Resources:"
-echo "------------------------------------------"
-echo "  CPU: $(sysctl -n hw.ncpu) cores"
-echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
-echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
-echo ""
-echo "=========================================="
-`````
-
----
-
-## 파일: scripts/stop_all.sh
-
-`````bash
-#!/usr/bin/env bash
-# Stop all FAS tmux sessions gracefully
-# Sends SIGTERM to running processes, then kills sessions
-
-set -euo pipefail
-
-echo "[FAS] Stopping all FAS sessions..."
-
-FAS_SESSIONS=("fas-gateway" "fas-watchdog" "fas-n8n" "fas-claude" "fas-gemini-a" "fas-gemini-b" "fas-crawlers")
-
-for session in "${FAS_SESSIONS[@]}"; do
-  if tmux has-session -t "$session" 2>/dev/null; then
-    # Send Ctrl+C to gracefully stop running processes
-    tmux send-keys -t "$session" C-c
-    sleep 1
-    tmux kill-session -t "$session"
-    echo "[FAS] Killed session '$session'"
-  fi
-done
-
-echo "[FAS] All FAS sessions stopped."
-`````
-
----
-
-## 파일: scripts/test_notifications.ts
-
-`````typescript
-// Quick integration test: send real messages to Telegram and Slack
-import 'dotenv/config';
-import { create_telegram_client } from '../src/notification/telegram.js';
-import { create_slack_client } from '../src/notification/slack.js';
-
-const run = async () => {
-  let telegram_ok = false;
-  let slack_ok = false;
-
-  // === Telegram ===
-  console.log('[TEST] Telegram 전송 중...');
-  try {
-    const tg = create_telegram_client({
-      token: process.env.TELEGRAM_BOT_TOKEN!,
-      chat_id: process.env.TELEGRAM_CHAT_ID!,
-    });
-    const result = await tg.send('🧪 *FAS 테스트* — Telegram 연동 성공!', 'alert');
-    telegram_ok = result.success;
-    console.log('[Telegram]', result.success ? '✅ 성공' : '❌ 실패', result);
-    tg.stop();
-  } catch (err) {
-    console.error('[Telegram] ❌ 에러:', err);
-  }
-
-  // === Slack ===
-  console.log('[TEST] Slack 전송 중...');
-  try {
-    const slack = create_slack_client({
-      token: process.env.SLACK_BOT_TOKEN!,
-    });
-    const result = await slack.send('#fas-alerts', '🧪 *FAS 테스트* — Slack 연동 성공!');
-    slack_ok = result;
-    console.log('[Slack]', result ? '✅ 성공' : '❌ 실패');
-  } catch (err) {
-    console.error('[Slack] ❌ 에러:', err);
-  }
-
-  // === Summary ===
-  console.log('\n========== 결과 ==========');
-  console.log(`Telegram: ${telegram_ok ? '✅' : '❌'}`);
-  console.log(`Slack:    ${slack_ok ? '✅' : '❌'}`);
-
-  process.exit(telegram_ok && slack_ok ? 0 : 1);
-};
-
-run();
-`````
-
----
+> NotebookLM 교차 검증용 자동 생성 파일
+> 개인정보 및 시크릿은 마스킹 | 코드 로직은 원본 그대로 보존
 
 ## 파일: src/gateway/rate_limiter.test.ts
 
@@ -2962,6 +2457,819 @@ describe('Output Watcher', () => {
     });
   });
 });
+`````
+
+---
+
+## 파일: scripts/agent_wrapper.sh
+
+`````bash
+#!/usr/bin/env bash
+# FAS Agent Wrapper — Auto-restart on crash
+# Usage: agent_wrapper.sh <command> [args...]
+#
+# Features:
+#   - Restarts the agent up to MAX_RETRIES times on crash
+#   - Exponential backoff between retries
+#   - Logs crash events
+#   - Escalates to [BLOCKED] after max retries
+
+set -euo pipefail
+
+MAX_RETRIES="${FAS_MAX_RETRIES:-3}"
+BASE_DELAY="${FAS_RETRY_DELAY:-5}"
+LOG_DIR="${FAS_LOG_DIR:-$HOME/fully-automation-system/logs}"
+
+if [ $# -eq 0 ]; then
+  echo "Usage: agent_wrapper.sh <command> [args...]"
+  echo "Example: agent_wrapper.sh claude --resume"
+  exit 1
+fi
+
+COMMAND="$*"
+AGENT_NAME="${1##*/}" # basename of command
+RETRY_COUNT=0
+mkdir -p "$LOG_DIR"
+
+echo "[Wrapper] Starting agent: $COMMAND"
+echo "[Wrapper] Max retries: $MAX_RETRIES, Base delay: ${BASE_DELAY}s"
+
+while true; do
+  START_TIME=$(date +%s)
+
+  # Run the agent command
+  set +e
+  $COMMAND
+  EXIT_CODE=$?
+  set -e
+
+  END_TIME=$(date +%s)
+  RUNTIME=$((END_TIME - START_TIME))
+
+  # If it ran for more than 60 seconds, reset retry counter
+  # (it was running fine, this is a new crash)
+  if [ "$RUNTIME" -gt 60 ]; then
+    RETRY_COUNT=0
+  fi
+
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+  echo "[$TIMESTAMP] [Wrapper] Agent '$AGENT_NAME' exited with code $EXIT_CODE after ${RUNTIME}s (attempt $RETRY_COUNT/$MAX_RETRIES)"
+
+  # Log crash
+  echo "$TIMESTAMP exit_code=$EXIT_CODE runtime=${RUNTIME}s attempt=$RETRY_COUNT" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
+
+  # Check max retries
+  if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+    echo "[BLOCKED] Agent '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
+    echo "$TIMESTAMP [BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
+
+    # Wait for manual restart signal (user can Ctrl+C and re-run)
+    echo "[Wrapper] Waiting 300 seconds before final retry..."
+    sleep 300
+    RETRY_COUNT=0
+  fi
+
+  # Exponential backoff: base * 2^(retry-1)
+  DELAY=$((BASE_DELAY * (1 << (RETRY_COUNT - 1))))
+  echo "[Wrapper] Restarting in ${DELAY}s..."
+  sleep "$DELAY"
+done
+`````
+
+---
+
+## 파일: scripts/generate_review_files.ts
+
+`````typescript
+/**
+ * generate_review_files.ts
+ *
+ * Reads all project files, masks sensitive information, and generates
+ * categorized markdown files for NotebookLM upload.
+ *
+ * Usage: npx tsx scripts/generate_review_files.ts
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+
+// ── Constants ──────────────────────────────────────────────────────────
+
+const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
+const OUTPUT_DIR = path.join(PROJECT_ROOT, "reviews", "notebooklm");
+const TODAY = new Date().toISOString().slice(0, 10);
+
+// Directories / files to completely exclude
+const EXCLUDE_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "reviews",
+  "state",
+  "logs",
+  "dist",
+  ".claude",
+]);
+
+const EXCLUDE_FILES = new Set([
+  "pnpm-lock.yaml",
+  ".env",
+  "generate_review_files.ts",   // Contains masking patterns with real PII strings
+]);
+
+// File that should NOT be overwritten
+const PRESERVE_FILE = "03_review_prompt.md";
+
+// ── Masking Functions ──────────────────────────────────────────────────
+
+/**
+ * Apply all masking rules to file content.
+ * Order matters — more specific patterns first to avoid partial matches.
+ */
+const mask_sensitive = (content: string): string => {
+  let result = content;
+
+  // 1. Telegram bot token pattern: digits:alphanumeric (e.g., 123456789:ABCdefGHI_jklMNO)
+  result = result.replace(/\b\d{8,10}:[A-Za-z0-9_-]{30,50}\b/g, "[MASKED_TOKEN]");
+
+  // 2. Slack token pattern (xoxb-..., xoxp-..., xoxa-..., xoxs-...)
+  result = result.replace(/xox[bpas]-[A-Za-z0-9\-]+/g, "[MASKED_TOKEN]");
+
+  // 3. GitHub URLs with username [MASKED_OWNER]
+  result = result.replace(/github\.com\/[MASKED_OWNER]/g, "github.com/[MASKED_USER]");
+
+  // 4. The word "sunman" (case-insensitive, but preserve surrounding context)
+  result = result.replace(/\bsunman\b/gi, "[MASKED_OWNER]");
+  // Also catch [MASKED_OWNER] as a whole
+  result = result.replace(/\b[MASKED_OWNER]\b/gi, "[MASKED_OWNER]");
+
+  // 5. File paths containing /Users/[MASKED_USER]/ → /Users/[MASKED_USER]/
+  result = result.replace(/\/Users\/user\//g, "/Users/[MASKED_USER]/");
+
+  // 6. Private IP addresses
+  //    100.x.x.x (Tailscale), 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+  result = result.replace(/\b100\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
+  result = result.replace(/\b192\.168\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
+  result = result.replace(/\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "[MASKED_IP]");
+  result = result.replace(
+    /\b172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}\b/g,
+    "[MASKED_IP]"
+  );
+
+  // 7. Token/API key-like strings after = or : (long alphanumeric, 20+ chars)
+  //    But skip obvious non-secrets (URLs, version strings, common hex hashes)
+  //    Pattern: key= or key: followed by a long alphanumeric string
+  result = result.replace(
+    /([=:]\s*)([A-Za-z0-9_\-]{32,})(?=\s|$|"|'|`)/gm,
+    "$1[MASKED_TOKEN]"
+  );
+
+  // 8. Catch Notion/API database IDs (32-char hex with hyphens)
+  result = result.replace(
+    /([=:]\s*)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    "$1[MASKED_TOKEN]"
+  );
+
+  return result;
+};
+
+// ── File Collection ────────────────────────────────────────────────────
+
+type FileEntry = {
+  relative_path: string;
+  absolute_path: string;
+  content: string;
+};
+
+/**
+ * Recursively collect all files under dir, respecting exclusions.
+ */
+const collect_files = (dir: string, base: string = PROJECT_ROOT): FileEntry[] => {
+  const entries: FileEntry[] = [];
+  const items = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const item of items) {
+    const abs = path.join(dir, item.name);
+    const rel = path.relative(base, abs);
+
+    if (item.isDirectory()) {
+      if (EXCLUDE_DIRS.has(item.name)) continue;
+      entries.push(...collect_files(abs, base));
+    } else if (item.isFile()) {
+      // Exclude specific files
+      if (EXCLUDE_FILES.has(item.name)) continue;
+      if (rel === ".env") continue;
+      // Exclude .claude/settings.local.json
+      if (rel.includes(".claude/settings.local.json")) continue;
+      // Exclude pnpm-workspace.yaml (not in spec, but it's just a one-liner — include it actually)
+      // Exclude binary files
+      const ext = path.extname(item.name).toLowerCase();
+      if ([".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".db", ".sqlite"].includes(ext)) continue;
+
+      try {
+        const content = fs.readFileSync(abs, "utf-8");
+        entries.push({ relative_path: rel, absolute_path: abs, content });
+      } catch {
+        // Skip unreadable files
+        console.warn(`  [WARN] Skipped unreadable file: ${rel}`);
+      }
+    }
+  }
+
+  return entries;
+};
+
+// ── Categorization ─────────────────────────────────────────────────────
+
+type Category = {
+  filename: string;
+  title: string;
+  files: FileEntry[];
+};
+
+/**
+ * Determine the file extension for code fences.
+ */
+const get_lang = (filepath: string): string => {
+  const ext = path.extname(filepath).toLowerCase();
+  const map: Record<string, string> = {
+    ".ts": "typescript",
+    ".js": "javascript",
+    ".json": "json",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".md": "markdown",
+    ".sh": "bash",
+    ".plist": "xml",
+    ".conf": "conf",
+    ".example": "bash",
+    ".gitignore": "gitignore",
+  };
+  // Special case for .gitignore (no extension)
+  if (filepath.endsWith(".gitignore")) return "gitignore";
+  return map[ext] || "text";
+};
+
+/**
+ * Categorize a file into one of the three output groups.
+ * Returns category index: 0 = docs_and_config, 1 = source_code, 2 = tests_and_scripts
+ */
+const categorize = (rel: string): number => {
+  const ext = path.extname(rel).toLowerCase();
+  const basename = path.basename(rel);
+
+  // Category 3: tests and scripts
+  // - All *.test.ts files
+  // - All .sh files
+  // - scripts/*.ts (but NOT the generate_review_files.ts itself)
+  if (rel.endsWith(".test.ts")) return 2;
+  if (ext === ".sh") return 2;
+  if (rel.startsWith("scripts/") && ext === ".ts") return 2;
+
+  // Category 2: source code
+  // - All .ts files in src/ that are NOT test files
+  if (rel.startsWith("src/") && ext === ".ts" && !rel.endsWith(".test.ts")) return 1;
+
+  // Category 1: docs and config — everything else
+  // - .md files, .yml, .yaml, .json, .example, .plist, .gitignore, docker-compose.yml, .conf
+  if ([".md", ".yml", ".yaml", ".json", ".example", ".plist", ".conf"].includes(ext)) return 0;
+  if (basename === ".gitignore") return 0;
+
+  // Fallback: vitest.config.ts, tsconfig.json → config
+  if (basename === "vitest.config.ts") return 0;
+
+  // Anything else → docs_and_config
+  return 0;
+};
+
+// ── Main ───────────────────────────────────────────────────────────────
+
+const main = () => {
+  console.log("=== FAS Review File Generator ===");
+  console.log(`Project root: ${PROJECT_ROOT}`);
+  console.log(`Output dir: ${OUTPUT_DIR}`);
+  console.log(`Date: ${TODAY}\n`);
+
+  // Ensure output directory exists
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+  // Collect all files
+  console.log("Collecting files...");
+  const all_files = collect_files(PROJECT_ROOT);
+  console.log(`  Found ${all_files.length} files total.\n`);
+
+  // Set up categories
+  const categories: Category[] = [
+    { filename: "01_docs_and_config.md", title: "문서 & 설정 (Docs & Config)", files: [] },
+    { filename: "02_source_code.md", title: "소스 코드 (Source Code)", files: [] },
+    { filename: "03_tests_and_scripts.md", title: "테스트 & 스크립트 (Tests & Scripts)", files: [] },
+  ];
+
+  // Categorize files
+  for (const file of all_files) {
+    const cat_idx = categorize(file.relative_path);
+    categories[cat_idx].files.push(file);
+  }
+
+  // Sort files within each category alphabetically
+  for (const cat of categories) {
+    cat.files.sort((a, b) => a.relative_path.localeCompare(b.relative_path));
+  }
+
+  // Generate output files
+  for (let i = 0; i < categories.length; i++) {
+    const cat = categories[i];
+    const out_path = path.join(OUTPUT_DIR, cat.filename);
+
+    // Check for the preserve-file rule:
+    // If the output filename matches 03_review_prompt.md, skip
+    // (but 03_tests_and_scripts.md is different, so this is fine)
+    if (cat.filename === PRESERVE_FILE) {
+      console.log(`  [SKIP] ${cat.filename} (preserved)`);
+      continue;
+    }
+
+    console.log(`Generating ${cat.filename}...`);
+    console.log(`  Files in this category: ${cat.files.length}`);
+
+    // Build markdown content
+    const lines: string[] = [];
+
+    // Header
+    lines.push(`# FAS 전체 코드 리뷰 — Part ${i + 1}: ${cat.title}`);
+    lines.push(`> 이 파일은 민감정보가 마스킹된 상태입니다.`);
+    lines.push(`> 파일 수: ${cat.files.length}개 | 생성일: ${TODAY}`);
+    lines.push("");
+
+    // File entries
+    // Use 5-backtick fences to avoid collision with inner code fences (``` inside .md files)
+    for (const file of cat.files) {
+      const lang = get_lang(file.relative_path);
+      const masked_content = mask_sensitive(file.content);
+
+      // Determine fence depth: if content contains 4+ backtick fences, use 6; otherwise 5
+      const max_inner_fence = (masked_content.match(/`{3,}/g) || [])
+        .reduce((max, m) => Math.max(max, m.length), 0);
+      const fence = "`".repeat(Math.max(max_inner_fence + 1, 5));
+
+      lines.push(`## 파일: ${file.relative_path}`);
+      lines.push("");
+      lines.push(`${fence}${lang}`);
+      lines.push(masked_content.trimEnd());
+      lines.push(fence);
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    fs.writeFileSync(out_path, lines.join("\n"), "utf-8");
+    console.log(`  Written to: ${out_path}`);
+
+    // List files included
+    for (const file of cat.files) {
+      console.log(`    - ${file.relative_path}`);
+    }
+    console.log("");
+  }
+
+  // Also ensure 03_review_prompt.md is not touched
+  const prompt_path = path.join(OUTPUT_DIR, PRESERVE_FILE);
+  if (fs.existsSync(prompt_path)) {
+    console.log(`[OK] ${PRESERVE_FILE} preserved (not overwritten).`);
+  }
+
+  console.log("\n=== Generation complete! ===");
+};
+
+main();
+`````
+
+---
+
+## 파일: scripts/test_notifications.ts
+
+`````typescript
+// Quick integration test: send real messages to Telegram and Slack
+import 'dotenv/config';
+import { create_telegram_client } from '../src/notification/telegram.js';
+import { create_slack_client } from '../src/notification/slack.js';
+
+const run = async () => {
+  let telegram_ok = false;
+  let slack_ok = false;
+
+  // === Telegram ===
+  console.log('[TEST] Telegram 전송 중...');
+  try {
+    const tg = create_telegram_client({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
+      chat_id: process.env.TELEGRAM_CHAT_ID!,
+    });
+    const result = await tg.send('🧪 *FAS 테스트* — Telegram 연동 성공!', 'alert');
+    telegram_ok = result.success;
+    console.log('[Telegram]', result.success ? '✅ 성공' : '❌ 실패', result);
+    tg.stop();
+  } catch (err) {
+    console.error('[Telegram] ❌ 에러:', err);
+  }
+
+  // === Slack ===
+  console.log('[TEST] Slack 전송 중...');
+  try {
+    const slack = create_slack_client({
+      token: process.env.SLACK_BOT_TOKEN!,
+    });
+    const result = await slack.send('#fas-alerts', '🧪 *FAS 테스트* — Slack 연동 성공!');
+    slack_ok = result;
+    console.log('[Slack]', result ? '✅ 성공' : '❌ 실패');
+  } catch (err) {
+    console.error('[Slack] ❌ 에러:', err);
+  }
+
+  // === Summary ===
+  console.log('\n========== 결과 ==========');
+  console.log(`Telegram: ${telegram_ok ? '✅' : '❌'}`);
+  console.log(`Slack:    ${slack_ok ? '✅' : '❌'}`);
+
+  process.exit(telegram_ok && slack_ok ? 0 : 1);
+};
+
+run();
+`````
+
+---
+
+## 파일: scripts/setup/setup_ai_cli.sh
+
+`````bash
+#!/usr/bin/env bash
+# AI CLI authentication setup guide
+# This script checks auth status and guides manual setup steps
+
+set -euo pipefail
+
+echo "=========================================="
+echo " FAS AI CLI Authentication Setup"
+echo "=========================================="
+echo ""
+
+# === 1. Claude Code ===
+echo "📎 [1/4] Claude Code (Captain)"
+echo "------------------------------------------"
+if command -v claude &>/dev/null; then
+  echo "  ✅ Claude Code CLI installed"
+  echo "  🔑 Auth: Run 'claude' and follow OAuth login (Max plan)"
+else
+  echo "  ❌ Claude Code not installed"
+  echo "  📋 Install: npm install -g @anthropic-ai/claude-code"
+fi
+echo ""
+
+# === 2. Gemini CLI ===
+echo "🔮 [2/4] Gemini CLI (Captain — 2 accounts)"
+echo "------------------------------------------"
+if command -v gemini &>/dev/null; then
+  echo "  ✅ Gemini CLI installed"
+else
+  echo "  ❌ Gemini CLI not installed"
+  echo "  📋 Install: npm install -g @google/gemini-cli"
+fi
+echo ""
+echo "  Account A (Research): Set GEMINI_API_KEY_A in .env"
+echo "  Account B (Validator): Set GEMINI_API_KEY_B in .env"
+echo ""
+echo "  💡 Profile separation:"
+echo "    - Create ~/.gemini/profile_a.json and profile_b.json"
+echo "    - Each session uses GEMINI_PROFILE env var to switch"
+echo ""
+
+# === 3. OpenClaw (Hunter) ===
+echo "🐱 [3/4] OpenClaw / ChatGPT Pro (Hunter)"
+echo "------------------------------------------"
+echo "  ⚠️  Setup on HUNTER machine (not Captain)"
+echo "  📋 Steps:"
+echo "    1. SSH to hunter: ssh hunter"
+echo "    2. Install OpenClaw (browser automation for ChatGPT)"
+echo "    3. Login with ChatGPT Pro account (isolated Google account)"
+echo "    4. Verify: no personal info in hunter's environment"
+echo ""
+
+# === 4. Environment file ===
+echo "📄 [4/4] Environment Variables"
+echo "------------------------------------------"
+if [ -f .env ]; then
+  echo "  ✅ .env file exists"
+  echo "  Checking required vars..."
+
+  REQUIRED_VARS=(
+    "TELEGRAM_BOT_TOKEN"
+    "TELEGRAM_CHAT_ID"
+    "SLACK_BOT_TOKEN"
+    "GATEWAY_PORT"
+  )
+
+  for var in "${REQUIRED_VARS[@]}"; do
+    if grep -q "^${var}=" .env 2>/dev/null; then
+      echo "    ✅ $var is set"
+    else
+      echo "    ❌ $var is missing"
+    fi
+  done
+else
+  echo "  ❌ .env file not found"
+  echo "  📋 Create from template: cp .env.example .env"
+fi
+
+echo ""
+echo "=========================================="
+echo " Manual steps required:"
+echo "  1. Create Telegram bot via @BotFather"
+echo "  2. Create Slack workspace + bot token"
+echo "  3. Copy .env.example to .env and fill in values"
+echo "  4. Run 'claude' to complete OAuth login"
+echo "=========================================="
+`````
+
+---
+
+## 파일: scripts/setup/setup_colima.sh
+
+`````bash
+#!/usr/bin/env bash
+# Install and configure Colima + Docker for FAS
+# Requires: Homebrew
+#
+# Colima provides lightweight Docker runtime on macOS (Apple Silicon native)
+
+set -euo pipefail
+
+echo "[FAS] Setting up Colima + Docker..."
+
+# === 1. Install dependencies ===
+if ! command -v colima &>/dev/null; then
+  echo "[FAS] Installing Colima..."
+  brew install colima
+else
+  echo "[FAS] Colima already installed: $(colima version | head -1)"
+fi
+
+if ! command -v docker &>/dev/null; then
+  echo "[FAS] Installing Docker CLI + Compose..."
+  brew install docker docker-compose
+else
+  echo "[FAS] Docker already installed: $(docker --version)"
+fi
+
+# === 2. Start Colima with optimized settings for Mac Studio ===
+# CPU: 2 cores (n8n doesn't need much)
+# Memory: 4GB (n8n + headroom)
+# Disk: 20GB
+if ! colima status 2>/dev/null | grep -q "Running"; then
+  echo "[FAS] Starting Colima..."
+  colima start \
+    --cpu 2 \
+    --memory 4 \
+    --disk 20 \
+    --arch aarch64 \
+    --vm-type vz \
+    --mount-type virtiofs
+  echo "[FAS] Colima started."
+else
+  echo "[FAS] Colima already running."
+fi
+
+# === 3. Verify Docker ===
+echo "[FAS] Docker info:"
+docker info --format '  Runtime: {{.ServerVersion}}'
+docker info --format '  OS: {{.OperatingSystem}}'
+docker info --format '  CPUs: {{.NCPU}}'
+docker info --format '  Memory: {{.MemTotal}}'
+
+echo ""
+echo "[FAS] Colima + Docker setup complete!"
+echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
+`````
+
+---
+
+## 파일: scripts/setup/setup_tmux.sh
+
+`````bash
+#!/usr/bin/env bash
+# FAS tmux environment setup script
+# Sets up tmux configuration and session naming conventions
+#
+# Captain sessions: fas-claude, fas-gemini-a, fas-gemini-b, fas-n8n, fas-gateway, fas-watchdog
+# Hunter sessions:  fas-openclaw, fas-watchdog
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+echo "[FAS] Setting up tmux environment..."
+
+# === 1. Install tmux-resurrect (if not already installed) ===
+TMUX_PLUGINS_DIR="$HOME/.tmux/plugins"
+RESURRECT_DIR="$TMUX_PLUGINS_DIR/tmux-resurrect"
+
+if [ ! -d "$RESURRECT_DIR" ]; then
+  echo "[FAS] Installing tmux-resurrect..."
+  mkdir -p "$TMUX_PLUGINS_DIR"
+  git clone https://github.com/tmux-plugins/tmux-resurrect "$RESURRECT_DIR"
+  echo "[FAS] tmux-resurrect installed at $RESURRECT_DIR"
+else
+  echo "[FAS] tmux-resurrect already installed."
+fi
+
+# === 2. Create resurrect state directory ===
+mkdir -p "$PROJECT_ROOT/.tmux/resurrect"
+
+# === 3. Source FAS tmux config ===
+TMUX_CONF="$HOME/.tmux.conf"
+FAS_CONF_LINE="source-file $PROJECT_ROOT/config/tmux.conf"
+
+if [ -f "$TMUX_CONF" ]; then
+  if ! grep -q "fully-automation-system" "$TMUX_CONF"; then
+    echo "" >> "$TMUX_CONF"
+    echo "# FAS tmux configuration" >> "$TMUX_CONF"
+    echo "$FAS_CONF_LINE" >> "$TMUX_CONF"
+    echo "[FAS] Added FAS config to existing $TMUX_CONF"
+  else
+    echo "[FAS] FAS config already referenced in $TMUX_CONF"
+  fi
+else
+  echo "# FAS tmux configuration" > "$TMUX_CONF"
+  echo "$FAS_CONF_LINE" >> "$TMUX_CONF"
+  echo "[FAS] Created $TMUX_CONF with FAS config"
+fi
+
+# === 4. Load resurrect plugin in tmux.conf ===
+if [ -d "$RESURRECT_DIR" ] && ! grep -q "tmux-resurrect" "$TMUX_CONF"; then
+  echo "run-shell $RESURRECT_DIR/resurrect.tmux" >> "$TMUX_CONF"
+  echo "[FAS] Added tmux-resurrect plugin to $TMUX_CONF"
+fi
+
+echo "[FAS] tmux setup complete!"
+echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
+`````
+
+---
+
+## 파일: scripts/start_captain_sessions.sh
+
+`````bash
+#!/usr/bin/env bash
+# Start all FAS tmux sessions on Captain
+# Naming convention: fas-{service}
+#
+# Sessions:
+#   fas-claude    - Claude Code (interactive AI agent)
+#   fas-gemini-a  - Gemini CLI Account A (research)
+#   fas-gemini-b  - Gemini CLI Account B (validator)
+#   fas-n8n       - n8n orchestrator (Docker/Colima)
+#   fas-gateway   - Express Gateway + Task API
+#   fas-watchdog  - System watchdog daemon
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "[FAS] Starting Captain tmux sessions..."
+
+# Helper: create session if it doesn't exist
+create_session() {
+  local session_name="$1"
+  local start_command="$2"
+  local working_dir="${3:-$PROJECT_ROOT}"
+
+  if tmux has-session -t "$session_name" 2>/dev/null; then
+    echo "[FAS] Session '$session_name' already exists, skipping."
+  else
+    tmux new-session -d -s "$session_name" -c "$working_dir"
+    if [ -n "$start_command" ]; then
+      tmux send-keys -t "$session_name" "$start_command" C-m
+    fi
+    echo "[FAS] Created session '$session_name'"
+  fi
+}
+
+# === Create sessions ===
+
+# Gateway + Task API (start first, other services depend on it)
+create_session "fas-gateway" "pnpm run gateway" "$PROJECT_ROOT"
+
+# Watchdog
+create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
+
+# n8n (Docker/Colima) — only if colima is installed
+if command -v colima &>/dev/null; then
+  create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
+else
+  echo "[FAS] Colima not installed, skipping fas-n8n session."
+fi
+
+# Claude Code — interactive session, no auto-command
+create_session "fas-claude" "" "$PROJECT_ROOT"
+
+# Gemini CLI sessions — placeholder until auth is configured
+create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT"
+create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJECT_ROOT"
+
+echo ""
+echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
+echo "[FAS] Attach to a session: tmux attach -t fas-claude"
+`````
+
+---
+
+## 파일: scripts/status.sh
+
+`````bash
+#!/usr/bin/env bash
+# Show status of all FAS tmux sessions and services
+
+set -euo pipefail
+
+echo "=========================================="
+echo " FAS System Status"
+echo "=========================================="
+echo ""
+
+# === tmux sessions ===
+echo "📺 tmux Sessions:"
+echo "------------------------------------------"
+if tmux list-sessions 2>/dev/null | grep -q "fas-"; then
+  tmux list-sessions 2>/dev/null | grep "fas-" | while read -r line; do
+    echo "  ✅ $line"
+  done
+else
+  echo "  ❌ No FAS sessions running"
+fi
+echo ""
+
+# === Gateway health check ===
+echo "🌐 Gateway (port 3100):"
+echo "------------------------------------------"
+if curl -s --max-time 2 http://localhost:3100/api/health >/dev/null 2>&1; then
+  HEALTH=$(curl -s --max-time 2 http://localhost:3100/api/health)
+  echo "  ✅ Online - $HEALTH"
+else
+  echo "  ❌ Offline"
+fi
+echo ""
+
+# === Docker/n8n ===
+echo "🐳 Docker (Colima):"
+echo "------------------------------------------"
+if command -v colima &>/dev/null && colima status 2>/dev/null | grep -q "Running"; then
+  echo "  ✅ Colima running"
+  if command -v docker &>/dev/null; then
+    docker ps --format "  📦 {{.Names}} ({{.Status}})" 2>/dev/null || echo "  ❌ Docker not responding"
+  fi
+else
+  echo "  ❌ Colima not running"
+fi
+echo ""
+
+# === System resources ===
+echo "💻 System Resources:"
+echo "------------------------------------------"
+echo "  CPU: $(sysctl -n hw.ncpu) cores"
+echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
+echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
+echo ""
+echo "=========================================="
+`````
+
+---
+
+## 파일: scripts/stop_all.sh
+
+`````bash
+#!/usr/bin/env bash
+# Stop all FAS tmux sessions gracefully
+# Sends SIGTERM to running processes, then kills sessions
+
+set -euo pipefail
+
+echo "[FAS] Stopping all FAS sessions..."
+
+FAS_SESSIONS=("fas-gateway" "fas-watchdog" "fas-n8n" "fas-claude" "fas-gemini-a" "fas-gemini-b" "fas-crawlers")
+
+for session in "${FAS_SESSIONS[@]}"; do
+  if tmux has-session -t "$session" 2>/dev/null; then
+    # Send Ctrl+C to gracefully stop running processes
+    tmux send-keys -t "$session" C-c
+    sleep 1
+    tmux kill-session -t "$session"
+    echo "[FAS] Killed session '$session'"
+  fi
+done
+
+echo "[FAS] All FAS sessions stopped."
 `````
 
 ---
