@@ -32,7 +32,10 @@ if (is_main) {
   const headless = process.env.HUNTER_HEADLESS !== 'false';
   const browser = create_browser_manager({ headless });
 
-  const api = create_api_client({ base_url: config.captain_api_url }, logger);
+  const api = create_api_client({
+    base_url: config.captain_api_url,
+    api_key: config.hunter_api_key,
+  }, logger);
 
   // Pass Google profile and timeout config to task executor
   const executor = create_task_executor(logger, browser, {
