@@ -31,9 +31,6 @@ GATEWAY_HOST=0.0.0.0
 CAPTAIN_API_URL=http://<captain-tailscale-ip>:3100
 HUNTER_POLL_INTERVAL=10000
 HUNTER_LOG_DIR=./logs
-GOOGLE_PROFILE_DIR=./fas-google-profile-hunter
-DEEP_RESEARCH_TIMEOUT_MS=300000
-NOTEBOOKLM_TIMEOUT_MS=180000
 
 # === System ===
 FAS_MODE=awake
@@ -314,7 +311,7 @@ agents:
       escalate_after: 3
 
   openclaw:
-    display_name: "OpenClaw (ChatGPT) — Hunter Engine"
+    display_name: "OpenClaw (ChatGPT Pro) — Hunter Engine"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (main browser engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
@@ -322,7 +319,6 @@ agents:
     tmux_session: fas-openclaw
     execution_mode: oneshot
     communication: task_api           # task_api (직접 제어 아님)
-    # Plan tier: Stage 1 → Plus ($20), Stage 3 → Pro ($200)
     capabilities:
       - autonomous_browsing
       - web_automation
@@ -345,11 +341,10 @@ agents:
       escalate_after: 3
 
   claude_hunter:
-    display_name: "Claude Code — Hunter"
+    display_name: "Claude Code (Max x20) — Hunter"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (coding/high-intelligence engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
-    # Plan tier: Stage 1 → Pro ($20), Stage 3 → Max x20 ($200)
     autonomy: high
     tmux_session: fas-claude-hunter
     execution_mode: interactive
@@ -1233,10 +1228,7 @@ set -g @resurrect-strategy-nvim 'session'
 | `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
 | `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
 | `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
-| `GOOGLE_PROFILE_DIR` | N | 구글 Chrome 프로필 디렉토리 — 헌터 전용 (기본: ./fas-google-profile-hunter) |
-| `DEEP_RESEARCH_TIMEOUT_MS` | N | Deep Research 타임아웃 ms — 헌터 전용 (기본: 300000) |
-| `NOTEBOOKLM_TIMEOUT_MS` | N | NotebookLM 타임아웃 ms — 헌터 전용 (기본: 180000) |
-| `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false). NODE_ENV=production 시 강제 차단 |
+| `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false) |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
 | `N8N_USER` | N | n8n 관리자 ID |
@@ -1256,11 +1248,11 @@ set -g @resurrect-strategy-nvim 'session'
 - **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스)
 
 ### Hunter (`src/hunter/`)
-- **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
+- **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout)
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. 4개 핸들러 모두 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. **주의**: 코드는 완성이나 헌터 머신 실제 배포는 미완료 (SA-001 보안 이슈 해결 후 진행).
+- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. `web_crawl`/`browser_task` 구현 완료, `deep_research`/`notebooklm_verify`는 OpenClaw 통합 대기 중 (failure 반환).
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
-- **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
+- **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
@@ -1273,7 +1265,7 @@ set -g @resurrect-strategy-nvim 'session'
 - 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)
 
 ## API 엔드포인트
 
@@ -2365,20 +2357,20 @@ Both Captain and Hunter emit these patterns. The Watchdog on each machine captur
 
 ### 헌터 (Mac Studio #1, M1 Ultra / 32GB)
 
-주인님의 눈 👁️. 브라우저 자동화 + AI 에이전트 전용. **개인정보 접근 불가.**
+주인님의 눈 👁️. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
 주인님과 Telegram/Slack을 통해 직접 소통 가능 (크리티컬 이슈 보고, 막연한 업무 수신).
 상세 정의: [docs/agents-charter.md](agents-charter.md)
 
-> AI 플랜은 단계적으로 확장한다. 상세: [PLAN.md "AI 플랜 확장 로드맵"](../PLAN.md)
-
-| 서비스 | 실행 방식 | Stage 1 (검증) | Stage 3 (풀 스케일) | tmux 세션 |
-| --- | --- | --- | --- | --- |
-| macOS 시스템 | — | ~5GB | ~5GB | — |
-| ChatGPT | 브라우저 자동화 | Plus (~$20) | Pro ($200) | `fas-openclaw` |
-| Claude Code | OAuth CLI (계정 B) | Pro ($20) | Max x20 ($200) | `fas-claude-hunter` |
-| 브라우저 (NotebookLM/Deep Research) | Playwright Chrome | ~2GB | ~2GB | 핸들러 내 |
-| Agent Wrapper | Node.js | ~200MB | ~200MB | `fas-wrapper` |
-| Watchdog | Node.js | ~200MB | ~200MB | `fas-watchdog` |
+| 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
+| --- | --- | --- | --- |
+| macOS 시스템 | — | ~5GB | — |
+| OpenClaw | ChatGPT Pro 브라우저 | ~2GB | `fas-openclaw` |
+| Claude Code Max x20 | OAuth CLI (계정 B) | ~500MB | `fas-claude-hunter` |
+| 브라우저 (NotebookLM/Deep Research) | Chrome | ~2GB | OpenClaw 내 |
+| Agent Wrapper | Node.js | ~200MB | `fas-wrapper` |
+| Watchdog | Node.js | ~200MB | `fas-watchdog` |
+| **합계** | | **~9.9GB** | |
+| **여유** | | **~22.1GB** | |
 
 ### MacBook Pro (M1 Pro / 32GB) — owner 전용
 
@@ -3402,7 +3394,7 @@ tail -20 logs/crashes_gemini-a.log
 | iCloud | 주인님 계정 | 별도 계정 | X |
 | Google | 주인님 계정 | 별도 계정 | X |
 | ChatGPT | — | 별도 계정 (Pro) | X |
-| Claude Code | 주인님 OAuth (계정 A, Max) | 계정 B (Stage 1: Pro → Stage 3: Max x20) | X (별도 계정) |
+| Claude Code | 주인님 OAuth (계정 A) | 계정 B (Max x20) | X (별도 계정) |
 | Tailscale | 같은 네트워크 | 같은 네트워크 | O (VPN만 공유) |
 | 파일시스템 | 직접 접근 불가 | 직접 접근 불가 | X |
 | 통신 | Task API 서버 | Task API 클라이언트 | API만 |
@@ -3546,49 +3538,6 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
     completed_at: new Date().toISOString(),
   }
 }
-
-## 헌터 현재 구현 상태 (2026-03-18 기준)
-
-### 코드 구현 완료 (캡틴 레포에 존재)
-
-| 모듈 | 파일 | 상태 |
-|------|------|------|
-| 폴링 루프 | `src/hunter/poll_loop.ts` | ✅ 완성 (10초 주기, 지수 백오프) |
-| API 클라이언트 | `src/hunter/api_client.ts` | ✅ 완성 (fetch, heartbeat, result) |
-| 태스크 실행기 | `src/hunter/task_executor.ts` | ✅ 4개 핸들러 모두 구현 |
-| - web_crawl | | ✅ Playwright URL 크롤링 |
-| - browser_task | | ✅ 스크린샷 + 텍스트 추출 |
-| - deep_research | | ✅ Gemini Deep Research 웹 UI 자동화 |
-| - notebooklm_verify | | ✅ NotebookLM 웹 UI 자동화 |
-| 브라우저 매니저 | `src/hunter/browser.ts` | ✅ 일반 + persistent context (구글 프로필) |
-| 설정 로더 | `src/hunter/config.ts` | ✅ 환경변수 기반 |
-| 로거 | `src/hunter/logger.ts` | ✅ 파일+콘솔 듀얼 |
-| 진입점 | `src/hunter/main.ts` | ✅ graceful shutdown |
-| 셋업 스크립트 | `scripts/setup/setup_hunter.sh` | ✅ 초기 설정 자동화 |
-| 로그인 감지 | `detect_login_wall()` | ✅ `[LOGIN_REQUIRED]` 반환 |
-| 테스트 | `tests/hunter/`, `src/hunter/*.test.ts` | ✅ 전수 통과 |
-
-### 헌터 머신 실제 상태 (미완료)
-
-| 항목 | 상태 | 비고 |
-|------|------|------|
-| Tailscale 연결 | ✅ | 캡틴과 VPN 연결 완료 |
-| SSH 키 교환 | ✅ | MacBook ↔ 캡틴 ↔ 헌터 |
-| Claude Code OAuth | ⚠️ **보안 위반** | 주인님 개인 Google ID(계정 A)로 인증됨 → 계정 B로 재인증 필요 (SA-001) |
-| 계정 B 생성 | ❌ | 별도 Anthropic 계정 미생성 |
-| 구글 프로필 설정 | ❌ | 별도 구글 계정으로 수동 로그인 필요 |
-| OpenClaw (ChatGPT Pro) | ❌ | 미설치 |
-| Node.js / pnpm | ❓ | 확인 필요 |
-| Playwright | ❌ | 미설치 |
-| FAS Operations 코드 배포 | ❌ | git clone 필요 |
-
-### 보안 감사 SA-001: 계정 격리 위반
-
-**현재**: 헌터의 Claude Code가 주인님 개인 Google ID(계정 A)로 OAuth 인증됨.
-**Doctrine 규정**: 헌터는 반드시 계정 B(별도 격리 계정)를 사용해야 함.
-**조치**: [docs/security.md#SA-001](security.md) 참조.
-
----
 
 ## 구글 계정 세션 관리
 
@@ -4845,96 +4794,6 @@ hunter_security:
     # 헌터의 Task API 요청에 비정상 패턴 감지
     - anomaly_detection: true
 
-## 보안 감사 이력
-
-### SA-001: 헌터 Claude Code OAuth 계정 격리 위반 (2026-03-18)
-
-**심각도**: CRITICAL
-**상태**: 조치 필요 (인간 작업)
-
-**문제**: 헌터(Mac Studio #1)에서 Claude Code OAuth 인증을 주인님 개인 Google ID(계정 A)로 수행함. Doctrine에서 규정한 계정 B(별도 격리 계정) 원칙 위반.
-
-**위험**:
-- 헌터 머신 탈취 시 주인님 Google OAuth 토큰 유출 → Google 계정 전체 접근 가능
-- Claude Code 세션을 통해 주인님 프로필 정보 노출
-- 계정 격리 보안 계층(Defense in Depth의 최후 보루) 무력화
-
-**필요 조치** (주인님이 직접 수행):
-
-1. 헌터에서 개인정보 잔존 스캔
-   ```bash
-   # 헌터 머신에서 실행 (또는 캡틴에서 ssh hunter)
-   cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh
-   ```
-2. 스캔 결과에 따라 정리 (셸 히스토리, git config, iCloud 등)
-3. Claude Code 로그아웃
-   ```bash
-   claude logout
-   ```
-4. 계정 B로 재인증 (플랜 확장 Stage에 따라 진행)
-   ```bash
-   claude login    # 계정 B로
-   claude whoami   # 계정 B인지 확인
-   ```
-5. 정리 후 재스캔으로 검증
-   ```bash
-   bash scripts/security/scan_hunter_pii.sh
-   ```
-
-**발견 경위**: NotebookLM 교차 검증에서 Doctrine-Operations 계정 격리 불일치로 지적됨.
-
----
-
-## 헌터 개인정보 스캔 (정기 보안 점검)
-
-헌터는 "언제든 포섭될 수 있는 외부 머신"이므로, 주인님 개인정보가 잔존하지 않는지 정기적으로 점검한다.
-
-### 스캔 스크립트
-
-# 헌터에서 직접 실행
-bash scripts/security/scan_hunter_pii.sh
-
-# 또는 캡틴에서 SSH로 원격 실행
-ssh hunter 'cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh'
-
-### 스캔 항목 (7단계)
-
-| # | 항목 | 위험도 | 확인 내용 |
-|---|------|--------|----------|
-| 1 | Claude Code 인증 | CRITICAL | 계정 A(주인님)로 로그인되어 있는지 |
-| 2 | 브라우저 프로필 | CRITICAL | Chrome/Chromium 프로필에 주인님 Google 쿠키가 있는지 |
-| 3 | 셸 히스토리 | WARNING | bash/zsh 히스토리에 개인정보 패턴이 있는지 |
-| 4 | 환경변수 / .env | CRITICAL | 캡틴 전용 시크릿(Telegram/Slack 토큰)이 헌터에 있는지 |
-| 5 | SSH / 인증 파일 | WARNING | SSH config에 개인정보가 있는지, Keychain에 인증 정보가 있는지 |
-| 6 | Doctrine / 소스코드 유출 | CRITICAL | Doctrine 디렉토리나 iCloud Drive가 헌터에 동기화되고 있는지 |
-| 7 | 파일 내용 전수 스캔 | WARNING | 주인님 이름, 이메일, 주소 등 패턴이 파일에 있는지 |
-
-### 정리 절차 (스캔 후 발견된 항목에 따라)
-
-# 1. Claude Code 로그아웃
-claude logout
-
-# 2. 셸 히스토리 삭제
-history -c && rm -f ~/.bash_history ~/.zsh_history
-
-# 3. 브라우저 프로필 초기화 (계정 B로 재로그인 필요)
-rm -rf ~/fas-google-profile-hunter
-
-# 4. Git 사용자 정보를 헌터 전용으로 변경
-git config --global user.email 'hunter@fas.local'
-git config --global user.name 'FAS Hunter'
-
-# 5. iCloud 로그아웃 (시스템 설정에서)
-# 6. 캡틴 시크릿이 .env에 있으면 해당 라인 삭제
-
-### 정기 실행 권장
-
-- SA-001 해소 직후: 1회 스캔 + 정리
-- 이후: 주 1회 또는 헌터 재초기화 시 매번 실행
-- n8n 워크플로우로 자동화 가능 (캡틴에서 SSH → 스캔 → 결과 Slack 보고)
-
----
-
 ## PII 산이타이저
 
 ### 감지 패턴 (10개)
@@ -5840,10 +5699,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
 - [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
 - [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
-- [ ] **⚠️ SA-001**: 헌터 Claude Code 세션 로그아웃 (`claude logout`) *(인간 작업, CRITICAL)*
-- [ ] 계정 B (별도 Anthropic 계정) 생성 *(인간 작업)*
-- [ ] 헌터 AI 플랜 단계별 확장 (아래 "AI 플랜 확장 로드맵" 참조)
-- [ ] 헌터 머신 초기 세팅 — `scripts/setup/setup_hunter.sh` 실행 *(인간 작업)*
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 별도 진행)*
 
 ### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
 
@@ -5871,23 +5727,19 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 자동 재시작 (크래시 복구) — `scripts/agent_wrapper.sh` (지수 백오프, 최대 3회)
 - [x] CLAUDE.md에 자율 실행 범위 명시
 
-### 1-2. Gemini CLI 상시 실행 체계 (캡틴) ✅
+### 1-2. Gemini CLI 상시 실행 체계 (캡틴)
 
-- [x] 계정 A: 리서치 전용 세션 — `scripts/setup/com.fas.gemini-a.plist`
-- [x] 계정 B: 교차 검증 전용 세션 — `scripts/setup/com.fas.gemini-b.plist`
-- [x] 자동 재시작 래퍼 — `scripts/gemini_wrapper.sh` (지수 백오프, 최대 3회)
-- [x] 출력 로깅 + Telegram/Slack 연동 — `[GEMINI_BLOCKED]` 패턴 감지
-- [ ] 실제 계정 인증 실행 *(인간 작업 — `scripts/setup/setup_gemini_cli.sh` 실행)*
+- [ ] 계정 A: 리서치 전용 세션
+- [ ] 계정 B: 교차 검증 전용 세션
+- [ ] 출력 로깅 + Telegram/Slack 연동
 
 ### 1-3. OpenClaw 안정화 (헌터)
 
-- [ ] ChatGPT Pro 연동 완료 *(인간 작업)*
-- [x] 개인정보 유입 방지 확인 — Quarantine 로직 구현 완료
+- [ ] ChatGPT Pro 연동 완료
+- [ ] 개인정보 유입 방지 확인
 - [ ] 기본 태스크 실행 테스트
-- [x] NotebookLM 웹 자동화 코드 — `handle_notebooklm_verify` (Playwright + 구글 프로필)
-- [x] Gemini Deep Research 웹 자동화 코드 — `handle_deep_research` (Playwright + 구글 프로필)
-- [x] 구글 로그인 감지 → `[LOGIN_REQUIRED]` → Telegram 긴급 알림
-- [ ] 헌터 머신 초기 세팅 *(인간 작업 — `scripts/setup/setup_hunter.sh` 실행)*
+- [ ] NotebookLM 웹 자동화 테스트
+- [ ] Gemini Deep Research 웹 자동화 테스트
 
 ### 1-4. 작업 큐 시스템 (간이)
 
@@ -6218,74 +6070,6 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
           └→ Phase 6 (Phase 2 이후)
                                      ↓
                                Phase 7 (지속)
-
-## AI 플랜 확장 로드맵
-
-비용을 단계적으로 증가시키며 시스템 안정성을 검증한 후 상위 플랜으로 전환한다.
-"잘 돌아가는 것을 확인한 뒤 투자"가 원칙.
-
-### Stage 1: 검증 단계 (현재)
-
-시스템 세팅 + 통신 검증. 이미 보유한 리소스 활용.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 이미 사용 중 |
-| 캡틴 Gemini CLI | 계정 A (무료 or 기존 플랜) | $0 | 이미 사용 중 |
-| 헌터 Google AI | **계정 B Google AI ~$20 플랜 (보유)** | $20 | Gemini CLI, NotebookLM, Deep Research, Antigravity 사용 가능 |
-| 헌터 Claude Code | 미결제 (세팅 검증 후 결제) | $0 | `claude logout` 후 계정 B 준비만 |
-| 헌터 ChatGPT | 미결제 | $0 | Playwright 기반 핸들러만 테스트 |
-| **월 합계** | | **~$120** | |
-
-**이 단계의 목표:**
-- SA-001 해소: 헌터에서 계정 A 로그아웃 + 개인정보 잔존 확인
-- 헌터 ↔ 캡틴 Task API 통신 안정성 확인
-- Playwright 기반 web_crawl, browser_task 정상 실행 확인
-- 헌터 Google B 계정으로 NotebookLM, Deep Research 기본 동작 확인
-
-**승격 조건:** Task API 연속 3일 무장애, 핸들러 4종 정상 동작 확인
-
-### Stage 2: 운영 단계
-
-저가 AI 플랜으로 실제 업무를 돌리며 안정성 체감.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
-| 캡틴 Gemini CLI | 유지 | $0 | 유지 |
-| 헌터 Google AI | 계정 B (~$20 플랜) | $20 | 유지 |
-| 헌터 Claude Code | **Pro** (계정 B, ~$20) | **$20** | 코딩/분석 태스크 |
-| 헌터 ChatGPT | **Plus** (~$20) | **$20** | 브라우저 자동화 |
-| **월 합계** | | **~$160** | |
-
-**이 단계의 목표:**
-- SLEEP 모드 야간 자동 크롤링 실운영
-- 교차 검증 파이프라인 (Claude ↔ Gemini ↔ NotebookLM) 실운영
-- 헌터 태스크 처리량과 품질 측정
-- 병목 지점 식별 (토큰 한도, 속도, 품질)
-
-**승격 조건:** 주인님이 "이제 진짜 잘 돌아간다"고 판단
-
-### Stage 3: 풀 스케일
-
-검증된 시스템에 최대 화력 투입.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
-| 캡틴 Gemini CLI | 유지 | $0 | 유지 |
-| 헌터 Google AI | 계정 B (유지 or 업그레이드) | $20+ | 유지 |
-| 헌터 Claude Code | **Max x20** (계정 B) | **$200** | 병렬 20세션 |
-| 헌터 ChatGPT | **Pro** ($200) | **$200** | Deep Research 무제한 |
-| **월 합계** | | **~$520** | |
-
-**이 단계의 목표:**
-- 24시간 무중단 멀티 에이전트 풀 가동
-- Phase 4 (반복 크롤러), Phase 5 (학원 자동화), Phase 6 (사업화) 본격 진행
-- Deep Research 대량 실행, NotebookLM 자동 검증
-- 주인님 개인 시간 극대화
-
----
 
 ## 리스크 & 대응
 

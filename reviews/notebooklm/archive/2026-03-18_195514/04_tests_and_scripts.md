@@ -3020,19 +3020,6 @@ const mock_logger: Logger = {
   error: vi.fn(),
 };
 
-// Mock locator object for Playwright page.locator() calls
-const create_mock_locator = () => ({
-  first: vi.fn().mockReturnThis(),
-  last: vi.fn().mockReturnThis(),
-  count: vi.fn().mockResolvedValue(0),
-  isVisible: vi.fn().mockResolvedValue(false),
-  waitFor: vi.fn().mockResolvedValue(undefined),
-  click: vi.fn().mockResolvedValue(undefined),
-  fill: vi.fn().mockResolvedValue(undefined),
-  press: vi.fn().mockResolvedValue(undefined),
-  textContent: vi.fn().mockResolvedValue(''),
-});
-
 // Mock page object returned by Playwright
 const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
   goto: vi.fn().mockResolvedValue(undefined),
@@ -3041,10 +3028,6 @@ const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
   screenshot: vi.fn().mockResolvedValue(undefined),
   setDefaultTimeout: vi.fn(),
   setDefaultNavigationTimeout: vi.fn(),
-  url: vi.fn().mockReturnValue('https://example.com'),
-  waitForTimeout: vi.fn().mockResolvedValue(undefined),
-  close: vi.fn().mockResolvedValue(undefined),
-  locator: vi.fn().mockReturnValue(create_mock_locator()),
   context: vi.fn().mockReturnValue({
     close: vi.fn().mockResolvedValue(undefined),
   }),
@@ -3056,8 +3039,6 @@ const create_mock_browser = (page_overrides: Record<string, unknown> = {}): Brow
   const mock_page = create_mock_page(page_overrides);
   return {
     get_page: vi.fn().mockResolvedValue(mock_page),
-    get_persistent_page: vi.fn().mockResolvedValue(mock_page),
-    close_persistent: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
   };
 };
@@ -3307,11 +3288,9 @@ describe('browser_task handler', () => {
 
 // ===== deep_research handler tests =====
 describe('deep_research handler', () => {
-  it('should detect login wall and return LOGIN_REQUIRED', async () => {
-    // Given — page URL is Google login
-    const mock_browser = create_mock_browser({
-      url: vi.fn().mockReturnValue('https://accounts.google.com/signin'),
-    });
+  it('should return failure with NOT_IMPLEMENTED message', async () => {
+    // Given
+    const mock_browser = create_mock_browser();
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'AI trends deep research',
@@ -3323,36 +3302,18 @@ describe('deep_research handler', () => {
 
     // Then
     expect(result.status).toBe('failure');
-    expect(result.output).toContain('[LOGIN_REQUIRED]');
+    expect(result.output).toContain('NOT_IMPLEMENTED');
+    expect(result.output).toContain('Gemini web UI');
+    expect(result.output).toContain('pending OpenClaw integration');
     expect(result.files).toEqual([]);
-  });
-
-  it('should use persistent browser page for Google login session', async () => {
-    // Given
-    const mock_browser = create_mock_browser({
-      url: vi.fn().mockReturnValue('https://accounts.google.com/v3'),
-    });
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'deep research on AI',
-      description: 'Run deep research on latest AI developments',
-    });
-
-    // When
-    await executor.execute(task);
-
-    // Then — persistent page should be called, not regular get_page
-    expect(mock_browser.get_persistent_page).toHaveBeenCalled();
   });
 });
 
 // ===== notebooklm_verify handler tests =====
 describe('notebooklm_verify handler', () => {
-  it('should detect login wall and return LOGIN_REQUIRED', async () => {
-    // Given — page URL is Google login
-    const mock_browser = create_mock_browser({
-      url: vi.fn().mockReturnValue('https://accounts.google.com/signin'),
-    });
+  it('should return failure with NOT_IMPLEMENTED message', async () => {
+    // Given
+    const mock_browser = create_mock_browser();
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'NotebookLM verify analysis results',
@@ -3364,26 +3325,10 @@ describe('notebooklm_verify handler', () => {
 
     // Then
     expect(result.status).toBe('failure');
-    expect(result.output).toContain('[LOGIN_REQUIRED]');
+    expect(result.output).toContain('NOT_IMPLEMENTED');
+    expect(result.output).toContain('NotebookLM');
+    expect(result.output).toContain('pending OpenClaw integration');
     expect(result.files).toEqual([]);
-  });
-
-  it('should use persistent browser page for Google login session', async () => {
-    // Given
-    const mock_browser = create_mock_browser({
-      url: vi.fn().mockReturnValue('https://accounts.google.com/v3'),
-    });
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'NotebookLM verify analysis results',
-      description: 'Verify hallucination in research output',
-    });
-
-    // When
-    await executor.execute(task);
-
-    // Then — persistent page should be called, not regular get_page
-    expect(mock_browser.get_persistent_page).toHaveBeenCalled();
   });
 });
 
@@ -4852,32 +4797,6 @@ describe('Output Watcher', () => {
       expect(result!.description).toBe('Database connection failed');
     });
 
-    it('should detect [LOGIN_REQUIRED] pattern from hunter', () => {
-      const result = scan_line(
-        '[LOGIN_REQUIRED] Google OAuth session expired on hunter',
-        'fas-hunter',
-      );
-
-      expect(result).not.toBeNull();
-      expect(result!.pattern_name).toBe('LOGIN_REQUIRED');
-      expect(result!.description).toBe('Google OAuth session expired on hunter');
-      expect(result!.session).toBe('fas-hunter');
-    });
-
-    it('should detect [GEMINI_BLOCKED] pattern', () => {
-      const result = scan_line(
-        "[GEMINI_BLOCKED] Gemini 'gemini-a' crashed 3 times in succession. Manual intervention needed.",
-        'fas-gemini-a',
-      );
-
-      expect(result).not.toBeNull();
-      expect(result!.pattern_name).toBe('GEMINI_BLOCKED');
-      expect(result!.description).toBe(
-        "Gemini 'gemini-a' crashed 3 times in succession. Manual intervention needed.",
-      );
-      expect(result!.session).toBe('fas-gemini-a');
-    });
-
     it('should return null for non-matching lines', () => {
       expect(scan_line('Normal log output', 'fas-claude')).toBeNull();
       expect(scan_line('', 'fas-claude')).toBeNull();
@@ -5385,32 +5304,6 @@ done
 
 ---
 
-## 파일: [OPS] scripts/gemini_wrapper.sh
-
-#!/usr/bin/env bash
-# FAS Gemini CLI Wrapper — Auto-restart with exponential backoff
-# Usage: GEMINI_ACCOUNT=A|B bash scripts/gemini_wrapper.sh
-#
-# This is the top-level entry point for launchd plists.
-# Delegates to scripts/gemini/gemini_wrapper.sh with the correct account arg.
-#
-# Features:
-#   - Reads GEMINI_ACCOUNT env var (A or B)
-#   - Forwards to the actual gemini wrapper script
-#   - Provides a stable path for launchd plist references
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ACCOUNT="${GEMINI_ACCOUNT:-A}"
-
-# Normalize to lowercase for the inner wrapper
-ACCOUNT_LOWER=$(echo "$ACCOUNT" | tr '[:upper:]' '[:lower:]')
-
-exec bash "${SCRIPT_DIR}/gemini/gemini_wrapper.sh" "$ACCOUNT_LOWER"
-
----
-
 ## 파일: [OPS] scripts/gemini/gemini_wrapper.sh
 
 #!/usr/bin/env bash
@@ -5421,7 +5314,7 @@ exec bash "${SCRIPT_DIR}/gemini/gemini_wrapper.sh" "$ACCOUNT_LOWER"
 #   - Restarts up to MAX_RETRIES times on crash
 #   - Exponential backoff between retries
 #   - Logs crash events
-#   - Escalates to [GEMINI_BLOCKED] after max retries (detected by output_watcher)
+#   - Escalates to [BLOCKED] after max retries
 
 set -euo pipefail
 
@@ -5485,8 +5378,8 @@ while true; do
 
   # Check max retries
   if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-    echo "[GEMINI_BLOCKED] Gemini '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
-    echo "$TIMESTAMP [GEMINI_BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
+    echo "[BLOCKED] Gemini '$AGENT_NAME' crashed $MAX_RETRIES times in succession. Manual intervention needed."
+    echo "$TIMESTAMP [BLOCKED] $AGENT_NAME exceeded max retries ($MAX_RETRIES)" >> "$LOG_DIR/crashes_${AGENT_NAME}.log"
 
     echo "[Wrapper] Waiting 300 seconds before final retry..."
     sleep 300
@@ -6341,340 +6234,6 @@ main();
 
 ---
 
-## 파일: [OPS] scripts/security/scan_hunter_pii.sh
-
-#!/usr/bin/env bash
-# Hunter PII Scanner — scan hunter machine for owner's personal information residue
-#
-# Usage:
-#   SSH into hunter, then run:
-#     bash scripts/security/scan_hunter_pii.sh
-#   Or from captain:
-#     ssh hunter 'cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh'
-#
-# What it checks:
-#   1. Claude Code auth state (계정 A vs B)
-#   2. Browser profiles for owner's Google account cookies
-#   3. Shell history for PII patterns
-#   4. .env files for captain secrets
-#   5. Git config for owner email
-#   6. SSH keys / known_hosts for identifying info
-#   7. File content scan across common directories
-#
-# This script is READ-ONLY — it only reports findings, never deletes anything.
-# After review, use scan_hunter_pii.sh --clean to generate cleanup commands.
-
-set -euo pipefail
-
-MODE="${1:-scan}"  # scan (default) or clean
-REPORT_FILE="./logs/pii_scan_$(date +%Y%m%d_%H%M%S).md"
-FOUND_COUNT=0
-
-# === Colors ===
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-NC='\033[0m'
-
-# === PII patterns (from .notebooklm-mask + sanitizer.ts) ===
-# Owner-specific patterns — loaded from .notebooklm-mask if available
-OWNER_PATTERNS=()
-MASK_FILE=".notebooklm-mask"
-
-if [ -f "$MASK_FILE" ]; then
-  while IFS='|' read -r pattern _replacement; do
-    [[ "$pattern" =~ ^#.*$ ]] && continue
-    [[ -z "$pattern" ]] && continue
-    OWNER_PATTERNS+=("$pattern")
-  done < "$MASK_FILE"
-fi
-
-# Generic PII regex patterns (from sanitizer.ts)
-GENERIC_PATTERNS=(
-  '01[016789][- ]?[0-9]{3,4}[- ]?[0-9]{4}'          # Korean phone numbers
-  '[0-9]{6}-?[1-4][0-9]{6}'                            # Resident ID
-  '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'   # Email (generic)
-)
-
-mkdir -p "$(dirname "$REPORT_FILE")"
-
-# === Helper functions ===
-log_finding() {
-  local severity="$1"  # CRITICAL / WARNING / INFO
-  local category="$2"
-  local detail="$3"
-
-  FOUND_COUNT=$((FOUND_COUNT + 1))
-
-  case "$severity" in
-    CRITICAL) echo -e "${RED}[CRITICAL]${NC} $category: $detail" ;;
-    WARNING)  echo -e "${YELLOW}[WARNING]${NC} $category: $detail" ;;
-    INFO)     echo -e "${GREEN}[INFO]${NC} $category: $detail" ;;
-  esac
-
-  echo "- [$severity] **$category**: $detail" >> "$REPORT_FILE"
-}
-
-log_clean() {
-  echo -e "${GREEN}[CLEAN]${NC} $1"
-}
-
-# === Start ===
-echo "=== FAS Hunter PII Scanner ==="
-echo "Mode: $MODE"
-echo "Report: $REPORT_FILE"
-echo ""
-
-cat > "$REPORT_FILE" << 'HEADER'
-# Hunter PII Scan Report
-
-> Auto-generated by scripts/security/scan_hunter_pii.sh
-
-## Findings
-
-HEADER
-
-# ===== 1. Claude Code Auth State =====
-echo "--- [1/7] Claude Code auth state ---"
-
-if command -v claude &>/dev/null; then
-  CLAUDE_WHO=$(claude whoami 2>/dev/null || echo "NOT_LOGGED_IN")
-  if echo "$CLAUDE_WHO" | grep -qi "not_logged_in\|error\|not authenticated"; then
-    log_clean "Claude Code: not logged in"
-  else
-    # Check if it looks like owner's account (Account A)
-    log_finding "CRITICAL" "Claude Code Auth" "Logged in as: $CLAUDE_WHO — verify this is Account B, not Account A"
-  fi
-else
-  log_clean "Claude Code: not installed"
-fi
-
-# Check for credential files
-for cred_file in ~/.claude/.credentials.json ~/.claude/credentials.json ~/.claude/auth.json ~/.claude/oauth*; do
-  if [ -f "$cred_file" ]; then
-    log_finding "WARNING" "Claude Credentials" "Found credential file: $cred_file"
-  fi
-done
-echo ""
-
-# ===== 2. Browser Profiles =====
-echo "--- [2/7] Browser profiles ---"
-
-# Check Chrome/Chromium profiles for Google account cookies
-BROWSER_DIRS=(
-  "$HOME/Library/Application Support/Google/Chrome"
-  "$HOME/Library/Application Support/Chromium"
-  "$HOME/.config/google-chrome"
-  "$HOME/.config/chromium"
-  "$HOME/fas-google-profile-hunter"
-  "${GOOGLE_PROFILE_DIR:-./fas-google-profile-hunter}"
-)
-
-for dir in "${BROWSER_DIRS[@]}"; do
-  if [ -d "$dir" ]; then
-    # Check for Google account info in Preferences files
-    prefs=$(find "$dir" -name "Preferences" -maxdepth 3 2>/dev/null || true)
-    for pref in $prefs; do
-      if [ -f "$pref" ]; then
-        # Look for owner email patterns
-        for pattern in "${OWNER_PATTERNS[@]}"; do
-          if grep -qi "$pattern" "$pref" 2>/dev/null; then
-            log_finding "CRITICAL" "Browser Profile" "Owner pattern '$pattern' found in $pref"
-          fi
-        done
-      fi
-    done
-
-    # Check Login Data sqlite for owner's accounts
-    login_dbs=$(find "$dir" -name "Login Data" -maxdepth 3 2>/dev/null || true)
-    if [ -n "$login_dbs" ]; then
-      log_finding "INFO" "Browser Profile" "Login database found in $dir — may contain saved passwords"
-    fi
-  fi
-done
-echo ""
-
-# ===== 3. Shell History =====
-echo "--- [3/7] Shell history ---"
-
-HISTORY_FILES=(
-  "$HOME/.bash_history"
-  "$HOME/.zsh_history"
-  "$HOME/.history"
-)
-
-for hist in "${HISTORY_FILES[@]}"; do
-  if [ -f "$hist" ]; then
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      matches=$(grep -ci "$pattern" "$hist" 2>/dev/null || echo "0")
-      if [ "$matches" -gt 0 ]; then
-        log_finding "WARNING" "Shell History" "'$pattern' appears $matches times in $hist"
-      fi
-    done
-
-    # Check for generic PII
-    for pattern in "${GENERIC_PATTERNS[@]}"; do
-      matches=$(grep -cE "$pattern" "$hist" 2>/dev/null || echo "0")
-      if [ "$matches" -gt 0 ]; then
-        log_finding "WARNING" "Shell History" "PII pattern match ($matches) in $hist"
-      fi
-    done
-  fi
-done
-echo ""
-
-# ===== 4. Environment / Config Files =====
-echo "--- [4/7] Environment & config files ---"
-
-# Check .env files for captain secrets
-ENV_FILES=(
-  "$HOME/FAS-operations/.env"
-  "$HOME/FAS-operations/.env.local"
-  "$HOME/.env"
-)
-
-for env_file in "${ENV_FILES[@]}"; do
-  if [ -f "$env_file" ]; then
-    # Check for captain-only secrets (should NOT be on hunter)
-    for key in TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN NOTION_API_KEY GEMINI_API_KEY SMS_API_KEY; do
-      val=$(grep "^${key}=" "$env_file" 2>/dev/null | cut -d= -f2 || true)
-      if [ -n "$val" ] && [ "$val" != "" ] && [[ ! "$val" =~ ^your_ ]]; then
-        log_finding "CRITICAL" "Environment" "Captain secret '$key' found in $env_file — should NOT be on hunter"
-      fi
-    done
-
-    # Check for owner PII patterns
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      if grep -qi "$pattern" "$env_file" 2>/dev/null; then
-        log_finding "CRITICAL" "Environment" "Owner PII '$pattern' found in $env_file"
-      fi
-    done
-  fi
-done
-
-# Check git config
-GIT_EMAIL=$(git config --global user.email 2>/dev/null || echo "")
-GIT_NAME=$(git config --global user.name 2>/dev/null || echo "")
-
-for pattern in "${OWNER_PATTERNS[@]}"; do
-  if echo "$GIT_EMAIL $GIT_NAME" | grep -qi "$pattern" 2>/dev/null; then
-    log_finding "WARNING" "Git Config" "Owner pattern '$pattern' in git config (email=$GIT_EMAIL, name=$GIT_NAME)"
-  fi
-done
-echo ""
-
-# ===== 5. SSH / Auth Files =====
-echo "--- [5/7] SSH & auth files ---"
-
-if [ -d "$HOME/.ssh" ]; then
-  # Check known_hosts for captain hostnames
-  if [ -f "$HOME/.ssh/known_hosts" ]; then
-    log_finding "INFO" "SSH" "known_hosts exists — contains host fingerprints (generally safe)"
-  fi
-
-  # Check SSH config for owner info
-  if [ -f "$HOME/.ssh/config" ]; then
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      if grep -qi "$pattern" "$HOME/.ssh/config" 2>/dev/null; then
-        log_finding "WARNING" "SSH Config" "Owner pattern '$pattern' in SSH config"
-      fi
-    done
-  fi
-fi
-
-# Check macOS Keychain for FAS-related items
-if command -v security &>/dev/null; then
-  fas_keys=$(security dump-keychain 2>/dev/null | grep -ci "fas\|anthropic\|claude" || echo "0")
-  if [ "$fas_keys" -gt 0 ]; then
-    log_finding "WARNING" "Keychain" "$fas_keys FAS/Anthropic/Claude entries found in keychain"
-  fi
-fi
-echo ""
-
-# ===== 6. Doctrine / Source Code Leak =====
-echo "--- [6/7] Doctrine & source code leak ---"
-
-# Check if Doctrine files exist on hunter (they should NOT)
-DOCTRINE_PATHS=(
-  "$HOME/Library/Mobile Documents/com~apple~CloudDocs/claude-config"
-  "$HOME/claude-config"
-  "$HOME/FAS-doctrine"
-)
-
-for dpath in "${DOCTRINE_PATHS[@]}"; do
-  if [ -d "$dpath" ]; then
-    log_finding "CRITICAL" "Doctrine Leak" "Doctrine directory found on hunter: $dpath"
-  fi
-done
-
-# Check if iCloud Drive is syncing
-if [ -d "$HOME/Library/Mobile Documents/com~apple~CloudDocs" ]; then
-  icloud_count=$(find "$HOME/Library/Mobile Documents/com~apple~CloudDocs" -maxdepth 1 -type d 2>/dev/null | wc -l || echo "0")
-  if [ "$icloud_count" -gt 1 ]; then
-    log_finding "CRITICAL" "iCloud" "iCloud Drive is syncing on hunter — owner data may be present"
-  fi
-fi
-echo ""
-
-# ===== 7. Broad File Content Scan =====
-echo "--- [7/7] Broad file content scan (owner patterns) ---"
-
-SCAN_DIRS=(
-  "$HOME/FAS-operations"
-  "$HOME/Documents"
-  "$HOME/Desktop"
-  "$HOME/Downloads"
-)
-
-for dir in "${SCAN_DIRS[@]}"; do
-  if [ -d "$dir" ]; then
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      matches=$(grep -rli "$pattern" "$dir" --include="*.{txt,md,json,yml,yaml,env,ts,js,sh,log}" 2>/dev/null | head -5 || true)
-      if [ -n "$matches" ]; then
-        file_count=$(echo "$matches" | wc -l | tr -d ' ')
-        log_finding "WARNING" "File Content" "'$pattern' found in $file_count file(s) under $dir"
-        echo "$matches" | while read -r f; do
-          echo "    → $f"
-          echo "  - \`$f\`" >> "$REPORT_FILE"
-        done
-      fi
-    done
-  fi
-done
-echo ""
-
-# ===== Summary =====
-echo "---" >> "$REPORT_FILE"
-echo "" >> "$REPORT_FILE"
-echo "## Summary" >> "$REPORT_FILE"
-echo "" >> "$REPORT_FILE"
-echo "- Total findings: $FOUND_COUNT" >> "$REPORT_FILE"
-echo "- Scan time: $(date '+%Y-%m-%d %H:%M:%S')" >> "$REPORT_FILE"
-
-echo "=== Scan Complete ==="
-echo ""
-
-if [ "$FOUND_COUNT" -eq 0 ]; then
-  echo -e "${GREEN}✓ No PII found — hunter is clean.${NC}"
-else
-  echo -e "${YELLOW}Found $FOUND_COUNT issue(s). Review: $REPORT_FILE${NC}"
-  echo ""
-  echo "Recommended cleanup actions:"
-  echo "  1. Claude Code: claude logout"
-  echo "  2. Shell history: history -c && rm -f ~/.bash_history ~/.zsh_history"
-  echo "  3. Browser profiles: rm -rf ~/fas-google-profile-hunter (then re-login with Account B)"
-  echo "  4. Git config: git config --global user.email 'hunter@fas.local'"
-  echo "  5. iCloud: Sign out of iCloud on this machine"
-  echo "  6. Captain secrets in .env: Remove lines for TELEGRAM/SLACK/NOTION tokens"
-  echo ""
-  echo "After cleanup, re-run this script to verify."
-fi
-
-echo ""
-echo "Full report: $REPORT_FILE"
-
----
-
 ## 파일: [OPS] scripts/setup/com.fas.captain.plist
 
 <!-- FAS Captain launchd plist
@@ -6714,116 +6273,6 @@ echo "Full report: $REPORT_FILE"
 
     <key>StandardErrorPath</key>
     <string>/Users/[MASKED_USER]/FAS-operations/logs/launchd_captain_error.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>/Users/user</string>
-    </dict>
-</dict>
-</plist>
-
----
-
-## 파일: [OPS] scripts/setup/com.fas.gemini-a.plist
-
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- FAS Gemini CLI Account A (Research) launchd plist
-     Auto-starts Gemini CLI session A in tmux on login.
-
-     Install:
-       cp scripts/setup/com.fas.gemini-a.plist ~/Library/LaunchAgents/
-       launchctl load ~/Library/LaunchAgents/com.fas.gemini-a.plist
-
-     Uninstall:
-       launchctl unload ~/Library/LaunchAgents/com.fas.gemini-a.plist
-       rm ~/Library/LaunchAgents/com.fas.gemini-a.plist
--->
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.fas.gemini-a</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>-l</string>
-        <string>-c</string>
-        <string>tmux new-session -d -s fas-gemini-a 'GEMINI_ACCOUNT=A bash /Users/[MASKED_USER]/FAS-operations/scripts/gemini/gemini_wrapper.sh a' 2>/dev/null || true</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/gemini-a-launch.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/gemini-a-launch.log</string>
-
-    <key>WorkingDirectory</key>
-    <string>/Users/[MASKED_USER]/FAS-operations</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>/Users/user</string>
-    </dict>
-</dict>
-</plist>
-
----
-
-## 파일: [OPS] scripts/setup/com.fas.gemini-b.plist
-
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- FAS Gemini CLI Account B (Cross-verification) launchd plist
-     Auto-starts Gemini CLI session B in tmux on login.
-
-     Install:
-       cp scripts/setup/com.fas.gemini-b.plist ~/Library/LaunchAgents/
-       launchctl load ~/Library/LaunchAgents/com.fas.gemini-b.plist
-
-     Uninstall:
-       launchctl unload ~/Library/LaunchAgents/com.fas.gemini-b.plist
-       rm ~/Library/LaunchAgents/com.fas.gemini-b.plist
--->
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.fas.gemini-b</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>-l</string>
-        <string>-c</string>
-        <string>tmux new-session -d -s fas-gemini-b 'GEMINI_ACCOUNT=B bash /Users/[MASKED_USER]/FAS-operations/scripts/gemini/gemini_wrapper.sh b' 2>/dev/null || true</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/gemini-b-launch.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/gemini-b-launch.log</string>
-
-    <key>WorkingDirectory</key>
-    <string>/Users/[MASKED_USER]/FAS-operations</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -6983,393 +6432,6 @@ docker info --format '  Memory: {{.MemTotal}}'
 echo ""
 echo "[FAS] Colima + Docker setup complete!"
 echo "[FAS] To start n8n: cd $(dirname "$0")/../.. && docker compose up -d"
-
----
-
-## 파일: [OPS] scripts/setup/setup_gemini_cli.sh
-
-#!/usr/bin/env bash
-# FAS Gemini CLI Session Setup for Captain
-# Checks prerequisites, validates configs, installs launchd plists,
-# and starts tmux sessions for Gemini CLI accounts A and B.
-#
-# Usage: bash scripts/setup/setup_gemini_cli.sh
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FAS_ROOT="${SCRIPT_DIR}/../.."
-LOG_DIR="${FAS_ROOT}/logs"
-LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-GEMINI_CONFIG_A="$HOME/.config/gemini/account-a"
-GEMINI_CONFIG_B="$HOME/.config/gemini/account-b"
-
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-info()  { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; }
-
-echo "=========================================="
-echo " FAS Gemini CLI Setup"
-echo "=========================================="
-echo ""
-
-# === Step 1: Check gemini CLI is installed ===
-echo "[1/6] Checking Gemini CLI installation..."
-if command -v gemini &>/dev/null; then
-  GEMINI_VERSION=$(gemini --version 2>/dev/null || echo "unknown")
-  info "Gemini CLI installed (version: $GEMINI_VERSION)"
-else
-  fail "Gemini CLI not found"
-  echo "  Install with: npm install -g @google/gemini-cli"
-  echo "  Or: npx @google/gemini-cli"
-  exit 1
-fi
-echo ""
-
-# === Step 2: Check account A config ===
-echo "[2/6] Checking Account A (Research) config..."
-if [ -d "$GEMINI_CONFIG_A" ]; then
-  info "Account A config exists at $GEMINI_CONFIG_A"
-else
-  warn "Account A config not found at $GEMINI_CONFIG_A"
-  echo "  To set up Account A:"
-  echo "    1. mkdir -p $GEMINI_CONFIG_A"
-  echo "    2. Run: GEMINI_CONFIG_DIR=$GEMINI_CONFIG_A gemini"
-  echo "    3. Follow the Google OAuth flow for Account A"
-  echo ""
-  read -p "  Set up Account A now? (y/N) " -n 1 -r
-  echo ""
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    mkdir -p "$GEMINI_CONFIG_A"
-    echo "  Starting Gemini CLI for Account A auth..."
-    GEMINI_CONFIG_DIR="$GEMINI_CONFIG_A" gemini --version
-    echo "  Please complete the authentication in the browser."
-  fi
-fi
-echo ""
-
-# === Step 3: Check account B config ===
-echo "[3/6] Checking Account B (Cross-verification) config..."
-if [ -d "$GEMINI_CONFIG_B" ]; then
-  info "Account B config exists at $GEMINI_CONFIG_B"
-else
-  warn "Account B config not found at $GEMINI_CONFIG_B"
-  echo "  To set up Account B:"
-  echo "    1. mkdir -p $GEMINI_CONFIG_B"
-  echo "    2. Run: GEMINI_CONFIG_DIR=$GEMINI_CONFIG_B gemini"
-  echo "    3. Follow the Google OAuth flow for Account B"
-  echo ""
-  read -p "  Set up Account B now? (y/N) " -n 1 -r
-  echo ""
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    mkdir -p "$GEMINI_CONFIG_B"
-    echo "  Starting Gemini CLI for Account B auth..."
-    GEMINI_CONFIG_DIR="$GEMINI_CONFIG_B" gemini --version
-    echo "  Please complete the authentication in the browser."
-  fi
-fi
-echo ""
-
-# === Step 4: Ensure logs directory exists ===
-echo "[4/6] Ensuring logs directory..."
-mkdir -p "$LOG_DIR"
-info "Logs directory ready: $LOG_DIR"
-echo ""
-
-# === Step 5: Install launchd plists ===
-echo "[5/6] Installing launchd plists..."
-mkdir -p "$LAUNCH_AGENTS_DIR"
-
-for ACCOUNT in a b; do
-  PLIST_NAME="com.fas.gemini-${ACCOUNT}.plist"
-  SRC="${SCRIPT_DIR}/${PLIST_NAME}"
-  DEST="${LAUNCH_AGENTS_DIR}/${PLIST_NAME}"
-
-  if [ ! -f "$SRC" ]; then
-    fail "Plist source not found: $SRC"
-    continue
-  fi
-
-  # Unload existing if loaded
-  if launchctl list | grep -q "com.fas.gemini-${ACCOUNT}" 2>/dev/null; then
-    echo "  Unloading existing com.fas.gemini-${ACCOUNT}..."
-    launchctl unload "$DEST" 2>/dev/null || true
-  fi
-
-  cp "$SRC" "$DEST"
-  info "Installed $PLIST_NAME to $LAUNCH_AGENTS_DIR"
-
-  launchctl load "$DEST"
-  info "Loaded com.fas.gemini-${ACCOUNT} into launchd"
-done
-echo ""
-
-# === Step 6: Start tmux sessions ===
-echo "[6/6] Starting Gemini CLI tmux sessions..."
-GEMINI_STARTER="${FAS_ROOT}/scripts/gemini/start_gemini_sessions.sh"
-
-if [ -f "$GEMINI_STARTER" ]; then
-  bash "$GEMINI_STARTER" all
-  info "Gemini CLI sessions started"
-else
-  warn "Session starter not found: $GEMINI_STARTER"
-  echo "  You can start sessions manually:"
-  echo "    tmux new-session -d -s fas-gemini-a 'bash scripts/gemini/gemini_wrapper.sh a'"
-  echo "    tmux new-session -d -s fas-gemini-b 'bash scripts/gemini/gemini_wrapper.sh b'"
-fi
-echo ""
-
-echo "=========================================="
-echo " Setup complete!"
-echo ""
-echo " Verify sessions:"
-echo "   tmux ls"
-echo ""
-echo " Attach to session:"
-echo "   tmux attach -t fas-gemini-a"
-echo "   tmux attach -t fas-gemini-b"
-echo ""
-echo " Check logs:"
-echo "   tail -f $LOG_DIR/gemini-a.log"
-echo "   tail -f $LOG_DIR/gemini-b.log"
-echo "=========================================="
-
----
-
-## 파일: [OPS] scripts/setup/setup_hunter.sh
-
-#!/usr/bin/env bash
-# Hunter machine initial setup script
-# Run this once on the hunter machine to configure the environment:
-#   chmod +x scripts/setup/setup_hunter.sh && ./scripts/setup/setup_hunter.sh
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-# Default values
-DEFAULT_PROFILE_DIR="./fas-google-profile-hunter"
-DEFAULT_CAPTAIN_URL="http://[MASKED_IP]:3100"
-
-echo "=== FAS Hunter Machine Setup ==="
-echo ""
-
-# ===== Step 0: Account isolation check (SA-001) =====
-echo "[0/8] SECURITY: Verifying account isolation..."
-
-if command -v claude &>/dev/null; then
-  CLAUDE_USER=$(claude whoami 2>/dev/null || echo "not_logged_in")
-  if echo "$CLAUDE_USER" | grep -qi "not_logged_in\|error"; then
-    echo "  ✓ Claude Code not logged in — will need Account B login"
-  else
-    echo ""
-    echo "  ⚠️  WARNING: Claude Code is already logged in as:"
-    echo "     $CLAUDE_USER"
-    echo ""
-    echo "  ╔══════════════════════════════════════════════════════════════╗"
-    echo "  ║  SECURITY CRITICAL (SA-001)                                 ║"
-    echo "  ║  헌터는 반드시 계정 B(별도 격리 계정)를 사용해야 합니다.      ║"
-    echo "  ║  주인님 개인 계정(계정 A)으로 로그인되어 있으면 보안 위반!     ║"
-    echo "  ║                                                             ║"
-    echo "  ║  계정 A(주인님 개인)라면:                                     ║"
-    echo "  ║    1. claude logout                                         ║"
-    echo "  ║    2. 계정 B로 claude login                                  ║"
-    echo "  ║                                                             ║"
-    echo "  ║  이미 계정 B라면 Enter를 눌러 계속 진행하세요.               ║"
-    echo "  ╚══════════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "  계정 B가 맞습니까? (y/N): "
-    read -r CONFIRM
-    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-      echo "  → 먼저 계정 B로 전환 후 이 스크립트를 다시 실행하세요."
-      echo "    claude logout && claude login"
-      exit 1
-    fi
-  fi
-else
-  echo "  ✓ Claude Code not installed yet — will set up with Account B"
-fi
-echo ""
-
-# ===== Step 1: Check prerequisites =====
-echo "[1/8] Checking prerequisites..."
-
-# Check Node.js version (20+)
-if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js is not installed. Install Node.js 20+ first."
-  exit 1
-fi
-
-NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 20 ]; then
-  echo "ERROR: Node.js 20+ required (found v$NODE_VERSION). Please upgrade."
-  exit 1
-fi
-echo "  ✓ Node.js $(node -v)"
-
-# Check pnpm
-if ! command -v pnpm &>/dev/null; then
-  echo "ERROR: pnpm is not installed. Install with: npm install -g pnpm"
-  exit 1
-fi
-echo "  ✓ pnpm $(pnpm -v)"
-
-# Check if Playwright is available
-if ! npx playwright --version &>/dev/null 2>&1; then
-  echo "  ! Playwright not found — will install in next step"
-else
-  echo "  ✓ Playwright $(npx playwright --version 2>/dev/null)"
-fi
-
-# ===== Step 2: Install Playwright browsers =====
-echo ""
-echo "[2/8] Installing Playwright Chromium browser..."
-cd "$PROJECT_ROOT"
-pnpm install
-npx playwright install chromium
-echo "  ✓ Chromium installed"
-
-# ===== Step 3: Create Google profile directory =====
-echo ""
-echo "[3/8] Creating Google Chrome profile directory..."
-PROFILE_DIR="${GOOGLE_PROFILE_DIR:-$DEFAULT_PROFILE_DIR}"
-
-if [ -d "$PROFILE_DIR" ]; then
-  echo "  ✓ Profile directory already exists: $PROFILE_DIR"
-else
-  mkdir -p "$PROFILE_DIR"
-  echo "  ✓ Created profile directory: $PROFILE_DIR"
-fi
-
-# ===== Step 4: Launch Chrome for manual Google login =====
-echo ""
-echo "[4/8] Launching Chrome for manual Google login..."
-echo "  → A Chrome window will open. Please:"
-echo "    1. Sign in to your Google account"
-echo "    2. Visit https://gemini.google.com/ and accept any terms"
-echo "    3. Visit https://notebooklm.google.com/ and accept any terms"
-echo "    4. Close the browser window when done"
-echo ""
-echo "  Press Enter to open Chrome..."
-read -r
-
-# Find Chromium binary — try Playwright's bundled version first
-CHROMIUM_PATH=$(npx playwright install --dry-run chromium 2>/dev/null | grep -o '/.*chromium.*' | head -1 || true)
-
-if [ -z "$CHROMIUM_PATH" ] || [ ! -f "$CHROMIUM_PATH" ]; then
-  # Fallback: use system Chrome/Chromium
-  if command -v chromium &>/dev/null; then
-    CHROMIUM_PATH="chromium"
-  elif command -v google-chrome &>/dev/null; then
-    CHROMIUM_PATH="google-chrome"
-  elif [ -f "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
-    CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  else
-    echo "  WARNING: Cannot find Chrome/Chromium binary."
-    echo "  Please manually open Chrome with: chromium --user-data-dir=$PROFILE_DIR"
-    CHROMIUM_PATH=""
-  fi
-fi
-
-if [ -n "$CHROMIUM_PATH" ]; then
-  "$CHROMIUM_PATH" --user-data-dir="$PROFILE_DIR" \
-    "https://accounts.google.com" \
-    "https://gemini.google.com/" \
-    "https://notebooklm.google.com/" &
-  CHROME_PID=$!
-  echo "  Chrome launched (PID: $CHROME_PID). Close it when login is complete."
-  echo "  Press Enter after closing Chrome..."
-  read -r
-fi
-
-# ===== Step 5: Create .env from .env.example =====
-echo ""
-echo "[5/8] Setting up .env file..."
-cd "$PROJECT_ROOT"
-
-if [ -f ".env" ]; then
-  echo "  ✓ .env already exists — skipping (edit manually if needed)"
-else
-  if [ -f ".env.example" ]; then
-    cp .env.example .env
-    # Set hunter-specific defaults
-    sed -i.bak "s|CAPTAIN_API_URL=.*|CAPTAIN_API_URL=${DEFAULT_CAPTAIN_URL}|" .env
-    sed -i.bak "s|GOOGLE_PROFILE_DIR=.*|GOOGLE_PROFILE_DIR=${PROFILE_DIR}|" .env
-    sed -i.bak "s|FAS_DEVICE=.*|FAS_DEVICE=hunter|" .env
-    rm -f .env.bak
-    echo "  ✓ Created .env from .env.example with hunter defaults"
-    echo "  → Edit .env to set CAPTAIN_API_URL to your captain's Tailscale IP"
-  else
-    echo "  WARNING: .env.example not found. Create .env manually."
-  fi
-fi
-
-# ===== Step 6: Verify Tailscale connection =====
-echo ""
-echo "[6/8] Checking Tailscale connection..."
-
-if ! command -v tailscale &>/dev/null; then
-  echo "  WARNING: Tailscale not found. Install Tailscale for secure captain connection."
-else
-  TAILSCALE_STATUS=$(tailscale status 2>/dev/null | head -1 || echo "error")
-  if echo "$TAILSCALE_STATUS" | grep -qi "logged out\|stopped\|error"; then
-    echo "  WARNING: Tailscale is not connected. Run: tailscale up"
-  else
-    echo "  ✓ Tailscale is running"
-    tailscale status 2>/dev/null | head -5
-  fi
-fi
-
-# ===== Step 7: Test API connectivity =====
-echo ""
-echo "[7/8] Testing captain API connectivity..."
-
-CAPTAIN_URL="${CAPTAIN_API_URL:-$DEFAULT_CAPTAIN_URL}"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${CAPTAIN_URL}/api/health" 2>/dev/null || echo "000")
-
-if [ "$HTTP_CODE" = "200" ]; then
-  echo "  ✓ Captain API reachable at ${CAPTAIN_URL}"
-elif [ "$HTTP_CODE" = "000" ]; then
-  echo "  WARNING: Cannot reach captain at ${CAPTAIN_URL}"
-  echo "  → Make sure captain is running and Tailscale is connected"
-else
-  echo "  WARNING: Captain returned HTTP ${HTTP_CODE}"
-fi
-
-# ===== Step 8: Final account isolation verification =====
-echo ""
-echo "[8/8] Final security check..."
-
-if command -v claude &>/dev/null; then
-  echo "  Claude Code account verification:"
-  claude whoami 2>/dev/null || echo "  (not logged in — run: claude login with Account B)"
-fi
-
-echo ""
-echo "  ╔══════════════════════════════════════════════════════════╗"
-echo "  ║  CHECKLIST (셋업 완료 전 확인)                           ║"
-echo "  ║  □ Claude Code = 계정 B (별도 격리 계정)                  ║"
-echo "  ║  □ Google Chrome 프로필 = 별도 구글 계정 (계정 A 아님)    ║"
-echo "  ║  □ ChatGPT Pro = 별도 계정                               ║"
-echo "  ║  □ 주인님 개인정보가 이 머신에 저장되지 않았는지 확인     ║"
-echo "  ╚══════════════════════════════════════════════════════════╝"
-
-# ===== Done =====
-echo ""
-echo "=== Setup Complete ==="
-echo ""
-echo "To start the hunter agent:"
-echo "  pnpm run hunter"
-echo ""
-echo "If Google login expired, re-run this script or:"
-echo "  chromium --user-data-dir=$PROFILE_DIR https://accounts.google.com"
 
 ---
 

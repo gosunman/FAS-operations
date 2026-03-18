@@ -1427,26 +1427,12 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
-  // Dev mode: only allowed when explicitly set AND not in production
-  const is_production = process.env.NODE_ENV === 'production';
-  const dev_mode_requested = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
-  const dev_mode = dev_mode_requested && !is_production;
-
-  // Guard: reject dev_mode in production environment
-  if (dev_mode_requested && is_production) {
-    console.error('[Gateway] FATAL: FAS_DEV_MODE=true is forbidden when NODE_ENV=production. Refusing to start.');
-    process.exit(1);
-  }
+  const dev_mode = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
 
   if (!process.env.HUNTER_API_KEY && !dev_mode) {
     console.error('[Gateway] FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
     console.error('[Gateway] Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
     process.exit(1);
-  }
-
-  // Warn loudly when dev mode is active — should never reach production
-  if (dev_mode) {
-    console.warn('[Gateway] ⚠️  DEV MODE ACTIVE — Hunter auth is DISABLED. Do NOT use in production.');
   }
 
   const app = create_app(store, {
@@ -2021,14 +2007,9 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
 // Browser manager for Hunter agent
 // Manages Playwright browser lifecycle with lazy initialization and cleanup
 // Uses Chromium via Playwright for all browser automation tasks
-//
-// Two modes:
-// 1. get_page() — Ephemeral browser for web_crawl/browser_task (headless OK)
-// 2. get_persistent_page() — Persistent Chrome profile for Google services
-//    (Gemini Deep Research, NotebookLM) that require cookie-based login
 
 import { chromium } from 'playwright';
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
 
 export type BrowserManagerConfig = {
   headless?: boolean;    // default: true
@@ -2038,10 +2019,6 @@ export type BrowserManagerConfig = {
 export type BrowserManager = {
   // Get a new page (lazy-initializes browser on first call)
   get_page: () => Promise<Page>;
-  // Get a page from persistent Chrome profile (for Google login sessions)
-  get_persistent_page: (profile_dir: string) => Promise<Page>;
-  // Close the persistent context only
-  close_persistent: () => Promise<void>;
   // Close browser and release resources
   close: () => Promise<void>;
 };
@@ -2055,10 +2032,6 @@ const DEFAULT_CONFIG: Required<BrowserManagerConfig> = {
 export const create_browser_manager = (config: BrowserManagerConfig = {}): BrowserManager => {
   const resolved = { ...DEFAULT_CONFIG, ...config };
   let browser: Browser | null = null;
-
-  // Persistent context state — only one at a time
-  let persistent_context: BrowserContext | null = null;
-  let persistent_profile_dir: string | null = null;
 
   // Lazy initialization — browser is launched only on first get_page() call
   const ensure_browser = async (): Promise<Browser> => {
@@ -2079,56 +2052,14 @@ export const create_browser_manager = (config: BrowserManagerConfig = {}): Brows
     return page;
   };
 
-  // Get a page from a persistent Chrome profile directory.
-  // Google services (Gemini, NotebookLM) require non-headless mode for cookie persistence.
-  // Only one persistent context is active at a time — if the profile_dir changes,
-  // the previous context is closed before opening the new one.
-  const get_persistent_page = async (profile_dir: string): Promise<Page> => {
-    // If profile_dir changed, close the old persistent context
-    if (persistent_context && persistent_profile_dir !== profile_dir) {
-      try { await persistent_context.close(); } catch { /* ignore cleanup errors */ }
-      persistent_context = null;
-      persistent_profile_dir = null;
-    }
-
-    // Create persistent context if needed
-    if (!persistent_context) {
-      persistent_context = await chromium.launchPersistentContext(profile_dir, {
-        // Google services block headless browsers — must use headed mode
-        headless: false,
-        // Standard viewport for consistent UI interaction
-        viewport: { width: 1280, height: 900 },
-      });
-      persistent_profile_dir = profile_dir;
-    }
-
-    const page = await persistent_context.newPage();
-    page.setDefaultTimeout(resolved.timeout_ms);
-    page.setDefaultNavigationTimeout(resolved.timeout_ms);
-    return page;
-  };
-
-  // Close only the persistent context (preserves the ephemeral browser)
-  const close_persistent = async (): Promise<void> => {
-    if (persistent_context) {
-      try { await persistent_context.close(); } catch { /* ignore cleanup errors */ }
-      persistent_context = null;
-      persistent_profile_dir = null;
-    }
-  };
-
   const close = async (): Promise<void> => {
-    // Close persistent context first
-    await close_persistent();
-
-    // Then close the ephemeral browser
     if (browser && browser.isConnected()) {
       await browser.close();
       browser = null;
     }
   };
 
-  return { get_page, get_persistent_page, close_persistent, close };
+  return { get_page, close };
 };
 
 ---
@@ -2144,12 +2075,6 @@ export type HunterConfig = {
   poll_interval_ms: number;
   log_dir: string;
   device_name: string;
-  // Google Chrome profile directory for persistent login sessions
-  google_profile_dir: string;
-  // Timeout for Gemini Deep Research automation (research can take 1-5 min)
-  deep_research_timeout_ms: number;
-  // Timeout for NotebookLM verification automation
-  notebooklm_timeout_ms: number;
 };
 
 export const load_hunter_config = (): HunterConfig => {
@@ -2169,9 +2094,6 @@ export const load_hunter_config = (): HunterConfig => {
     poll_interval_ms: parseInt(process.env.HUNTER_POLL_INTERVAL ?? '10000', 10),
     log_dir: process.env.HUNTER_LOG_DIR ?? './logs',
     device_name: 'hunter',
-    google_profile_dir: process.env.GOOGLE_PROFILE_DIR ?? './fas-google-profile-hunter',
-    deep_research_timeout_ms: parseInt(process.env.DEEP_RESEARCH_TIMEOUT_MS ?? '300000', 10),
-    notebooklm_timeout_ms: parseInt(process.env.NOTEBOOKLM_TIMEOUT_MS ?? '180000', 10),
   };
 };
 
@@ -2256,13 +2178,10 @@ export const create_logger = (log_dir: string): Logger => {
 //   pnpm run hunter
 //
 // Env vars:
-//   CAPTAIN_API_URL          — Captain Task API (default: http://[MASKED_IP]:3100)
-//   HUNTER_POLL_INTERVAL     — Poll interval in ms (default: 10000)
-//   HUNTER_LOG_DIR           — Log directory (default: ./logs)
-//   HUNTER_HEADLESS          — Headless browser mode (default: true)
-//   GOOGLE_PROFILE_DIR       — Chrome profile for Google login (default: ./fas-google-profile-hunter)
-//   DEEP_RESEARCH_TIMEOUT_MS — Gemini Deep Research timeout (default: 300000)
-//   NOTEBOOKLM_TIMEOUT_MS    — NotebookLM timeout (default: 180000)
+//   CAPTAIN_API_URL      — Captain Task API (default: http://[MASKED_IP]:3100)
+//   HUNTER_POLL_INTERVAL — Poll interval in ms (default: 10000)
+//   HUNTER_LOG_DIR       — Log directory (default: ./logs)
+//   HUNTER_HEADLESS      — Headless browser mode (default: true)
 
 import { load_hunter_config } from './config.js';
 import { create_api_client } from './api_client.js';
@@ -2282,19 +2201,11 @@ if (is_main) {
   const browser = create_browser_manager({ headless });
 
   const api = create_api_client({ base_url: config.captain_api_url }, logger);
-
-  // Pass Google profile and timeout config to task executor
-  const executor = create_task_executor(logger, browser, {
-    google_profile_dir: config.google_profile_dir,
-    deep_research_timeout_ms: config.deep_research_timeout_ms,
-    notebooklm_timeout_ms: config.notebooklm_timeout_ms,
-  });
-
+  const executor = create_task_executor(logger, browser);
   const loop = create_poll_loop({ api, executor, logger, config });
 
   logger.info(`Hunter agent starting — polling ${config.captain_api_url} every ${config.poll_interval_ms}ms`);
   logger.info(`Browser mode: ${headless ? 'headless' : 'headed'}`);
-  logger.info(`Google profile: ${config.google_profile_dir}`);
   loop.start();
 
   // Graceful shutdown — close browser and stop polling
@@ -2451,7 +2362,6 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
 // Dispatches tasks to Playwright-based browser handlers or structured TODOs
 
 import { mkdirSync } from 'node:fs';
-import type { Page } from 'playwright';
 import type { Task, HunterActionType, HunterTaskResult } from '../shared/types.js';
 import type { Logger } from './logger.js';
 import type { BrowserManager } from './browser.js';
@@ -2464,42 +2374,11 @@ const MAX_CONTENT_LENGTH = 10_000;
 // Output directory for screenshots and artifacts
 const OUTPUT_DIR = './output';
 
-// Polling interval for checking research completion (ms)
-const RESEARCH_POLL_INTERVAL_MS = 10_000;
-
 // ===== URL extraction helper =====
 // Extracts the first http/https URL from a text string
 export const extract_url = (text: string): string | null => {
   const match = text.match(/https?:\/\/[^\s<>"')\]]+/);
   return match ? match[0] : null;
-};
-
-// ===== Login wall detection helper =====
-// Checks if the current page is showing a Google login/sign-in screen.
-// Google services redirect to accounts.google.com when not authenticated.
-export const detect_login_wall = async (page: Page): Promise<boolean> => {
-  const url = page.url();
-
-  // Primary check: URL-based detection — Google login always redirects here
-  if (url.includes('accounts.google.com')) {
-    return true;
-  }
-
-  // Secondary check: look for "Sign in" button or heading on the page
-  // This catches cases where the login form is embedded or URL hasn't changed yet
-  try {
-    const sign_in_visible = await page.locator('text="Sign in"').first().isVisible({ timeout: 2_000 });
-    if (sign_in_visible) {
-      // Confirm it's actually a login page, not just a page mentioning "Sign in"
-      const has_google_branding = await page.locator('[data-ogsr-up], #identifierId, [data-email], input[type="email"]')
-        .first().isVisible({ timeout: 1_000 }).catch(() => false);
-      return has_google_branding;
-    }
-  } catch {
-    // Timeout or element not found — not a login wall
-  }
-
-  return false;
 };
 
 // Resolve action type from task title/description keywords
@@ -2512,24 +2391,7 @@ export const resolve_action = (task: Task): HunterActionType => {
   return 'browser_task'; // default fallback
 };
 
-export type TaskExecutorConfig = {
-  google_profile_dir: string;
-  deep_research_timeout_ms: number;
-  notebooklm_timeout_ms: number;
-};
-
-export const create_task_executor = (
-  logger: Logger,
-  browser: BrowserManager,
-  config?: TaskExecutorConfig,
-) => {
-  // Default config for backwards compatibility
-  const executor_config: TaskExecutorConfig = config ?? {
-    google_profile_dir: './fas-google-profile-hunter',
-    deep_research_timeout_ms: 300_000,
-    notebooklm_timeout_ms: 180_000,
-  };
-
+export const create_task_executor = (logger: Logger, browser: BrowserManager) => {
   // ===== web_crawl handler =====
   // Navigates to URL, extracts page title and text content
   const handle_web_crawl: ActionHandler = async (task) => {
@@ -2631,368 +2493,43 @@ export const create_task_executor = (
   };
 
   // ===== deep_research handler =====
-  // Automates Gemini Deep Research via persistent Chrome profile.
-  // Flow: navigate to Gemini → type research query → wait for completion → extract results
+  // TODO: Requires Gemini web UI automation via OpenClaw
+  // TODO: Steps needed:
+  //   1. Open Gemini Deep Research UI in browser
+  //   2. Input research query from task description
+  //   3. Wait for research completion (can take minutes)
+  //   4. Extract research results
+  //   5. Return structured output
+  // TODO: Pending OpenClaw browser automation integration
   const handle_deep_research: ActionHandler = async (task) => {
-    logger.info(`deep_research: starting for task ${task.id}`);
-    let page: Page | undefined;
+    logger.warn(`deep_research: NOT IMPLEMENTED — requires Gemini web UI automation (task: ${task.id})`);
+    logger.info('Deep Research requires Gemini web UI automation — pending OpenClaw integration');
 
-    try {
-      // Step 1: Get a page from the persistent Google profile
-      page = await browser.get_persistent_page(executor_config.google_profile_dir);
-
-      // Step 2: Navigate to Gemini web app
-      await page.goto('https://gemini.google.com/app', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      });
-
-      // Wait for page to fully load (Gemini is a SPA, needs extra time)
-      await page.waitForTimeout(3_000);
-
-      // Step 3: Check for login wall — if not authenticated, report back
-      if (await detect_login_wall(page)) {
-        logger.warn(`deep_research: Google login required for task ${task.id}`);
-        return {
-          status: 'failure',
-          output: '[LOGIN_REQUIRED] Google login session expired. Run setup_hunter.sh to re-authenticate.',
-          files: [],
-        };
-      }
-
-      // Step 4: Find the chat input textarea
-      // Gemini uses a rich text editor — try multiple selector strategies
-      const input_selector = [
-        // Rich text editor contenteditable div (primary)
-        '[contenteditable="true"][role="textbox"]',
-        // Fallback: aria-label based selector
-        '[aria-label*="prompt" i]',
-        // Fallback: generic rich text input
-        '.ql-editor',
-        // Fallback: plain textarea
-        'textarea',
-      ].join(', ');
-
-      const input = page.locator(input_selector).first();
-      await input.waitFor({ state: 'visible', timeout: 15_000 });
-
-      // Step 5: Type the research query with "Deep Research:" prefix
-      const query = `Deep Research: ${task.description ?? task.title}`;
-      await input.click();
-      await input.fill(query);
-      logger.info(`deep_research: typed query for task ${task.id}`);
-
-      // Step 6: Click the send button
-      // Gemini's send button uses various selectors depending on version
-      const send_selector = [
-        // Send button by aria-label
-        '[aria-label*="Send" i]',
-        '[aria-label*="submit" i]',
-        // Material icon send button
-        'button[mattooltip*="Send" i]',
-        // Fallback: button with send icon near the input
-        'button.send-button',
-      ].join(', ');
-
-      const send_button = page.locator(send_selector).first();
-      await send_button.waitFor({ state: 'visible', timeout: 5_000 });
-      await send_button.click();
-      logger.info(`deep_research: query submitted for task ${task.id}`);
-
-      // Step 7: Wait for research completion via polling
-      // Deep Research can take 1-5 minutes. We poll every 10 seconds
-      // looking for completion indicators in the response area.
-      const deadline = Date.now() + executor_config.deep_research_timeout_ms;
-      let research_complete = false;
-
-      while (Date.now() < deadline) {
-        await page.waitForTimeout(RESEARCH_POLL_INTERVAL_MS);
-
-        // Check for completion indicators:
-        // - "Deep Research is complete" text
-        // - Research report/result container
-        // - Stop/regenerate button appearing (indicates generation finished)
-        const page_text = await page.textContent('body') ?? '';
-        const completion_indicators = [
-          'deep research is complete',
-          'research complete',
-          'research report',
-          'here is the research',
-          'based on my research',
-        ];
-
-        const found_indicator = completion_indicators.some(
-          (indicator) => page_text.toLowerCase().includes(indicator),
-        );
-
-        if (found_indicator) {
-          research_complete = true;
-          logger.info(`deep_research: research completed for task ${task.id}`);
-          break;
-        }
-
-        // Also check if response has stopped generating (no loading spinner)
-        const is_loading = await page.locator('[class*="loading"], [class*="spinner"], [class*="progress"]')
-          .first().isVisible({ timeout: 1_000 }).catch(() => false);
-
-        // If we have substantial text and no loading indicator, consider it done
-        if (!is_loading && page_text.length > 500) {
-          // Check if the response area has content (model finished generating)
-          const response_containers = page.locator('[class*="response"], [class*="message-content"], .model-response');
-          const response_count = await response_containers.count();
-          if (response_count > 0) {
-            const last_response_text = await response_containers.last().textContent() ?? '';
-            if (last_response_text.length > 200) {
-              research_complete = true;
-              logger.info(`deep_research: response detected (no loading indicator) for task ${task.id}`);
-              break;
-            }
-          }
-        }
-
-        logger.info(`deep_research: still waiting... (${Math.round((deadline - Date.now()) / 1000)}s remaining)`);
-      }
-
-      if (!research_complete) {
-        logger.warn(`deep_research: timeout waiting for research completion (task ${task.id})`);
-        // Still try to extract whatever is on the page
-      }
-
-      // Step 8: Extract the research result text
-      // Try to get the latest model response from the conversation
-      const response_selectors = [
-        // Model response containers (Gemini-specific)
-        '[class*="model-response"]',
-        '[class*="response-container"]',
-        '[class*="message-content"]',
-        // Markdown rendered content area
-        '.markdown-content',
-        '[class*="markdown"]',
-        // Fallback: the main content area
-        'main',
-      ];
-
-      let result_text = '';
-      for (const selector of response_selectors) {
-        const elements = page.locator(selector);
-        const count = await elements.count();
-        if (count > 0) {
-          // Get the last response element (most recent answer)
-          result_text = await elements.last().textContent() ?? '';
-          if (result_text.trim().length > 100) {
-            break;
-          }
-        }
-      }
-
-      // Fallback: extract full body text if no specific response found
-      if (result_text.trim().length < 100) {
-        result_text = await page.textContent('body') ?? '';
-      }
-
-      // Step 9: Return success with extracted text (truncated)
-      const trimmed = result_text.trim().slice(0, MAX_CONTENT_LENGTH);
-      logger.info(`deep_research: extracted ${trimmed.length} chars for task ${task.id}`);
-
-      return {
-        status: 'success',
-        output: trimmed,
-        files: [],
-      };
-    } catch (err) {
-      const error_msg = err instanceof Error ? err.message : String(err);
-      logger.error(`deep_research failed for task ${task.id}: ${error_msg}`);
-      return {
-        status: 'failure',
-        output: `deep_research error: ${error_msg}`,
-        files: [],
-      };
-    } finally {
-      // Close the page but keep the persistent context alive for session reuse
-      if (page) {
-        try { await page.close(); } catch { /* ignore cleanup errors */ }
-      }
-    }
+    return {
+      status: 'failure',
+      output: '[NOT_IMPLEMENTED] Deep Research requires Gemini web UI automation — pending OpenClaw integration',
+      files: [],
+    };
   };
 
   // ===== notebooklm_verify handler =====
-  // Automates NotebookLM verification via persistent Chrome profile.
-  // Flow: navigate to NotebookLM → open notebook → ask verification query → extract response
+  // TODO: Requires NotebookLM web interaction via OpenClaw
+  // TODO: Steps needed:
+  //   1. Open NotebookLM web UI in browser
+  //   2. Upload/reference source documents
+  //   3. Input verification query from task description
+  //   4. Extract verification results
+  //   5. Return structured pass/fail output
+  // TODO: Pending OpenClaw browser automation integration
   const handle_notebooklm_verify: ActionHandler = async (task) => {
-    logger.info(`notebooklm_verify: starting for task ${task.id}`);
-    let page: Page | undefined;
+    logger.warn(`notebooklm_verify: NOT IMPLEMENTED — requires NotebookLM web automation (task: ${task.id})`);
+    logger.info('NotebookLM verification requires NotebookLM web UI automation — pending OpenClaw integration');
 
-    try {
-      const task_text = `${task.title} ${task.description ?? ''}`;
-
-      // Step 1: Get a page from the persistent Google profile
-      page = await browser.get_persistent_page(executor_config.google_profile_dir);
-
-      // Step 2: Check if the task contains a direct notebook URL
-      const notebook_url = extract_url(task_text);
-      const target_url = notebook_url && notebook_url.includes('notebooklm.google.com')
-        ? notebook_url
-        : 'https://notebooklm.google.com/';
-
-      await page.goto(target_url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      });
-
-      // Wait for SPA to fully render
-      await page.waitForTimeout(3_000);
-
-      // Step 3: Check for login wall
-      if (await detect_login_wall(page)) {
-        logger.warn(`notebooklm_verify: Google login required for task ${task.id}`);
-        return {
-          status: 'failure',
-          output: '[LOGIN_REQUIRED] Google login session expired. Run setup_hunter.sh to re-authenticate.',
-          files: [],
-        };
-      }
-
-      // Step 4: If we navigated to the main page (not a direct notebook URL),
-      // try to find the notebook by name in the list
-      if (!notebook_url || !notebook_url.includes('notebooklm.google.com/notebook/')) {
-        // Extract notebook name from task description
-        // Expected format: "notebooklm: <notebook_name> — <query>" or similar
-        const notebook_name_match = task_text.match(/notebook[_\s]*(?:lm)?[:\s]+([^—\-\n]+)/i);
-        const notebook_name = notebook_name_match?.[1]?.trim();
-
-        if (notebook_name) {
-          // Look for notebook in the list by its title text
-          const notebook_link = page.locator(`text="${notebook_name}"`).first();
-          const is_visible = await notebook_link.isVisible({ timeout: 10_000 }).catch(() => false);
-
-          if (is_visible) {
-            await notebook_link.click();
-            await page.waitForTimeout(3_000); // Wait for notebook to open
-            logger.info(`notebooklm_verify: opened notebook "${notebook_name}"`);
-          } else {
-            logger.warn(`notebooklm_verify: notebook "${notebook_name}" not found in list`);
-            return {
-              status: 'failure',
-              output: `Notebook "${notebook_name}" not found in NotebookLM. Available notebooks may have different names.`,
-              files: [],
-            };
-          }
-        }
-        // If no notebook name specified and no URL, we proceed with whatever is open
-      }
-
-      // Step 5: Find the chat/ask input in NotebookLM
-      // NotebookLM has a chat interface at the bottom of the notebook view
-      const chat_input_selector = [
-        // NotebookLM chat input area
-        '[contenteditable="true"]',
-        'textarea[placeholder*="Ask" i]',
-        'textarea[placeholder*="question" i]',
-        // Generic textarea fallback
-        'textarea',
-        // Input with role
-        '[role="textbox"]',
-      ].join(', ');
-
-      const chat_input = page.locator(chat_input_selector).first();
-      await chat_input.waitFor({ state: 'visible', timeout: 15_000 });
-
-      // Step 6: Extract the verification query from task description
-      // Try to get the query part after the notebook name
-      let query = task.description ?? task.title;
-      // Strip out notebook name/URL prefix if present
-      const query_match = query.match(/[—\-:]\s*(.+)$/s);
-      if (query_match) {
-        query = query_match[1].trim();
-      }
-
-      await chat_input.click();
-      await chat_input.fill(query);
-      logger.info(`notebooklm_verify: typed verification query for task ${task.id}`);
-
-      // Step 7: Submit the query — press Enter or click send
-      // Try send button first, fall back to Enter key
-      const send_button = page.locator(
-        '[aria-label*="Send" i], [aria-label*="Ask" i], button[type="submit"]',
-      ).first();
-      const send_visible = await send_button.isVisible({ timeout: 3_000 }).catch(() => false);
-
-      if (send_visible) {
-        await send_button.click();
-      } else {
-        await chat_input.press('Enter');
-      }
-      logger.info(`notebooklm_verify: query submitted for task ${task.id}`);
-
-      // Step 8: Wait for the response to appear
-      // NotebookLM typically responds within 10-60 seconds
-      const deadline = Date.now() + executor_config.notebooklm_timeout_ms;
-      let response_text = '';
-
-      while (Date.now() < deadline) {
-        await page.waitForTimeout(5_000);
-
-        // Look for response containers in the chat area
-        const response_selectors = [
-          // NotebookLM AI response bubbles
-          '[class*="response"]',
-          '[class*="answer"]',
-          '[class*="message"][class*="model"]',
-          '[class*="assistant"]',
-          // Markdown content in response
-          '.markdown-content',
-        ];
-
-        for (const selector of response_selectors) {
-          const elements = page.locator(selector);
-          const count = await elements.count();
-          if (count > 0) {
-            const last_text = await elements.last().textContent() ?? '';
-            if (last_text.trim().length > response_text.trim().length) {
-              response_text = last_text;
-            }
-          }
-        }
-
-        // Check if loading indicator has disappeared (response complete)
-        const is_loading = await page.locator(
-          '[class*="loading"], [class*="spinner"], [class*="typing"]',
-        ).first().isVisible({ timeout: 1_000 }).catch(() => false);
-
-        if (!is_loading && response_text.trim().length > 50) {
-          logger.info(`notebooklm_verify: response received for task ${task.id}`);
-          break;
-        }
-      }
-
-      // Fallback: if no specific response element found, grab the page text
-      if (response_text.trim().length < 50) {
-        response_text = await page.textContent('body') ?? '';
-      }
-
-      // Step 9: Return success with extracted text (truncated)
-      const trimmed = response_text.trim().slice(0, MAX_CONTENT_LENGTH);
-      logger.info(`notebooklm_verify: extracted ${trimmed.length} chars for task ${task.id}`);
-
-      return {
-        status: 'success',
-        output: trimmed,
-        files: [],
-      };
-    } catch (err) {
-      const error_msg = err instanceof Error ? err.message : String(err);
-      logger.error(`notebooklm_verify failed for task ${task.id}: ${error_msg}`);
-      return {
-        status: 'failure',
-        output: `notebooklm_verify error: ${error_msg}`,
-        files: [],
-      };
-    } finally {
-      // Close the page but keep the persistent context alive for session reuse
-      if (page) {
-        try { await page.close(); } catch { /* ignore cleanup errors */ }
-      }
-    }
+    return {
+      status: 'failure',
+      output: '[NOT_IMPLEMENTED] NotebookLM verification requires NotebookLM web UI automation — pending OpenClaw integration',
+      files: [],
+    };
   };
 
   // Action router
@@ -4438,8 +3975,6 @@ export const create_local_queue = (config: LocalQueueConfig): LocalQueue => {
 // Patterns detected:
 //   [APPROVAL_NEEDED] → Telegram urgent
 //   [BLOCKED]         → Telegram urgent
-//   [LOGIN_REQUIRED]  → Telegram urgent (hunter Google login expiry)
-//   [GEMINI_BLOCKED]  → Telegram alert (Gemini CLI crashed after retries)
 //   [MILESTONE]       → Slack #fas-general
 //   [DONE]            → Slack #captain-logs
 //   [ERROR]           → Slack #alerts
@@ -4488,18 +4023,6 @@ const WATCH_PATTERNS: WatchPattern[] = [
   {
     name: 'ERROR',
     regex: /\[ERROR\]\s*(.*)/,
-    extract: (m) => m[1]?.trim() ?? '',
-  },
-  // Hunter reports Google login session expired — needs manual re-auth
-  {
-    name: 'LOGIN_REQUIRED',
-    regex: /\[LOGIN_REQUIRED\]\s*(.*)/,
-    extract: (m) => m[1]?.trim() ?? '',
-  },
-  // Gemini CLI crashed after max retries — session needs attention
-  {
-    name: 'GEMINI_BLOCKED',
-    regex: /\[GEMINI_BLOCKED\]\s*(.*)/,
     extract: (m) => m[1]?.trim() ?? '',
   },
 ];

@@ -314,7 +314,7 @@ agents:
       escalate_after: 3
 
   openclaw:
-    display_name: "OpenClaw (ChatGPT) — Hunter Engine"
+    display_name: "OpenClaw (ChatGPT Pro) — Hunter Engine"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (main browser engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
@@ -322,7 +322,6 @@ agents:
     tmux_session: fas-openclaw
     execution_mode: oneshot
     communication: task_api           # task_api (직접 제어 아님)
-    # Plan tier: Stage 1 → Plus ($20), Stage 3 → Pro ($200)
     capabilities:
       - autonomous_browsing
       - web_automation
@@ -345,11 +344,10 @@ agents:
       escalate_after: 3
 
   claude_hunter:
-    display_name: "Claude Code — Hunter"
+    display_name: "Claude Code (Max x20) — Hunter"
     identity: "주인님의 눈 👁️ — 정보 탐색, 크롤링, 리서치 (coding/high-intelligence engine)"
     device: hunter
     account: B                        # hunter-dedicated isolated account
-    # Plan tier: Stage 1 → Pro ($20), Stage 3 → Max x20 ($200)
     autonomy: high
     tmux_session: fas-claude-hunter
     execution_mode: interactive
@@ -2365,20 +2363,20 @@ Both Captain and Hunter emit these patterns. The Watchdog on each machine captur
 
 ### 헌터 (Mac Studio #1, M1 Ultra / 32GB)
 
-주인님의 눈 👁️. 브라우저 자동화 + AI 에이전트 전용. **개인정보 접근 불가.**
+주인님의 눈 👁️. OpenClaw + Claude Code Max x20 + 웹 자동화 전용. **개인정보 접근 불가.**
 주인님과 Telegram/Slack을 통해 직접 소통 가능 (크리티컬 이슈 보고, 막연한 업무 수신).
 상세 정의: [docs/agents-charter.md](agents-charter.md)
 
-> AI 플랜은 단계적으로 확장한다. 상세: [PLAN.md "AI 플랜 확장 로드맵"](../PLAN.md)
-
-| 서비스 | 실행 방식 | Stage 1 (검증) | Stage 3 (풀 스케일) | tmux 세션 |
-| --- | --- | --- | --- | --- |
-| macOS 시스템 | — | ~5GB | ~5GB | — |
-| ChatGPT | 브라우저 자동화 | Plus (~$20) | Pro ($200) | `fas-openclaw` |
-| Claude Code | OAuth CLI (계정 B) | Pro ($20) | Max x20 ($200) | `fas-claude-hunter` |
-| 브라우저 (NotebookLM/Deep Research) | Playwright Chrome | ~2GB | ~2GB | 핸들러 내 |
-| Agent Wrapper | Node.js | ~200MB | ~200MB | `fas-wrapper` |
-| Watchdog | Node.js | ~200MB | ~200MB | `fas-watchdog` |
+| 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
+| --- | --- | --- | --- |
+| macOS 시스템 | — | ~5GB | — |
+| OpenClaw | ChatGPT Pro 브라우저 | ~2GB | `fas-openclaw` |
+| Claude Code Max x20 | OAuth CLI (계정 B) | ~500MB | `fas-claude-hunter` |
+| 브라우저 (NotebookLM/Deep Research) | Chrome | ~2GB | OpenClaw 내 |
+| Agent Wrapper | Node.js | ~200MB | `fas-wrapper` |
+| Watchdog | Node.js | ~200MB | `fas-watchdog` |
+| **합계** | | **~9.9GB** | |
+| **여유** | | **~22.1GB** | |
 
 ### MacBook Pro (M1 Pro / 32GB) — owner 전용
 
@@ -3402,7 +3400,7 @@ tail -20 logs/crashes_gemini-a.log
 | iCloud | 주인님 계정 | 별도 계정 | X |
 | Google | 주인님 계정 | 별도 계정 | X |
 | ChatGPT | — | 별도 계정 (Pro) | X |
-| Claude Code | 주인님 OAuth (계정 A, Max) | 계정 B (Stage 1: Pro → Stage 3: Max x20) | X (별도 계정) |
+| Claude Code | 주인님 OAuth (계정 A) | 계정 B (Max x20) | X (별도 계정) |
 | Tailscale | 같은 네트워크 | 같은 네트워크 | O (VPN만 공유) |
 | 파일시스템 | 직접 접근 불가 | 직접 접근 불가 | X |
 | 통신 | Task API 서버 | Task API 클라이언트 | API만 |
@@ -4860,78 +4858,25 @@ hunter_security:
 - 계정 격리 보안 계층(Defense in Depth의 최후 보루) 무력화
 
 **필요 조치** (주인님이 직접 수행):
-
-1. 헌터에서 개인정보 잔존 스캔
+1. 헌터에서 기존 Claude Code OAuth 세션 로그아웃 및 토큰 삭제
    ```bash
-   # 헌터 머신에서 실행 (또는 캡틴에서 ssh hunter)
-   cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh
-   ```
-2. 스캔 결과에 따라 정리 (셸 히스토리, git config, iCloud 등)
-3. Claude Code 로그아웃
-   ```bash
+   # 헌터 머신에서 실행
    claude logout
+   rm -rf ~/.claude/auth*
    ```
-4. 계정 B로 재인증 (플랜 확장 Stage에 따라 진행)
+2. Google 계정 보안 설정에서 헌터의 OAuth 접근 권한 해제
+   - https://myaccount.google.com/permissions → Claude Code 앱 제거
+3. 계정 B(별도 Anthropic 계정) 생성 또는 기존 보유 시 해당 계정으로 재인증
    ```bash
-   claude login    # 계정 B로
-   claude whoami   # 계정 B인지 확인
+   # 헌터 머신에서 실행 — 계정 B로 로그인
+   claude login
    ```
-5. 정리 후 재스캔으로 검증
+4. 인증 완료 후 검증
    ```bash
-   bash scripts/security/scan_hunter_pii.sh
+   claude whoami  # 계정 B인지 확인
    ```
 
 **발견 경위**: NotebookLM 교차 검증에서 Doctrine-Operations 계정 격리 불일치로 지적됨.
-
----
-
-## 헌터 개인정보 스캔 (정기 보안 점검)
-
-헌터는 "언제든 포섭될 수 있는 외부 머신"이므로, 주인님 개인정보가 잔존하지 않는지 정기적으로 점검한다.
-
-### 스캔 스크립트
-
-# 헌터에서 직접 실행
-bash scripts/security/scan_hunter_pii.sh
-
-# 또는 캡틴에서 SSH로 원격 실행
-ssh hunter 'cd ~/FAS-operations && bash scripts/security/scan_hunter_pii.sh'
-
-### 스캔 항목 (7단계)
-
-| # | 항목 | 위험도 | 확인 내용 |
-|---|------|--------|----------|
-| 1 | Claude Code 인증 | CRITICAL | 계정 A(주인님)로 로그인되어 있는지 |
-| 2 | 브라우저 프로필 | CRITICAL | Chrome/Chromium 프로필에 주인님 Google 쿠키가 있는지 |
-| 3 | 셸 히스토리 | WARNING | bash/zsh 히스토리에 개인정보 패턴이 있는지 |
-| 4 | 환경변수 / .env | CRITICAL | 캡틴 전용 시크릿(Telegram/Slack 토큰)이 헌터에 있는지 |
-| 5 | SSH / 인증 파일 | WARNING | SSH config에 개인정보가 있는지, Keychain에 인증 정보가 있는지 |
-| 6 | Doctrine / 소스코드 유출 | CRITICAL | Doctrine 디렉토리나 iCloud Drive가 헌터에 동기화되고 있는지 |
-| 7 | 파일 내용 전수 스캔 | WARNING | 주인님 이름, 이메일, 주소 등 패턴이 파일에 있는지 |
-
-### 정리 절차 (스캔 후 발견된 항목에 따라)
-
-# 1. Claude Code 로그아웃
-claude logout
-
-# 2. 셸 히스토리 삭제
-history -c && rm -f ~/.bash_history ~/.zsh_history
-
-# 3. 브라우저 프로필 초기화 (계정 B로 재로그인 필요)
-rm -rf ~/fas-google-profile-hunter
-
-# 4. Git 사용자 정보를 헌터 전용으로 변경
-git config --global user.email 'hunter@fas.local'
-git config --global user.name 'FAS Hunter'
-
-# 5. iCloud 로그아웃 (시스템 설정에서)
-# 6. 캡틴 시크릿이 .env에 있으면 해당 라인 삭제
-
-### 정기 실행 권장
-
-- SA-001 해소 직후: 1회 스캔 + 정리
-- 이후: 주 1회 또는 헌터 재초기화 시 매번 실행
-- n8n 워크플로우로 자동화 가능 (캡틴에서 SSH → 스캔 → 결과 Slack 보고)
 
 ---
 
@@ -5840,10 +5785,9 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
 - [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
 - [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
-- [ ] **⚠️ SA-001**: 헌터 Claude Code 세션 로그아웃 (`claude logout`) *(인간 작업, CRITICAL)*
+- [ ] **⚠️ SA-001**: 헌터 Claude Code OAuth 세션 계정 A → 계정 B로 교체 *(인간 작업, CRITICAL — [docs/security.md](docs/security.md) 참조)*
 - [ ] 계정 B (별도 Anthropic 계정) 생성 *(인간 작업)*
-- [ ] 헌터 AI 플랜 단계별 확장 (아래 "AI 플랜 확장 로드맵" 참조)
-- [ ] 헌터 머신 초기 세팅 — `scripts/setup/setup_hunter.sh` 실행 *(인간 작업)*
+- [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 `scripts/setup/setup_hunter.sh` 실행)*
 
 ### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
 
@@ -6218,74 +6162,6 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
           └→ Phase 6 (Phase 2 이후)
                                      ↓
                                Phase 7 (지속)
-
-## AI 플랜 확장 로드맵
-
-비용을 단계적으로 증가시키며 시스템 안정성을 검증한 후 상위 플랜으로 전환한다.
-"잘 돌아가는 것을 확인한 뒤 투자"가 원칙.
-
-### Stage 1: 검증 단계 (현재)
-
-시스템 세팅 + 통신 검증. 이미 보유한 리소스 활용.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 이미 사용 중 |
-| 캡틴 Gemini CLI | 계정 A (무료 or 기존 플랜) | $0 | 이미 사용 중 |
-| 헌터 Google AI | **계정 B Google AI ~$20 플랜 (보유)** | $20 | Gemini CLI, NotebookLM, Deep Research, Antigravity 사용 가능 |
-| 헌터 Claude Code | 미결제 (세팅 검증 후 결제) | $0 | `claude logout` 후 계정 B 준비만 |
-| 헌터 ChatGPT | 미결제 | $0 | Playwright 기반 핸들러만 테스트 |
-| **월 합계** | | **~$120** | |
-
-**이 단계의 목표:**
-- SA-001 해소: 헌터에서 계정 A 로그아웃 + 개인정보 잔존 확인
-- 헌터 ↔ 캡틴 Task API 통신 안정성 확인
-- Playwright 기반 web_crawl, browser_task 정상 실행 확인
-- 헌터 Google B 계정으로 NotebookLM, Deep Research 기본 동작 확인
-
-**승격 조건:** Task API 연속 3일 무장애, 핸들러 4종 정상 동작 확인
-
-### Stage 2: 운영 단계
-
-저가 AI 플랜으로 실제 업무를 돌리며 안정성 체감.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
-| 캡틴 Gemini CLI | 유지 | $0 | 유지 |
-| 헌터 Google AI | 계정 B (~$20 플랜) | $20 | 유지 |
-| 헌터 Claude Code | **Pro** (계정 B, ~$20) | **$20** | 코딩/분석 태스크 |
-| 헌터 ChatGPT | **Plus** (~$20) | **$20** | 브라우저 자동화 |
-| **월 합계** | | **~$160** | |
-
-**이 단계의 목표:**
-- SLEEP 모드 야간 자동 크롤링 실운영
-- 교차 검증 파이프라인 (Claude ↔ Gemini ↔ NotebookLM) 실운영
-- 헌터 태스크 처리량과 품질 측정
-- 병목 지점 식별 (토큰 한도, 속도, 품질)
-
-**승격 조건:** 주인님이 "이제 진짜 잘 돌아간다"고 판단
-
-### Stage 3: 풀 스케일
-
-검증된 시스템에 최대 화력 투입.
-
-| 에이전트 | 플랜 | 월 비용 | 비고 |
-|---------|------|---------|------|
-| 캡틴 Claude Code | Max (계정 A) | $100 | 유지 |
-| 캡틴 Gemini CLI | 유지 | $0 | 유지 |
-| 헌터 Google AI | 계정 B (유지 or 업그레이드) | $20+ | 유지 |
-| 헌터 Claude Code | **Max x20** (계정 B) | **$200** | 병렬 20세션 |
-| 헌터 ChatGPT | **Pro** ($200) | **$200** | Deep Research 무제한 |
-| **월 합계** | | **~$520** | |
-
-**이 단계의 목표:**
-- 24시간 무중단 멀티 에이전트 풀 가동
-- Phase 4 (반복 크롤러), Phase 5 (학원 자동화), Phase 6 (사업화) 본격 진행
-- Deep Research 대량 실행, NotebookLM 자동 검증
-- 주인님 개인 시간 극대화
-
----
 
 ## 리스크 & 대응
 
