@@ -210,6 +210,85 @@ describe('Notification Router', () => {
     });
   });
 
+  // === Cross-channel fallback ===
+
+  describe('emergency fallback for slack-only events', () => {
+    it('should fallback error event to Telegram when Slack fails', async () => {
+      const failing_slack = create_mock_slack();
+      (failing_slack.route as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      const router_with_failing_slack = create_notification_router({
+        telegram: mock_telegram,
+        slack: failing_slack,
+      });
+
+      const event: NotificationEvent = {
+        type: 'error',
+        message: 'Database connection lost',
+        device: 'captain',
+      };
+
+      const result = await router_with_failing_slack.route(event);
+
+      // error is slack-only, but should emergency fallback to Telegram
+      expect(result.slack).toBe(false);
+      expect(result.telegram).toBe(true);
+      expect(mock_telegram.send).toHaveBeenCalledWith(
+        '[Emergency Fallback] Database connection lost',
+        'alert',
+      );
+    });
+
+    it('should fallback milestone event to Telegram when Slack fails', async () => {
+      const failing_slack = create_mock_slack();
+      (failing_slack.route as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      const router_with_failing_slack = create_notification_router({
+        telegram: mock_telegram,
+        slack: failing_slack,
+      });
+
+      const event: NotificationEvent = {
+        type: 'milestone',
+        message: 'Phase 1 complete',
+        device: 'captain',
+      };
+
+      const result = await router_with_failing_slack.route(event);
+
+      expect(result.slack).toBe(false);
+      expect(result.telegram).toBe(true);
+      expect(mock_telegram.send).toHaveBeenCalledWith(
+        '[Emergency Fallback] Phase 1 complete',
+        'alert',
+      );
+    });
+
+    it('should use [Slack Fallback] tag for dual-route events', async () => {
+      const failing_slack = create_mock_slack();
+      (failing_slack.route as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      const router_with_failing_slack = create_notification_router({
+        telegram: mock_telegram,
+        slack: failing_slack,
+      });
+
+      // alert is dual-route (telegram + slack)
+      const event: NotificationEvent = {
+        type: 'alert',
+        message: 'System overload',
+        device: 'captain',
+      };
+
+      await router_with_failing_slack.route(event);
+
+      // Should have two calls: initial telegram send + slack fallback via telegram
+      const telegram_calls = (mock_telegram.send as ReturnType<typeof vi.fn>).mock.calls;
+      expect(telegram_calls.length).toBe(2);
+      expect(telegram_calls[1][0]).toBe('[Slack Fallback] System overload');
+    });
+  });
+
   // === get_rules() ===
 
   describe('get_rules()', () => {

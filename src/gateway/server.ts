@@ -49,6 +49,7 @@ const ALLOWED_FILE_EXTENSIONS = new Set([
 
 export type AppOptions = {
   hunter_api_key?: string;          // If set, require for /api/hunter/* (Defense in Depth)
+  dev_mode?: boolean;               // If true, skip auth when no key is configured (testing only)
   rate_limit_window_ms?: number;    // Rate limit window (default: 60s)
   rate_limit_max_requests?: number; // Max requests per window (default: 30)
   max_output_length?: number;       // Max hunter output text length (default: 50KB)
@@ -76,10 +77,18 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
   // === Hunter API key authentication middleware ===
   // Defense in Depth: even with Tailscale network auth, require app-level key
+  // No key + no dev_mode = reject all hunter requests (secure by default)
   const hunter_auth = (req: Request, res: Response, next: NextFunction): void => {
     if (!options.hunter_api_key) {
-      // No key configured — skip auth (development mode)
-      next();
+      if (options.dev_mode) {
+        // No key configured + dev mode — skip auth (testing only)
+        next();
+        return;
+      }
+      // No key configured + production — reject (secure by default)
+      console.error('[SECURITY] Hunter API key not configured — rejecting request');
+      const err = new FASError('AUTH_ERROR', 'Hunter API key not configured on server', 401);
+      res.status(401).json(err.to_json());
       return;
     }
 
@@ -370,16 +379,25 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
+  const dev_mode = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
+
+  if (!process.env.HUNTER_API_KEY && !dev_mode) {
+    console.error('[Gateway] FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
+    console.error('[Gateway] Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
+    process.exit(1);
+  }
+
   const app = create_app(store, {
     hunter_api_key: process.env.HUNTER_API_KEY,
+    dev_mode,
   });
 
   app.listen(port, host, () => {
     console.log(`[Gateway] FAS Gateway + Task API listening on ${host}:${port}`);
     if (process.env.HUNTER_API_KEY) {
       console.log('[Gateway] Hunter API key authentication: ENABLED');
-    } else {
-      console.warn('[Gateway] Hunter API key authentication: DISABLED (set HUNTER_API_KEY to enable)');
+    } else if (dev_mode) {
+      console.warn('[Gateway] Hunter API key authentication: DISABLED (dev mode)');
     }
   });
 

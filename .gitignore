@@ -12,6 +12,7 @@ logs/
 
 # Environment
 .env
+.notebooklm-mask
 .env.local
 .env.*.local
 

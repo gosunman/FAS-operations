@@ -12,6 +12,11 @@ describe('Sanitizer', () => {
       expect(sanitize_text('전화 01012345678')).toBe('전화 [전화번호 제거됨]');
     });
 
+    it('should remove phone numbers with spaces around hyphens', () => {
+      expect(sanitize_text('전화 010 - 1234 - 5678')).toBe('전화 [전화번호 제거됨]');
+      expect(sanitize_text('연락처 010 -1234- 5678')).toBe('연락처 [전화번호 제거됨]');
+    });
+
     it('should remove email addresses', () => {
       expect(sanitize_text('이메일: user@example.com')).toBe('이메일: [이메일 제거됨]');
     });
@@ -30,6 +35,10 @@ describe('Sanitizer', () => {
       expect(sanitize_text('계좌 110-123-456789')).toBe('계좌 [계좌 제거됨]');
     });
 
+    it('should remove bank account numbers with spaces around hyphens', () => {
+      expect(sanitize_text('계좌 110 - 123 - 456789')).toBe('계좌 [계좌 제거됨]');
+    });
+
     it('should remove financial amounts with labels', () => {
       expect(sanitize_text('연봉 약 5000만')).toBe('[금융정보 제거됨]');
       expect(sanitize_text('보증금: 3억')).toBe('[금융정보 제거됨]');
@@ -43,6 +52,10 @@ describe('Sanitizer', () => {
     it('should remove credit card numbers', () => {
       expect(sanitize_text('카드 1234-5678-9012-3456')).toBe('카드 [카드번호 제거됨]');
       expect(sanitize_text('카드 1234 5678 9012 3456')).toBe('카드 [카드번호 제거됨]');
+    });
+
+    it('should remove credit card numbers with spaces around separators', () => {
+      expect(sanitize_text('카드 1234 - 5678 - 9012 - 3456')).toBe('카드 [카드번호 제거됨]');
     });
 
     it('should remove internal IP addresses', () => {
@@ -164,6 +177,14 @@ describe('Sanitizer', () => {
 
     it('should return false for clean text', () => {
       expect(contains_pii('K-Startup 검색')).toBe(false);
+    });
+
+    it('should return consistent results on repeated calls (lastIndex reset)', () => {
+      // Global regex .test() advances lastIndex — calling twice could return false without reset
+      const text = '전화 010-1234-5678';
+      expect(contains_pii(text)).toBe(true);
+      expect(contains_pii(text)).toBe(true);
+      expect(contains_pii(text)).toBe(true);
     });
   });
 

@@ -1,274 +1,7 @@
 # FAS Operations — 테스트 & 스크립트 — NotebookLM 교차 검증 소스
 
-> 테스트 코드와 운영 스크립트. 생성일: 2026-03-18
-
-## 파일: [OPS] src/gateway/rate_limiter.test.ts
-
-// TDD tests for rate limiter
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { create_rate_limiter } from './rate_limiter.js';
-
-describe('RateLimiter', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('should allow requests within the limit', () => {
-    // Given
-    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
-
-    // When / Then
-    expect(limiter.is_allowed()).toBe(true);
-    expect(limiter.is_allowed()).toBe(true);
-    expect(limiter.is_allowed()).toBe(true);
-  });
-
-  it('should reject requests exceeding the limit', () => {
-    // Given
-    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 2 });
-
-    // When
-    limiter.is_allowed(); // 1st
-    limiter.is_allowed(); // 2nd
-
-    // Then
-    expect(limiter.is_allowed()).toBe(false); // 3rd — rejected
-  });
-
-  it('should allow requests again after the window expires', () => {
-    // Given
-    const limiter = create_rate_limiter({ window_ms: 1_000, max_requests: 1 });
-    limiter.is_allowed(); // 1st — allowed
-
-    // When — advance past the window
-    vi.advanceTimersByTime(1_001);
-
-    // Then — should allow again
-    expect(limiter.is_allowed()).toBe(true);
-  });
-
-  it('should track remaining requests', () => {
-    // Given
-    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
-
-    // When / Then
-    expect(limiter.remaining()).toBe(3);
-    limiter.is_allowed();
-    expect(limiter.remaining()).toBe(2);
-    limiter.is_allowed();
-    expect(limiter.remaining()).toBe(1);
-    limiter.is_allowed();
-    expect(limiter.remaining()).toBe(0);
-  });
-
-  it('should reset all tracked requests', () => {
-    // Given
-    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 1 });
-    limiter.is_allowed();
-    expect(limiter.is_allowed()).toBe(false);
-
-    // When
-    limiter.reset();
-
-    // Then
-    expect(limiter.is_allowed()).toBe(true);
-  });
-});
-
----
-
-## 파일: [OPS] src/gateway/sanitizer.test.ts
-
-// TDD tests for PII sanitizer
-import { describe, it, expect } from 'vitest';
-import { sanitize_text, sanitize_task, contains_pii, detect_pii_types, type HunterSafeTask } from './sanitizer.js';
-import type { Task } from '../shared/types.js';
-
-describe('Sanitizer', () => {
-  // === sanitize_text() ===
-
-  describe('sanitize_text()', () => {
-    it('should remove phone numbers', () => {
-      expect(sanitize_text('연락처: 010-1234-5678')).toBe('연락처: [전화번호 제거됨]');
-      expect(sanitize_text('전화 01012345678')).toBe('전화 [전화번호 제거됨]');
-    });
-
-    it('should remove email addresses', () => {
-      expect(sanitize_text('이메일: user@example.com')).toBe('이메일: [이메일 제거됨]');
-    });
-
-    it('should remove Korean resident IDs', () => {
-      expect(sanitize_text('주민번호 900101-1234567')).toBe('주민번호 [주민번호 제거됨]');
-      expect(sanitize_text('9001011234567')).toBe('[주민번호 제거됨]');
-    });
-
-    it('should remove Korean addresses', () => {
-      expect(sanitize_text('주소: 서울시 강남구')).toBe('주소: [주소 제거됨]');
-      expect(sanitize_text('경기 성남시')).toBe('[주소 제거됨]');
-    });
-
-    it('should remove bank account numbers', () => {
-      expect(sanitize_text('계좌 110-123-456789')).toBe('계좌 [계좌 제거됨]');
-    });
-
-    it('should remove financial amounts with labels', () => {
-      expect(sanitize_text('연봉 약 5000만')).toBe('[금융정보 제거됨]');
-      expect(sanitize_text('보증금: 3억')).toBe('[금융정보 제거됨]');
-    });
-
-    it('should remove labeled Korean names', () => {
-      expect(sanitize_text('이름: 홍길동')).toContain('[이름 제거됨]');
-      expect(sanitize_text('성명：김철수')).toContain('[이름 제거됨]');
-    });
-
-    it('should remove credit card numbers', () => {
-      expect(sanitize_text('카드 1234-5678-9012-3456')).toBe('카드 [카드번호 제거됨]');
-      expect(sanitize_text('카드 1234 5678 9012 3456')).toBe('카드 [카드번호 제거됨]');
-    });
-
-    it('should remove internal IP addresses', () => {
-      expect(sanitize_text('서버 [MASKED_IP]에 접속')).toBe('서버 [IP 제거됨]에 접속');
-      expect(sanitize_text('http://[MASKED_IP]:3100')).toBe('http://[IP 제거됨]:3100');
-      expect(sanitize_text('[MASKED_IP] 연결')).toBe('[IP 제거됨] 연결');
-    });
-
-    it('should not remove public IP addresses', () => {
-      // 8.8.8.8 is a public IP — should not match private/Tailscale ranges
-      expect(sanitize_text('DNS: 8.8.8.8')).toBe('DNS: 8.8.8.8');
-    });
-
-    it('should remove internal URLs (*.local, *.internal, *.ts.net)', () => {
-      expect(sanitize_text('접속: http://captain.local:3100/api/tasks'))
-        .toBe('접속: [내부URL 제거됨]');
-      expect(sanitize_text('URL: https://fas.internal/dashboard'))
-        .toBe('URL: [내부URL 제거됨]');
-      expect(sanitize_text('http://hunter.tailnet:8080'))
-        .toBe('[내부URL 제거됨]');
-      expect(sanitize_text('http://my-device.ts.net/path'))
-        .toBe('[내부URL 제거됨]');
-    });
-
-    it('should remove localhost URLs', () => {
-      expect(sanitize_text('서버 http://localhost:3100에서 실행'))
-        .toBe('서버 [내부URL 제거됨]에서 실행');
-    });
-
-    it('should not remove public URLs', () => {
-      expect(sanitize_text('https://github.com/repo')).toBe('https://github.com/repo');
-      expect(sanitize_text('https://k-startup.go.kr')).toBe('https://k-startup.go.kr');
-    });
-
-    it('should not modify text without PII', () => {
-      const clean_text = 'K-Startup 창업지원사업 검색 결과 3건';
-      expect(sanitize_text(clean_text)).toBe(clean_text);
-    });
-
-    it('should handle multiple PII types in one text', () => {
-      const text = '이름: 홍길동, 연락처: 010-1234-5678, 이메일: hong@test.com';
-      const result = sanitize_text(text);
-
-      expect(result).toContain('[이름 제거됨]');
-      expect(result).toContain('[전화번호 제거됨]');
-      expect(result).toContain('[이메일 제거됨]');
-      expect(result).not.toContain('홍길동');
-      expect(result).not.toContain('010-1234-5678');
-      expect(result).not.toContain('hong@test.com');
-    });
-  });
-
-  // === sanitize_task() ===
-
-  describe('sanitize_task()', () => {
-    const make_task = (overrides: Partial<Task> = {}): Task => ({
-      id: 'test_001',
-      title: 'Research task',
-      description: 'Find startup programs',
-      priority: 'medium',
-      assigned_to: 'openclaw',
-      mode: 'awake',
-      risk_level: 'low',
-      requires_personal_info: false,
-      status: 'pending',
-      created_at: '2026-03-17T00:00:00Z',
-      deadline: null,
-      depends_on: [],
-      ...overrides,
-    });
-
-    it('should sanitize title and description', () => {
-      const task = make_task({
-        title: '이름: 홍길동의 청약 조회',
-        description: '연락처 010-1234-5678로 결과 전달',
-      });
-
-      const sanitized = sanitize_task(task);
-
-      expect(sanitized.title).toContain('[이름 제거됨]');
-      expect(sanitized.description).toContain('[전화번호 제거됨]');
-    });
-
-    it('should only include whitelisted fields', () => {
-      const task = make_task({
-        title: 'Test',
-        requires_personal_info: true,
-        assigned_to: 'openclaw',
-      });
-      const sanitized = sanitize_task(task) as Record<string, unknown>;
-
-      // Whitelisted fields should exist
-      expect(sanitized.id).toBeDefined();
-      expect(sanitized.title).toBeDefined();
-      expect(sanitized.priority).toBeDefined();
-
-      // Non-whitelisted fields should NOT exist
-      expect(sanitized).not.toHaveProperty('requires_personal_info');
-      expect(sanitized).not.toHaveProperty('assigned_to');
-      expect(sanitized).not.toHaveProperty('depends_on');
-      expect(sanitized).not.toHaveProperty('output');
-    });
-
-    it('should not mutate the original task', () => {
-      const task = make_task({ title: '이름: 홍길동' });
-      sanitize_task(task);
-
-      expect(task.title).toBe('이름: 홍길동');
-    });
-  });
-
-  // === contains_pii() ===
-
-  describe('contains_pii()', () => {
-    it('should return true for text with PII', () => {
-      expect(contains_pii('전화 010-1234-5678')).toBe(true);
-      expect(contains_pii('user@test.com')).toBe(true);
-    });
-
-    it('should return false for clean text', () => {
-      expect(contains_pii('K-Startup 검색')).toBe(false);
-    });
-  });
-
-  // === detect_pii_types() ===
-
-  describe('detect_pii_types()', () => {
-    it('should detect all PII types present', () => {
-      const text = '연락처: 010-1234-5678, 이메일: test@test.com';
-      const types = detect_pii_types(text);
-
-      expect(types).toContain('phone_number');
-      expect(types).toContain('email');
-      expect(types).not.toContain('resident_id');
-    });
-
-    it('should return empty array for clean text', () => {
-      expect(detect_pii_types('no PII here')).toEqual([]);
-    });
-  });
-});
+> 이 파일은 FAS Operations 레포의 테스트 코드와 스크립트를 포함합니다.
+> 생성일: 2026-03-18
 
 ---
 
@@ -888,6 +621,276 @@ describe('Gateway Server', () => {
 
       rl_store.close();
     });
+  });
+});
+
+---
+
+## 파일: [OPS] src/gateway/sanitizer.test.ts
+
+// TDD tests for PII sanitizer
+import { describe, it, expect } from 'vitest';
+import { sanitize_text, sanitize_task, contains_pii, detect_pii_types, type HunterSafeTask } from './sanitizer.js';
+import type { Task } from '../shared/types.js';
+
+describe('Sanitizer', () => {
+  // === sanitize_text() ===
+
+  describe('sanitize_text()', () => {
+    it('should remove phone numbers', () => {
+      expect(sanitize_text('연락처: 010-1234-5678')).toBe('연락처: [전화번호 제거됨]');
+      expect(sanitize_text('전화 01012345678')).toBe('전화 [전화번호 제거됨]');
+    });
+
+    it('should remove email addresses', () => {
+      expect(sanitize_text('이메일: user@example.com')).toBe('이메일: [이메일 제거됨]');
+    });
+
+    it('should remove Korean resident IDs', () => {
+      expect(sanitize_text('주민번호 900101-1234567')).toBe('주민번호 [주민번호 제거됨]');
+      expect(sanitize_text('9001011234567')).toBe('[주민번호 제거됨]');
+    });
+
+    it('should remove Korean addresses', () => {
+      expect(sanitize_text('주소: 서울시 강남구')).toBe('주소: [주소 제거됨]');
+      expect(sanitize_text('경기 성남시')).toBe('[주소 제거됨]');
+    });
+
+    it('should remove bank account numbers', () => {
+      expect(sanitize_text('계좌 110-123-456789')).toBe('계좌 [계좌 제거됨]');
+    });
+
+    it('should remove financial amounts with labels', () => {
+      expect(sanitize_text('연봉 약 5000만')).toBe('[금융정보 제거됨]');
+      expect(sanitize_text('보증금: 3억')).toBe('[금융정보 제거됨]');
+    });
+
+    it('should remove labeled Korean names', () => {
+      expect(sanitize_text('이름: 홍길동')).toContain('[이름 제거됨]');
+      expect(sanitize_text('성명：김철수')).toContain('[이름 제거됨]');
+    });
+
+    it('should remove credit card numbers', () => {
+      expect(sanitize_text('카드 1234-5678-9012-3456')).toBe('카드 [카드번호 제거됨]');
+      expect(sanitize_text('카드 1234 5678 9012 3456')).toBe('카드 [카드번호 제거됨]');
+    });
+
+    it('should remove internal IP addresses', () => {
+      expect(sanitize_text('서버 100.64.0.1에 접속')).toBe('서버 [IP 제거됨]에 접속');
+      expect(sanitize_text('http://192.168.1.100:3100')).toBe('http://[IP 제거됨]:3100');
+      expect(sanitize_text('10.0.0.5 연결')).toBe('[IP 제거됨] 연결');
+    });
+
+    it('should not remove public IP addresses', () => {
+      // 8.8.8.8 is a public IP — should not match private/Tailscale ranges
+      expect(sanitize_text('DNS: 8.8.8.8')).toBe('DNS: 8.8.8.8');
+    });
+
+    it('should remove internal URLs (*.local, *.internal, *.ts.net)', () => {
+      expect(sanitize_text('접속: http://captain.local:3100/api/tasks'))
+        .toBe('접속: [내부URL 제거됨]');
+      expect(sanitize_text('URL: https://fas.internal/dashboard'))
+        .toBe('URL: [내부URL 제거됨]');
+      expect(sanitize_text('http://hunter.tailnet:8080'))
+        .toBe('[내부URL 제거됨]');
+      expect(sanitize_text('http://my-device.ts.net/path'))
+        .toBe('[내부URL 제거됨]');
+    });
+
+    it('should remove localhost URLs', () => {
+      expect(sanitize_text('서버 http://localhost:3100에서 실행'))
+        .toBe('서버 [내부URL 제거됨]에서 실행');
+    });
+
+    it('should not remove public URLs', () => {
+      expect(sanitize_text('https://github.com/repo')).toBe('https://github.com/repo');
+      expect(sanitize_text('https://k-startup.go.kr')).toBe('https://k-startup.go.kr');
+    });
+
+    it('should not modify text without PII', () => {
+      const clean_text = 'K-Startup 창업지원사업 검색 결과 3건';
+      expect(sanitize_text(clean_text)).toBe(clean_text);
+    });
+
+    it('should handle multiple PII types in one text', () => {
+      const text = '이름: 홍길동, 연락처: 010-1234-5678, 이메일: hong@test.com';
+      const result = sanitize_text(text);
+
+      expect(result).toContain('[이름 제거됨]');
+      expect(result).toContain('[전화번호 제거됨]');
+      expect(result).toContain('[이메일 제거됨]');
+      expect(result).not.toContain('홍길동');
+      expect(result).not.toContain('010-1234-5678');
+      expect(result).not.toContain('hong@test.com');
+    });
+  });
+
+  // === sanitize_task() ===
+
+  describe('sanitize_task()', () => {
+    const make_task = (overrides: Partial<Task> = {}): Task => ({
+      id: 'test_001',
+      title: 'Research task',
+      description: 'Find startup programs',
+      priority: 'medium',
+      assigned_to: 'openclaw',
+      mode: 'awake',
+      risk_level: 'low',
+      requires_personal_info: false,
+      status: 'pending',
+      created_at: '2026-03-17T00:00:00Z',
+      deadline: null,
+      depends_on: [],
+      ...overrides,
+    });
+
+    it('should sanitize title and description', () => {
+      const task = make_task({
+        title: '이름: 홍길동의 청약 조회',
+        description: '연락처 010-1234-5678로 결과 전달',
+      });
+
+      const sanitized = sanitize_task(task);
+
+      expect(sanitized.title).toContain('[이름 제거됨]');
+      expect(sanitized.description).toContain('[전화번호 제거됨]');
+    });
+
+    it('should only include whitelisted fields', () => {
+      const task = make_task({
+        title: 'Test',
+        requires_personal_info: true,
+        assigned_to: 'openclaw',
+      });
+      const sanitized = sanitize_task(task) as Record<string, unknown>;
+
+      // Whitelisted fields should exist
+      expect(sanitized.id).toBeDefined();
+      expect(sanitized.title).toBeDefined();
+      expect(sanitized.priority).toBeDefined();
+
+      // Non-whitelisted fields should NOT exist
+      expect(sanitized).not.toHaveProperty('requires_personal_info');
+      expect(sanitized).not.toHaveProperty('assigned_to');
+      expect(sanitized).not.toHaveProperty('depends_on');
+      expect(sanitized).not.toHaveProperty('output');
+    });
+
+    it('should not mutate the original task', () => {
+      const task = make_task({ title: '이름: 홍길동' });
+      sanitize_task(task);
+
+      expect(task.title).toBe('이름: 홍길동');
+    });
+  });
+
+  // === contains_pii() ===
+
+  describe('contains_pii()', () => {
+    it('should return true for text with PII', () => {
+      expect(contains_pii('전화 010-1234-5678')).toBe(true);
+      expect(contains_pii('user@test.com')).toBe(true);
+    });
+
+    it('should return false for clean text', () => {
+      expect(contains_pii('K-Startup 검색')).toBe(false);
+    });
+  });
+
+  // === detect_pii_types() ===
+
+  describe('detect_pii_types()', () => {
+    it('should detect all PII types present', () => {
+      const text = '연락처: 010-1234-5678, 이메일: test@test.com';
+      const types = detect_pii_types(text);
+
+      expect(types).toContain('phone_number');
+      expect(types).toContain('email');
+      expect(types).not.toContain('resident_id');
+    });
+
+    it('should return empty array for clean text', () => {
+      expect(detect_pii_types('no PII here')).toEqual([]);
+    });
+  });
+});
+
+---
+
+## 파일: [OPS] src/gateway/rate_limiter.test.ts
+
+// TDD tests for rate limiter
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { create_rate_limiter } from './rate_limiter.js';
+
+describe('RateLimiter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should allow requests within the limit', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
+
+    // When / Then
+    expect(limiter.is_allowed()).toBe(true);
+    expect(limiter.is_allowed()).toBe(true);
+    expect(limiter.is_allowed()).toBe(true);
+  });
+
+  it('should reject requests exceeding the limit', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 2 });
+
+    // When
+    limiter.is_allowed(); // 1st
+    limiter.is_allowed(); // 2nd
+
+    // Then
+    expect(limiter.is_allowed()).toBe(false); // 3rd — rejected
+  });
+
+  it('should allow requests again after the window expires', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 1_000, max_requests: 1 });
+    limiter.is_allowed(); // 1st — allowed
+
+    // When — advance past the window
+    vi.advanceTimersByTime(1_001);
+
+    // Then — should allow again
+    expect(limiter.is_allowed()).toBe(true);
+  });
+
+  it('should track remaining requests', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 3 });
+
+    // When / Then
+    expect(limiter.remaining()).toBe(3);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(2);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(1);
+    limiter.is_allowed();
+    expect(limiter.remaining()).toBe(0);
+  });
+
+  it('should reset all tracked requests', () => {
+    // Given
+    const limiter = create_rate_limiter({ window_ms: 60_000, max_requests: 1 });
+    limiter.is_allowed();
+    expect(limiter.is_allowed()).toBe(false);
+
+    // When
+    limiter.reset();
+
+    // Then
+    expect(limiter.is_allowed()).toBe(true);
   });
 });
 
@@ -1911,7 +1914,7 @@ describe('Slack Client', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    client = create_slack_client({ token: '[MASKED_TOKEN]' });
+    client = create_slack_client({ token: 'xoxb-test-token' });
   });
 
   // === send() tests ===
@@ -2526,479 +2529,154 @@ done
 
 ---
 
-## 파일: [OPS] scripts/generate_notebooklm_fas.sh
+## 파일: [OPS] scripts/start_captain_sessions.sh
 
 #!/usr/bin/env bash
-# generate_notebooklm_fas.sh — FAS NotebookLM review file generator
-# Generates masked review files for both Doctrine + Operations layers
-# Usage: bash scripts/generate_notebooklm_fas.sh
+# Start all FAS tmux sessions on Captain
+# Naming convention: fas-{service}
+#
+# Sessions:
+#   fas-claude    - Claude Code (interactive AI agent)
+#   fas-gemini-a  - Gemini CLI Account A (research)
+#   fas-gemini-b  - Gemini CLI Account B (validator)
+#   fas-n8n       - n8n orchestrator (Docker/Colima)
+#   fas-gateway   - Express Gateway + Task API
+#   fas-watchdog  - System watchdog daemon
 
 set -euo pipefail
 
-OPS_ROOT="${OPS_ROOT:-$HOME/FAS-operations}"
-DOCTRINE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/claude-config"
-OUTPUT_DIR="$OPS_ROOT/reviews/notebooklm"
-MASK_FILE="$OPS_ROOT/.notebooklm-mask"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-GREEN='\033[0;32m'
-NC='\033[0m'
-log() { echo -e "${GREEN}[FAS-NLM]${NC} $1"; }
+echo "[FAS] Starting Captain tmux sessions..."
 
-# ── 1. Archive previous results ──────────────────────────────────────
-archive_previous() {
-  if compgen -G "$OUTPUT_DIR"/*.md > /dev/null 2>&1; then
-    local ts
-    ts=$(date +%Y-%m-%d_%H%M%S)
-    local archive="$OUTPUT_DIR/archive/$ts"
-    mkdir -p "$archive"
-    mv "$OUTPUT_DIR"/*.md "$archive/"
-    log "Archived → archive/$ts"
-  fi
-}
+# Helper: create session if it doesn't exist
+create_session() {
+  local session_name="$1"
+  local start_command="$2"
+  local working_dir="${3:-$PROJECT_ROOT}"
 
-# ── 2. Build sed masking script ──────────────────────────────────────
-build_sed_script() {
-  local tmpfile
-  tmpfile=$(mktemp)
-
-  # Strip code fences (NotebookLM ignores fenced content)
-  cat >> "$tmpfile" << 'RULES'
-/^```/d
-/^````/d
-/^`````/d
-RULES
-
-  # Mask /Users/<real-user>/
-  echo "s|/Users/$(whoami)/|/Users/[MASKED_USER]/|g" >> "$tmpfile"
-
-  # Mask private/Tailscale IPs (BSD sed compatible, no \b)
-  cat >> "$tmpfile" << 'RULES'
-s|10\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.1[6-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.2[0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.3[01]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|192\.168\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.6[4-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.[7-9][0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.1[01][0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.12[0-7]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-RULES
-
-  # Mask token patterns
-  cat >> "$tmpfile" << 'RULES'
-s|xox[bpas]-[A-Za-z0-9_/\-]*|[MASKED_TOKEN]|g
-s|Bearer [A-Za-z0-9._\-][A-Za-z0-9._\-]*|Bearer [MASKED_TOKEN]|g
-RULES
-
-  # GitHub username in URLs
-  cat >> "$tmpfile" << 'RULES'
-s|github\.com/[A-Za-z0-9_\-][A-Za-z0-9_\-]*/|github.com/[MASKED_USER]/|g
-RULES
-
-  # Custom masks from .notebooklm-mask (format: pattern|replacement per line)
-  if [[ -f "$MASK_FILE" ]]; then
-    while IFS='|' read -r pattern replacement; do
-      [[ -z "$pattern" ]] && continue
-      [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
-      pattern=$(echo "$pattern" | xargs)
-      replacement=$(echo "$replacement" | xargs)
-      echo "s|${pattern}|${replacement}|g" >> "$tmpfile"
-    done < "$MASK_FILE"
-  fi
-
-  echo "$tmpfile"
-}
-
-# ── 3. Emit a single file with header + masked content ───────────────
-emit_file() {
-  local prefix="$1"    # [DOCTRINE] or [OPS]
-  local base="$2"      # base dir for relative path
-  local filepath="$3"  # absolute path
-  local sed_file="$4"
-
-  local rel="${filepath#"$base"/}"
-
-  echo ""
-  echo "## 파일: ${prefix} ${rel}"
-  echo ""
-
-  # .env files: mask values after = (except empty values and comments)
-  if [[ "$(basename "$filepath")" == .env ]] || [[ "$(basename "$filepath")" == .env.local ]]; then
-    sed -E 's/^([A-Za-z_]+)=.+$/\1=[MASKED_VALUE]/' "$filepath" | sed -f "$sed_file"
+  if tmux has-session -t "$session_name" 2>/dev/null; then
+    echo "[FAS] Session '$session_name' already exists, skipping."
   else
-    sed -f "$sed_file" "$filepath"
+    tmux new-session -d -s "$session_name" -c "$working_dir"
+    if [ -n "$start_command" ]; then
+      tmux send-keys -t "$session_name" "$start_command" C-m
+    fi
+    echo "[FAS] Created session '$session_name'"
   fi
-
-  echo ""
-  echo "---"
 }
 
-# ── 4. Collect and categorize files ──────────────────────────────────
-main() {
-  log "Starting FAS NotebookLM generation..."
+# === Create sessions ===
 
-  [[ -d "$OPS_ROOT" ]] || { echo "ERROR: $OPS_ROOT not found"; exit 1; }
-  [[ -d "$DOCTRINE_ROOT" ]] || { echo "ERROR: Doctrine not found"; exit 1; }
+# Gateway + Task API (start first, other services depend on it)
+create_session "fas-gateway" "pnpm run gateway" "$PROJECT_ROOT"
 
-  mkdir -p "$OUTPUT_DIR"
-  archive_previous
+# Watchdog
+create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
 
-  SED_FILE_TMP=$(build_sed_script)
-  trap 'rm -f "$SED_FILE_TMP"' EXIT
-  local sed_file="$SED_FILE_TMP"
+# n8n (Docker/Colima) — only if colima is installed
+if command -v colima &>/dev/null; then
+  create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
+else
+  echo "[FAS] Colima not installed, skipping fas-n8n session."
+fi
 
-  local mask_count
-  mask_count=$(wc -l < "$sed_file")
-  log "Masking rules: ${mask_count} patterns"
+# Claude Code — interactive session, no auto-command
+create_session "fas-claude" "" "$PROJECT_ROOT"
 
-  # ── Doctrine files ──
-  log "Scanning Doctrine..."
-  local doctrine_files=()
-  while IFS= read -r -d '' f; do
-    doctrine_files+=("$f")
-  done < <(find "$DOCTRINE_ROOT" -type f \
-    \( -name '*.md' -o -name '*.json' -o -name '*.yml' \) \
-    -not -name '.DS_Store' \
-    -not -path '*/.git/*' \
-    -not -path '*/archive/*' \
-    -not -name '*conflict*' \
-    -not -name '*(1)*' \
-    -print0 2>/dev/null | sort -z)
+# Gemini CLI sessions — placeholder until auth is configured
+create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT"
+create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJECT_ROOT"
 
-  log "  Doctrine: ${#doctrine_files[@]} files"
-
-  # ── Operations docs & config (everything except src/ and scripts/) ──
-  log "Scanning Operations..."
-  local ops_docs=()
-  while IFS= read -r -d '' f; do
-    ops_docs+=("$f")
-  done < <(find "$OPS_ROOT" -type f \
-    \( -name '*.md' -o -name '*.yml' -o -name '*.yaml' -o -name '*.json' \
-       -o -name '*.conf' -o -name '*.plist' -o -name '*.example' \
-       -o -name '*.gitignore' -o -name 'docker-compose.yml' \
-       -o -name 'tsconfig.json' -o -name 'vitest.config.ts' \
-       -o -name 'pnpm-workspace.yaml' \) \
-    -not -path '*/node_modules/*' \
-    -not -path '*/.git/*' \
-    -not -path '*/reviews/notebooklm/archive/*' \
-    -not -path '*/dist/*' -not -path '*/logs/*' -not -path '*/state/*' \
-    -not -path '*/src/*' -not -path '*/scripts/*' \
-    -not -path '*/.claude/*' \
-    -not -name 'pnpm-lock.yaml' -not -name '.DS_Store' \
-    -print0 2>/dev/null | sort -z)
-
-  log "  Docs & config: ${#ops_docs[@]} files"
-
-  # ── Operations source code (src/**/*.ts, excluding tests) ──
-  local ops_src=()
-  while IFS= read -r -d '' f; do
-    ops_src+=("$f")
-  done < <(find "$OPS_ROOT/src" -type f -name '*.ts' -not -name '*.test.ts' \
-    -print0 2>/dev/null | sort -z)
-
-  log "  Source code: ${#ops_src[@]} files"
-
-  # ── Operations tests & scripts ──
-  local ops_tests=()
-  while IFS= read -r -d '' f; do
-    ops_tests+=("$f")
-  done < <(find "$OPS_ROOT/src" -type f -name '*.test.ts' \
-    -print0 2>/dev/null | sort -z)
-
-  local ops_scripts=()
-  while IFS= read -r -d '' f; do
-    ops_scripts+=("$f")
-  done < <(find "$OPS_ROOT/scripts" -type f \
-    \( -name '*.sh' -o -name '*.ts' -o -name '*.plist' \) \
-    -print0 2>/dev/null | sort -z)
-
-  log "  Tests: ${#ops_tests[@]}, Scripts: ${#ops_scripts[@]}"
-
-  # ── Generate output files ──
-
-  log "Writing 01_doctrine.md..."
-  {
-    echo "# FAS Doctrine Layer — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> Doctrine은 FAS 클러스터의 정신, 원칙, 정체성, 보안 설계를 담당하는 Source of Truth."
-    echo "> 생성일: $(date +%Y-%m-%d)"
-    for f in "${doctrine_files[@]}"; do
-      emit_file "[DOCTRINE]" "$DOCTRINE_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/01_doctrine.md"
-
-  log "Writing 02_docs_and_config.md..."
-  {
-    echo "# FAS Operations — 문서 & 설정 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> Operations는 Doctrine(원칙/정체성)을 코드로 실현하는 계층."
-    echo "> 생성일: $(date +%Y-%m-%d)"
-    for f in "${ops_docs[@]}"; do
-      emit_file "[OPS]" "$OPS_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/02_docs_and_config.md"
-
-  log "Writing 03_source_code.md..."
-  {
-    echo "# FAS Operations — 소스 코드 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> 소스 코드 (테스트 제외). 생성일: $(date +%Y-%m-%d)"
-    for f in "${ops_src[@]}"; do
-      emit_file "[OPS]" "$OPS_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/03_source_code.md"
-
-  log "Writing 04_tests_and_scripts.md..."
-  {
-    echo "# FAS Operations — 테스트 & 스크립트 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> 테스트 코드와 운영 스크립트. 생성일: $(date +%Y-%m-%d)"
-    for f in "${ops_tests[@]}"; do
-      emit_file "[OPS]" "$OPS_ROOT" "$f" "$sed_file"
-    done
-    for f in "${ops_scripts[@]}"; do
-      emit_file "[OPS]" "$OPS_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/04_tests_and_scripts.md"
-
-  # ── Summary ──
-  log "Done! Generated files:"
-  for f in "$OUTPUT_DIR"/*.md; do
-    local lines
-    lines=$(wc -l < "$f")
-    local name
-    name=$(basename "$f")
-    log "  $name — ${lines} lines"
-  done
-
-  log ""
-  log "Next: review_prompt.md will be generated by the LLM."
-  log "Then upload all 5 files to NotebookLM."
-}
-
-main "$@"
+echo ""
+echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
+echo "[FAS] Attach to a session: tmux attach -t fas-claude"
 
 ---
 
-## 파일: [OPS] scripts/generate_notebooklm.sh
+## 파일: [OPS] scripts/stop_all.sh
 
 #!/usr/bin/env bash
-# generate_notebooklm.sh — Generic NotebookLM review file generator
-# Works for any project. Scans the current project directory.
-# Usage: bash scripts/generate_notebooklm.sh [project_root]
+# Stop all FAS tmux sessions gracefully
+# Sends SIGTERM to running processes, then kills sessions
 
 set -euo pipefail
 
-PROJECT_ROOT="${1:-$(pwd)}"
-OUTPUT_DIR="$PROJECT_ROOT/reviews/notebooklm"
-MASK_FILE="$PROJECT_ROOT/.notebooklm-mask"
+echo "[FAS] Stopping all FAS sessions..."
 
-GREEN='\033[0;32m'
-NC='\033[0m'
-log() { echo -e "${GREEN}[NLM]${NC} $1"; }
+FAS_SESSIONS=("fas-gateway" "fas-watchdog" "fas-n8n" "fas-claude" "fas-gemini-a" "fas-gemini-b" "fas-crawlers")
 
-# ── 1. Archive previous results ──────────────────────────────────────
-archive_previous() {
-  if compgen -G "$OUTPUT_DIR"/*.md > /dev/null 2>&1; then
-    local ts
-    ts=$(date +%Y-%m-%d_%H%M%S)
-    local archive="$OUTPUT_DIR/archive/$ts"
-    mkdir -p "$archive"
-    mv "$OUTPUT_DIR"/*.md "$archive/"
-    log "Archived → archive/$ts"
+for session in "${FAS_SESSIONS[@]}"; do
+  if tmux has-session -t "$session" 2>/dev/null; then
+    # Send Ctrl+C to gracefully stop running processes
+    tmux send-keys -t "$session" C-c
+    sleep 1
+    tmux kill-session -t "$session"
+    echo "[FAS] Killed session '$session'"
   fi
-}
+done
 
-# ── 2. Build sed masking script ──────────────────────────────────────
-build_sed_script() {
-  local tmpfile
-  tmpfile=$(mktemp)
+echo "[FAS] All FAS sessions stopped."
 
-  # Strip code fences
-  cat >> "$tmpfile" << 'RULES'
-/^```/d
-/^````/d
-/^`````/d
-RULES
+---
 
-  # Mask /Users/<real-user>/
-  echo "s|/Users/$(whoami)/|/Users/[MASKED_USER]/|g" >> "$tmpfile"
+## 파일: [OPS] scripts/status.sh
 
-  # Mask private/Tailscale IPs
-  cat >> "$tmpfile" << 'RULES'
-s|10\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.1[6-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.2[0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|172\.3[01]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|192\.168\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.6[4-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.[7-9][0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.1[01][0-9]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-s|100\.12[0-7]\.[0-9][0-9]*\.[0-9][0-9]*|[MASKED_IP]|g
-RULES
+#!/usr/bin/env bash
+# Show status of all FAS tmux sessions and services
 
-  # Mask token patterns
-  cat >> "$tmpfile" << 'RULES'
-s|xox[bpas]-[A-Za-z0-9_/\-]*|[MASKED_TOKEN]|g
-s|Bearer [A-Za-z0-9._\-][A-Za-z0-9._\-]*|Bearer [MASKED_TOKEN]|g
-RULES
+set -euo pipefail
 
-  # GitHub username in URLs
-  cat >> "$tmpfile" << 'RULES'
-s|github\.com/[A-Za-z0-9_\-][A-Za-z0-9_\-]*/|github.com/[MASKED_USER]/|g
-RULES
+echo "=========================================="
+echo " FAS System Status"
+echo "=========================================="
+echo ""
 
-  # Custom masks from .notebooklm-mask (format: pattern|replacement per line)
-  if [[ -f "$MASK_FILE" ]]; then
-    while IFS='|' read -r pattern replacement; do
-      [[ -z "$pattern" ]] && continue
-      [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
-      pattern=$(echo "$pattern" | xargs)
-      replacement=$(echo "$replacement" | xargs)
-      echo "s|${pattern}|${replacement}|g" >> "$tmpfile"
-    done < "$MASK_FILE"
-  fi
-
-  echo "$tmpfile"
-}
-
-# ── 3. Emit a single file ────────────────────────────────────────────
-emit_file() {
-  local base="$1"
-  local filepath="$2"
-  local sed_file="$3"
-
-  local rel="${filepath#"$base"/}"
-
-  echo ""
-  echo "## 파일: ${rel}"
-  echo ""
-
-  if [[ "$(basename "$filepath")" == .env ]] || [[ "$(basename "$filepath")" == .env.local ]]; then
-    sed -E 's/^([A-Za-z_]+)=.+$/\1=[MASKED_VALUE]/' "$filepath" | sed -f "$sed_file"
-  else
-    sed -f "$sed_file" "$filepath"
-  fi
-
-  echo ""
-  echo "---"
-}
-
-# ── 4. Main ──────────────────────────────────────────────────────────
-main() {
-  log "Scanning $PROJECT_ROOT ..."
-
-  [[ -d "$PROJECT_ROOT" ]] || { echo "ERROR: $PROJECT_ROOT not found"; exit 1; }
-
-  mkdir -p "$OUTPUT_DIR"
-  archive_previous
-
-  SED_FILE_TMP=$(build_sed_script)
-  trap 'rm -f "$SED_FILE_TMP"' EXIT
-  local sed_file="$SED_FILE_TMP"
-
-  log "Masking rules: $(wc -l < "$sed_file") patterns"
-
-  # ── Docs & config (non-src, non-scripts) ──
-  local docs=()
-  while IFS= read -r -d '' f; do
-    docs+=("$f")
-  done < <(find "$PROJECT_ROOT" -type f \
-    \( -name '*.md' -o -name '*.yml' -o -name '*.yaml' -o -name '*.json' \
-       -o -name '*.conf' -o -name '*.plist' -o -name '*.example' \
-       -o -name '.gitignore' -o -name 'tsconfig.json' \
-       -o -name 'vitest.config.ts' -o -name 'pnpm-workspace.yaml' \
-       -o -name 'docker-compose.yml' -o -name 'Dockerfile' \) \
-    -not -path '*/node_modules/*' -not -path '*/.git/*' \
-    -not -path '*/reviews/notebooklm/archive/*' \
-    -not -path '*/dist/*' -not -path '*/logs/*' -not -path '*/state/*' \
-    -not -path '*/src/*' -not -path '*/scripts/*' \
-    -not -path '*/.claude/*' \
-    -not -name 'pnpm-lock.yaml' -not -name 'package-lock.json' \
-    -not -name '.DS_Store' \
-    -print0 2>/dev/null | sort -z)
-
-  log "  Docs & config: ${#docs[@]} files"
-
-  # ── Source code (src/**/*.ts|*.js|*.py, excluding tests) ──
-  local src=()
-  if [[ -d "$PROJECT_ROOT/src" ]]; then
-    while IFS= read -r -d '' f; do
-      src+=("$f")
-    done < <(find "$PROJECT_ROOT/src" -type f \
-      \( -name '*.ts' -o -name '*.js' -o -name '*.py' -o -name '*.tsx' -o -name '*.jsx' \) \
-      -not -name '*.test.*' -not -name '*.spec.*' \
-      -print0 2>/dev/null | sort -z)
-  fi
-
-  log "  Source: ${#src[@]} files"
-
-  # ── Tests & scripts ──
-  local tests=()
-  if [[ -d "$PROJECT_ROOT/src" ]]; then
-    while IFS= read -r -d '' f; do
-      tests+=("$f")
-    done < <(find "$PROJECT_ROOT/src" -type f \
-      \( -name '*.test.*' -o -name '*.spec.*' \) \
-      -print0 2>/dev/null | sort -z)
-  fi
-
-  local scripts=()
-  if [[ -d "$PROJECT_ROOT/scripts" ]]; then
-    while IFS= read -r -d '' f; do
-      scripts+=("$f")
-    done < <(find "$PROJECT_ROOT/scripts" -type f \
-      \( -name '*.sh' -o -name '*.ts' -o -name '*.js' -o -name '*.py' \) \
-      -print0 2>/dev/null | sort -z)
-  fi
-
-  log "  Tests: ${#tests[@]}, Scripts: ${#scripts[@]}"
-
-  # ── Write output ──
-
-  log "Writing 01_docs_and_config.md..."
-  {
-    echo "# 문서 & 설정 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> 생성일: $(date +%Y-%m-%d)"
-    for f in "${docs[@]}"; do
-      emit_file "$PROJECT_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/01_docs_and_config.md"
-
-  log "Writing 02_source_code.md..."
-  {
-    echo "# 소스 코드 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> 소스 코드 (테스트 제외). 생성일: $(date +%Y-%m-%d)"
-    for f in "${src[@]}"; do
-      emit_file "$PROJECT_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/02_source_code.md"
-
-  log "Writing 03_tests_and_scripts.md..."
-  {
-    echo "# 테스트 & 스크립트 — NotebookLM 교차 검증 소스"
-    echo ""
-    echo "> 생성일: $(date +%Y-%m-%d)"
-    for f in "${tests[@]}"; do
-      emit_file "$PROJECT_ROOT" "$f" "$sed_file"
-    done
-    for f in "${scripts[@]}"; do
-      emit_file "$PROJECT_ROOT" "$f" "$sed_file"
-    done
-  } > "$OUTPUT_DIR/03_tests_and_scripts.md"
-
-  # ── Summary ──
-  log "Done! Generated files:"
-  for f in "$OUTPUT_DIR"/*.md; do
-    log "  $(basename "$f") — $(wc -l < "$f") lines"
+# === tmux sessions ===
+echo "tmux Sessions:"
+echo "------------------------------------------"
+if tmux list-sessions 2>/dev/null | grep -q "fas-"; then
+  tmux list-sessions 2>/dev/null | grep "fas-" | while read -r line; do
+    echo "  $line"
   done
-  log ""
-  log "Next: LLM will generate review_prompt.md"
-}
+else
+  echo "  No FAS sessions running"
+fi
+echo ""
 
-main "$@"
+# === Gateway health check ===
+echo "Gateway (port 3100):"
+echo "------------------------------------------"
+if curl -s --max-time 2 http://localhost:3100/api/health >/dev/null 2>&1; then
+  HEALTH=$(curl -s --max-time 2 http://localhost:3100/api/health)
+  echo "  Online - $HEALTH"
+else
+  echo "  Offline"
+fi
+echo ""
+
+# === Docker/n8n ===
+echo "Docker (Colima):"
+echo "------------------------------------------"
+if command -v colima &>/dev/null && colima status 2>/dev/null | grep -q "Running"; then
+  echo "  Colima running"
+  if command -v docker &>/dev/null; then
+    docker ps --format "  {{.Names}} ({{.Status}})" 2>/dev/null || echo "  Docker not responding"
+  fi
+else
+  echo "  Colima not running"
+fi
+echo ""
+
+# === System resources ===
+echo "System Resources:"
+echo "------------------------------------------"
+echo "  CPU: $(sysctl -n hw.ncpu) cores"
+echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
+echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
+echo ""
+echo "=========================================="
 
 ---
 
@@ -3016,7 +2694,7 @@ main "$@"
 import fs from "node:fs";
 import path from "node:path";
 
-// ── Constants ──────────────────────────────────────────────────────────
+// -- Constants --
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
 const OUTPUT_DIR = path.join(PROJECT_ROOT, "reviews", "notebooklm");
@@ -3042,7 +2720,7 @@ const EXCLUDE_FILES = new Set([
 // File that should NOT be overwritten
 const PRESERVE_FILE = "03_review_prompt.md";
 
-// ── Masking Functions ──────────────────────────────────────────────────
+// -- Masking Functions --
 
 /**
  * Apply all masking rules to file content.
@@ -3054,7 +2732,7 @@ const mask_sensitive = (content: string): string => {
   // 1. Telegram bot token pattern: digits:alphanumeric (e.g., 123456789:ABCdefGHI_jklMNO)
   result = result.replace(/\b\d{8,10}:[A-Za-z0-9_-]{30,50}\b/g, "[MASKED_TOKEN]");
 
-  // 2. Slack token pattern ([MASKED_TOKEN]..., [MASKED_TOKEN]..., [MASKED_TOKEN]..., [MASKED_TOKEN]...)
+  // 2. Slack token pattern (xoxb-..., xoxp-..., xoxa-..., xoxs-...)
   result = result.replace(/xox[bpas]-[A-Za-z0-9\-]+/g, "[MASKED_TOKEN]");
 
   // 3. GitHub URLs with username [MASKED_OWNER]
@@ -3065,8 +2743,8 @@ const mask_sensitive = (content: string): string => {
   // Also catch [MASKED_OWNER] as a whole
   result = result.replace(/\b[MASKED_OWNER]\b/gi, "[MASKED_OWNER]");
 
-  // 5. File paths containing /Users/[MASKED_USER]/ → /Users/[MASKED_USER]/
-  result = result.replace(/\/Users\/user\//g, "/Users/[MASKED_USER]/");
+  // 5. File paths containing /Users/[MASKED_USER]/ -> /Users/[MASKED_USER]/
+  result = result.replace(/\/Users\/[MASKED_USER]\//g, "/Users/[MASKED_USER]/");
 
   // 6. Private IP addresses
   //    100.x.x.x (Tailscale), 192.168.x.x, 10.x.x.x, 172.16-31.x.x
@@ -3095,7 +2773,7 @@ const mask_sensitive = (content: string): string => {
   return result;
 };
 
-// ── File Collection ────────────────────────────────────────────────────
+// -- File Collection --
 
 type FileEntry = {
   relative_path: string;
@@ -3141,7 +2819,7 @@ const collect_files = (dir: string, base: string = PROJECT_ROOT): FileEntry[] =>
   return entries;
 };
 
-// ── Categorization ─────────────────────────────────────────────────────
+// -- Categorization --
 
 type Category = {
   filename: string;
@@ -3197,14 +2875,14 @@ const categorize = (rel: string): number => {
   if ([".md", ".yml", ".yaml", ".json", ".example", ".plist", ".conf"].includes(ext)) return 0;
   if (basename === ".gitignore") return 0;
 
-  // Fallback: vitest.config.ts, tsconfig.json → config
+  // Fallback: vitest.config.ts, tsconfig.json -> config
   if (basename === "vitest.config.ts") return 0;
 
-  // Anything else → docs_and_config
+  // Anything else -> docs_and_config
   return 0;
 };
 
-// ── Main ───────────────────────────────────────────────────────────────
+// -- Main --
 
 const main = () => {
   console.log("=== FAS Review File Generator ===");
@@ -3264,7 +2942,7 @@ const main = () => {
     lines.push("");
 
     // File entries
-    // Use 5-backtick fences to avoid collision with inner code fences (``` inside .md files)
+    // Use 5-backtick fences to avoid collision with inner code fences (inside .md files)
     for (const file of cat.files) {
       const lang = get_lang(file.relative_path);
       const masked_content = mask_sensitive(file.content);
@@ -3307,55 +2985,54 @@ main();
 
 ---
 
-## 파일: [OPS] scripts/setup/com.fas.captain.plist
+## 파일: [OPS] scripts/test_notifications.ts
 
-<!-- FAS Captain launchd plist
-     Auto-starts FAS tmux sessions on login.
+// Quick integration test: send real messages to Telegram and Slack
+import 'dotenv/config';
+import { create_telegram_client } from '../src/notification/telegram.js';
+import { create_slack_client } from '../src/notification/slack.js';
 
-     Install:
-       cp scripts/setup/com.fas.captain.plist ~/Library/LaunchAgents/
-       launchctl load ~/Library/LaunchAgents/com.fas.captain.plist
+const run = async () => {
+  let telegram_ok = false;
+  let slack_ok = false;
 
-     Uninstall:
-       launchctl unload ~/Library/LaunchAgents/com.fas.captain.plist
-       rm ~/Library/LaunchAgents/com.fas.captain.plist
--->
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.fas.captain</string>
+  // === Telegram ===
+  console.log('[TEST] Telegram 전송 중...');
+  try {
+    const tg = create_telegram_client({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
+      chat_id: process.env.TELEGRAM_CHAT_ID!,
+    });
+    const result = await tg.send('*FAS 테스트* — Telegram 연동 성공!', 'alert');
+    telegram_ok = result.success;
+    console.log('[Telegram]', result.success ? '성공' : '실패', result);
+    tg.stop();
+  } catch (err) {
+    console.error('[Telegram] 에러:', err);
+  }
 
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>-l</string>
-        <string>-c</string>
-        <string>/Users/[MASKED_USER]/FAS-operations/scripts/start_captain_sessions.sh</string>
-    </array>
+  // === Slack ===
+  console.log('[TEST] Slack 전송 중...');
+  try {
+    const slack = create_slack_client({
+      token: process.env.SLACK_BOT_TOKEN!,
+    });
+    const result = await slack.send('#fas-alerts', '*FAS 테스트* — Slack 연동 성공!');
+    slack_ok = result;
+    console.log('[Slack]', result ? '성공' : '실패');
+  } catch (err) {
+    console.error('[Slack] 에러:', err);
+  }
 
-    <key>RunAtLoad</key>
-    <true/>
+  // === Summary ===
+  console.log('\n========== 결과 ==========');
+  console.log(`Telegram: ${telegram_ok ? 'OK' : 'FAIL'}`);
+  console.log(`Slack:    ${slack_ok ? 'OK' : 'FAIL'}`);
 
-    <key>KeepAlive</key>
-    <false/>
+  process.exit(telegram_ok && slack_ok ? 0 : 1);
+};
 
-    <key>StandardOutPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/launchd_captain.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/[MASKED_USER]/FAS-operations/logs/launchd_captain_error.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>/Users/user</string>
-    </dict>
-</dict>
-</plist>
+run();
 
 ---
 
@@ -3373,40 +3050,40 @@ echo "=========================================="
 echo ""
 
 # === 1. Claude Code ===
-echo "📎 [1/4] Claude Code (Captain)"
+echo "[1/4] Claude Code (Captain)"
 echo "------------------------------------------"
 if command -v claude &>/dev/null; then
-  echo "  ✅ Claude Code CLI installed"
-  echo "  🔑 Auth: Run 'claude' and follow OAuth login (Max plan)"
+  echo "  Claude Code CLI installed"
+  echo "  Auth: Run 'claude' and follow OAuth login (Max plan)"
 else
-  echo "  ❌ Claude Code not installed"
-  echo "  📋 Install: npm install -g @anthropic-ai/claude-code"
+  echo "  Claude Code not installed"
+  echo "  Install: npm install -g @anthropic-ai/claude-code"
 fi
 echo ""
 
 # === 2. Gemini CLI ===
-echo "🔮 [2/4] Gemini CLI (Captain — 2 accounts)"
+echo "[2/4] Gemini CLI (Captain — 2 accounts)"
 echo "------------------------------------------"
 if command -v gemini &>/dev/null; then
-  echo "  ✅ Gemini CLI installed"
+  echo "  Gemini CLI installed"
 else
-  echo "  ❌ Gemini CLI not installed"
-  echo "  📋 Install: npm install -g @google/gemini-cli"
+  echo "  Gemini CLI not installed"
+  echo "  Install: npm install -g @google/gemini-cli"
 fi
 echo ""
 echo "  Account A (Research): Set GEMINI_API_KEY_A in .env"
 echo "  Account B (Validator): Set GEMINI_API_KEY_B in .env"
 echo ""
-echo "  💡 Profile separation:"
+echo "  Profile separation:"
 echo "    - Create ~/.gemini/profile_a.json and profile_b.json"
 echo "    - Each session uses GEMINI_PROFILE env var to switch"
 echo ""
 
 # === 3. OpenClaw (Hunter) ===
-echo "🐱 [3/4] OpenClaw / ChatGPT Pro (Hunter)"
+echo "[3/4] OpenClaw / ChatGPT Pro (Hunter)"
 echo "------------------------------------------"
-echo "  ⚠️  Setup on HUNTER machine (not Captain)"
-echo "  📋 Steps:"
+echo "  Setup on HUNTER machine (not Captain)"
+echo "  Steps:"
 echo "    1. SSH to hunter: ssh hunter"
 echo "    2. Install OpenClaw (browser automation for ChatGPT)"
 echo "    3. Login with ChatGPT Pro account (isolated Google account)"
@@ -3414,10 +3091,10 @@ echo "    4. Verify: no personal info in hunter's environment"
 echo ""
 
 # === 4. Environment file ===
-echo "📄 [4/4] Environment Variables"
+echo "[4/4] Environment Variables"
 echo "------------------------------------------"
 if [ -f .env ]; then
-  echo "  ✅ .env file exists"
+  echo "  .env file exists"
   echo "  Checking required vars..."
 
   REQUIRED_VARS=(
@@ -3429,14 +3106,14 @@ if [ -f .env ]; then
 
   for var in "${REQUIRED_VARS[@]}"; do
     if grep -q "^${var}=" .env 2>/dev/null; then
-      echo "    ✅ $var is set"
+      echo "    $var is set"
     else
-      echo "    ❌ $var is missing"
+      echo "    $var is missing"
     fi
   done
 else
-  echo "  ❌ .env file not found"
-  echo "  📋 Create from template: cp .env.example .env"
+  echo "  .env file not found"
+  echo "  Create from template: cp .env.example .env"
 fi
 
 echo ""
@@ -3531,7 +3208,7 @@ RESURRECT_DIR="$TMUX_PLUGINS_DIR/tmux-resurrect"
 if [ ! -d "$RESURRECT_DIR" ]; then
   echo "[FAS] Installing tmux-resurrect..."
   mkdir -p "$TMUX_PLUGINS_DIR"
-  git clone https://github.com/[MASKED_USER]/tmux-resurrect "$RESURRECT_DIR"
+  git clone https://github.com/tmux-plugins/tmux-resurrect "$RESURRECT_DIR"
   echo "[FAS] tmux-resurrect installed at $RESURRECT_DIR"
 else
   echo "[FAS] tmux-resurrect already installed."
@@ -3567,207 +3244,5 @@ fi
 
 echo "[FAS] tmux setup complete!"
 echo "[FAS] Run 'scripts/start_captain_sessions.sh' to create all FAS sessions."
-
----
-
-## 파일: [OPS] scripts/start_captain_sessions.sh
-
-#!/usr/bin/env bash
-# Start all FAS tmux sessions on Captain
-# Naming convention: fas-{service}
-#
-# Sessions:
-#   fas-claude    - Claude Code (interactive AI agent)
-#   fas-gemini-a  - Gemini CLI Account A (research)
-#   fas-gemini-b  - Gemini CLI Account B (validator)
-#   fas-n8n       - n8n orchestrator (Docker/Colima)
-#   fas-gateway   - Express Gateway + Task API
-#   fas-watchdog  - System watchdog daemon
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-echo "[FAS] Starting Captain tmux sessions..."
-
-# Helper: create session if it doesn't exist
-create_session() {
-  local session_name="$1"
-  local start_command="$2"
-  local working_dir="${3:-$PROJECT_ROOT}"
-
-  if tmux has-session -t "$session_name" 2>/dev/null; then
-    echo "[FAS] Session '$session_name' already exists, skipping."
-  else
-    tmux new-session -d -s "$session_name" -c "$working_dir"
-    if [ -n "$start_command" ]; then
-      tmux send-keys -t "$session_name" "$start_command" C-m
-    fi
-    echo "[FAS] Created session '$session_name'"
-  fi
-}
-
-# === Create sessions ===
-
-# Gateway + Task API (start first, other services depend on it)
-create_session "fas-gateway" "pnpm run gateway" "$PROJECT_ROOT"
-
-# Watchdog
-create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
-
-# n8n (Docker/Colima) — only if colima is installed
-if command -v colima &>/dev/null; then
-  create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
-else
-  echo "[FAS] Colima not installed, skipping fas-n8n session."
-fi
-
-# Claude Code — interactive session, no auto-command
-create_session "fas-claude" "" "$PROJECT_ROOT"
-
-# Gemini CLI sessions — placeholder until auth is configured
-create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT"
-create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJECT_ROOT"
-
-echo ""
-echo "[FAS] Captain sessions ready. List with: tmux list-sessions"
-echo "[FAS] Attach to a session: tmux attach -t fas-claude"
-
----
-
-## 파일: [OPS] scripts/status.sh
-
-#!/usr/bin/env bash
-# Show status of all FAS tmux sessions and services
-
-set -euo pipefail
-
-echo "=========================================="
-echo " FAS System Status"
-echo "=========================================="
-echo ""
-
-# === tmux sessions ===
-echo "📺 tmux Sessions:"
-echo "------------------------------------------"
-if tmux list-sessions 2>/dev/null | grep -q "fas-"; then
-  tmux list-sessions 2>/dev/null | grep "fas-" | while read -r line; do
-    echo "  ✅ $line"
-  done
-else
-  echo "  ❌ No FAS sessions running"
-fi
-echo ""
-
-# === Gateway health check ===
-echo "🌐 Gateway (port 3100):"
-echo "------------------------------------------"
-if curl -s --max-time 2 http://localhost:3100/api/health >/dev/null 2>&1; then
-  HEALTH=$(curl -s --max-time 2 http://localhost:3100/api/health)
-  echo "  ✅ Online - $HEALTH"
-else
-  echo "  ❌ Offline"
-fi
-echo ""
-
-# === Docker/n8n ===
-echo "🐳 Docker (Colima):"
-echo "------------------------------------------"
-if command -v colima &>/dev/null && colima status 2>/dev/null | grep -q "Running"; then
-  echo "  ✅ Colima running"
-  if command -v docker &>/dev/null; then
-    docker ps --format "  📦 {{.Names}} ({{.Status}})" 2>/dev/null || echo "  ❌ Docker not responding"
-  fi
-else
-  echo "  ❌ Colima not running"
-fi
-echo ""
-
-# === System resources ===
-echo "💻 System Resources:"
-echo "------------------------------------------"
-echo "  CPU: $(sysctl -n hw.ncpu) cores"
-echo "  RAM: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))GB total"
-echo "  Disk: $(df -h / | awk 'NR==2 {print $4 " available"}')"
-echo ""
-echo "=========================================="
-
----
-
-## 파일: [OPS] scripts/stop_all.sh
-
-#!/usr/bin/env bash
-# Stop all FAS tmux sessions gracefully
-# Sends SIGTERM to running processes, then kills sessions
-
-set -euo pipefail
-
-echo "[FAS] Stopping all FAS sessions..."
-
-FAS_SESSIONS=("fas-gateway" "fas-watchdog" "fas-n8n" "fas-claude" "fas-gemini-a" "fas-gemini-b" "fas-crawlers")
-
-for session in "${FAS_SESSIONS[@]}"; do
-  if tmux has-session -t "$session" 2>/dev/null; then
-    # Send Ctrl+C to gracefully stop running processes
-    tmux send-keys -t "$session" C-c
-    sleep 1
-    tmux kill-session -t "$session"
-    echo "[FAS] Killed session '$session'"
-  fi
-done
-
-echo "[FAS] All FAS sessions stopped."
-
----
-
-## 파일: [OPS] scripts/test_notifications.ts
-
-// Quick integration test: send real messages to Telegram and Slack
-import 'dotenv/config';
-import { create_telegram_client } from '../src/notification/telegram.js';
-import { create_slack_client } from '../src/notification/slack.js';
-
-const run = async () => {
-  let telegram_ok = false;
-  let slack_ok = false;
-
-  // === Telegram ===
-  console.log('[TEST] Telegram 전송 중...');
-  try {
-    const tg = create_telegram_client({
-      token: process.env.TELEGRAM_BOT_TOKEN!,
-      chat_id: process.env.TELEGRAM_CHAT_ID!,
-    });
-    const result = await tg.send('🧪 *FAS 테스트* — Telegram 연동 성공!', 'alert');
-    telegram_ok = result.success;
-    console.log('[Telegram]', result.success ? '✅ 성공' : '❌ 실패', result);
-    tg.stop();
-  } catch (err) {
-    console.error('[Telegram] ❌ 에러:', err);
-  }
-
-  // === Slack ===
-  console.log('[TEST] Slack 전송 중...');
-  try {
-    const slack = create_slack_client({
-      token: process.env.SLACK_BOT_TOKEN!,
-    });
-    const result = await slack.send('#fas-alerts', '🧪 *FAS 테스트* — Slack 연동 성공!');
-    slack_ok = result;
-    console.log('[Slack]', result ? '✅ 성공' : '❌ 실패');
-  } catch (err) {
-    console.error('[Slack] ❌ 에러:', err);
-  }
-
-  // === Summary ===
-  console.log('\n========== 결과 ==========');
-  console.log(`Telegram: ${telegram_ok ? '✅' : '❌'}`);
-  console.log(`Slack:    ${slack_ok ? '✅' : '❌'}`);
-
-  process.exit(telegram_ok && slack_ok ? 0 : 1);
-};
-
-run();
 
 ---

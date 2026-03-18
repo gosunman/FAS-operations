@@ -150,7 +150,8 @@ FAS는 두 계층으로 분리된다:
 ```
 FAS-operations/
 ├── src/
-│   ├── gateway/          # Task API 서버 (Express, SQLite)
+│   ├── gateway/          # Task API 서버 (Express, SQLite) + 교차 승인
+│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
 │   ├── hunter/           # 헌터 에이전트 래퍼 (Task API 폴링 클라이언트)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬

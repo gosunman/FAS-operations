@@ -60,6 +60,7 @@
 | `CAPTAIN_API_URL` | N* | Captain API URL — 헌터 전용 |
 | `HUNTER_POLL_INTERVAL` | N | 폴링 주기 ms — 헌터 전용 (기본: 10000) |
 | `HUNTER_LOG_DIR` | N | 헌터 로그 디렉토리 (기본: ./logs) |
+| `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false) |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
 | `N8N_USER` | N | n8n 관리자 ID |
@@ -85,6 +86,14 @@
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`)
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
 - **main.ts**: 진입점 (`pnpm run hunter`)
+
+### Captain (`src/captain/`)
+- **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지.
+- **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
+
+### Cross-Approval (`src/gateway/cross_approval.ts`)
+- Gemini CLI 교차 승인 모듈. MID 리스크 액션에 대해 Gemini CLI spawn → JSON 파싱 → 승인/거부 결정.
+- 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
 - **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림)

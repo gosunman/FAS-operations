@@ -123,12 +123,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 2-1. 교차 승인 프로토콜 구현
 
-- [ ] 승인 요청 표준 포맷 정의
-- [ ] 승인 게이트웨이 서비스 (TypeScript)
+- [x] 승인 요청 표준 포맷 정의 — `CrossApprovalResult`, `CrossApprovalConfig` 타입 (`src/shared/types.ts`)
+- [x] Gemini CLI 교차 승인 모듈 — `src/gateway/cross_approval.ts`
   - `LOW` → 즉시 실행, 로그만 기록
-  - `MID` → 다른 AI에게 검증 요청 → 승인/거부
+  - `MID` → Gemini CLI spawn → JSON 응답 파싱 → 승인/거부
   - `HIGH` → Telegram으로 인간에게 전송 → 응답 대기
-- [ ] 교차 검증 로직:
+  - 10분 타임아웃 / JSON 파싱 실패 → 자동 거부 (secure by default)
+- [ ] 교차 검증 로직 (n8n 워크플로우 통합):
   - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
   - 불일치 시 → NotebookLM(헌터)에게 검증 요청
   - 최종 불일치 시 → 무조건 인간 승인

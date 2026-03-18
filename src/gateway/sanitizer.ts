@@ -27,10 +27,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /\d{6}-?[1-4]\d{6}/g,
     replacement: '[주민번호 제거됨]',
   },
-  // Phone numbers (010-xxxx-xxxx variants)
+  // Phone numbers (010-xxxx-xxxx variants, with optional spaces around hyphens)
   {
     name: 'phone_number',
-    regex: /01[016789]-?\d{3,4}-?\d{4}/g,
+    regex: /01[016789]\s*-?\s*\d{3,4}\s*-?\s*\d{4}/g,
     replacement: '[전화번호 제거됨]',
   },
   // Email addresses
@@ -45,10 +45,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[시도]?\s+[가-힣]+[시군구]/g,
     replacement: '[주소 제거됨]',
   },
-  // Credit card numbers (4 groups of 4 digits) — must be before bank_account
+  // Credit card numbers (4 groups of 4 digits, with optional spaces) — must be before bank_account
   {
     name: 'credit_card',
-    regex: /\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b/g,
+    regex: /\b\d{4}\s*[- ]\s*\d{4}\s*[- ]\s*\d{4}\s*[- ]\s*\d{4}\b/g,
     replacement: '[카드번호 제거됨]',
   },
   // IP addresses (private/Tailscale ranges) — must be before bank_account
@@ -57,10 +57,10 @@ const PII_PATTERNS: SanitizePattern[] = [
     regex: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[0-2]\d)\.\d{1,3}\.\d{1,3})\b/g,
     replacement: '[IP 제거됨]',
   },
-  // Bank account numbers (3-4 digit groups with hyphens)
+  // Bank account numbers (3-4 digit groups with hyphens, with optional spaces)
   {
     name: 'bank_account',
-    regex: /\d{3,4}-\d{2,6}-\d{2,6}/g,
+    regex: /\d{3,4}\s*-\s*\d{2,6}\s*-\s*\d{2,6}/g,
     replacement: '[계좌 제거됨]',
   },
   // Financial amounts with labels
@@ -115,7 +115,11 @@ export const sanitize_task = (task: Task): HunterSafeTask => ({
 // === Check if text contains PII ===
 
 export const contains_pii = (text: string): boolean => {
-  return PII_PATTERNS.some((pattern) => pattern.regex.test(text));
+  return PII_PATTERNS.some((pattern) => {
+    // Reset lastIndex for global regex to avoid stateful matching bugs
+    pattern.regex.lastIndex = 0;
+    return pattern.regex.test(text);
+  });
 };
 
 // === Get detected PII types in text ===

@@ -2643,9 +2643,9 @@ main() {
   mkdir -p "$OUTPUT_DIR"
   archive_previous
 
-  SED_FILE_TMP=$(build_sed_script)
-  trap 'rm -f "$SED_FILE_TMP"' EXIT
-  local sed_file="$SED_FILE_TMP"
+  local sed_file
+  sed_file=$(build_sed_script)
+  trap 'rm -f "$sed_file"' EXIT
 
   local mask_count
   mask_count=$(wc -l < "$sed_file")
@@ -2893,9 +2893,9 @@ main() {
   mkdir -p "$OUTPUT_DIR"
   archive_previous
 
-  SED_FILE_TMP=$(build_sed_script)
-  trap 'rm -f "$SED_FILE_TMP"' EXIT
-  local sed_file="$SED_FILE_TMP"
+  local sed_file
+  sed_file=$(build_sed_script)
+  trap 'rm -f "$sed_file"' EXIT
 
   log "Masking rules: $(wc -l < "$sed_file") patterns"
 

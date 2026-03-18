@@ -199,4 +199,53 @@ describe('TaskStore', () => {
       expect(titles).toContain('Second');
     });
   });
+
+  // === busy_timeout ===
+
+  describe('busy_timeout', () => {
+    it('should configure busy_timeout via config', () => {
+      const custom_store = create_task_store({ db_path: ':memory:', busy_timeout_ms: 10000 });
+      const timeout = custom_store._db.pragma('busy_timeout') as { timeout: number }[];
+      expect(timeout[0].timeout).toBe(10000);
+      custom_store.close();
+    });
+
+    it('should default to 5000ms busy_timeout', () => {
+      const timeout = store._db.pragma('busy_timeout') as { timeout: number }[];
+      expect(timeout[0].timeout).toBe(5000);
+    });
+  });
+
+  // === run_in_transaction() ===
+
+  describe('run_in_transaction()', () => {
+    it('should execute multiple operations atomically', () => {
+      const task1 = store.create({ title: 'Transaction Test 1', assigned_to: 'claude' });
+      const task2 = store.create({ title: 'Transaction Test 2', assigned_to: 'claude' });
+
+      store.run_in_transaction(() => {
+        store.update_status(task1.id, 'in_progress');
+        store.update_status(task2.id, 'in_progress');
+      });
+
+      expect(store.get_by_id(task1.id)!.status).toBe('in_progress');
+      expect(store.get_by_id(task2.id)!.status).toBe('in_progress');
+    });
+
+    it('should rollback on error', () => {
+      const task = store.create({ title: 'Rollback Test', assigned_to: 'claude' });
+
+      try {
+        store.run_in_transaction(() => {
+          store.update_status(task.id, 'in_progress');
+          throw new Error('Simulated failure');
+        });
+      } catch {
+        // expected
+      }
+
+      // Status should be unchanged due to rollback
+      expect(store.get_by_id(task.id)!.status).toBe('pending');
+    });
+  });
 });

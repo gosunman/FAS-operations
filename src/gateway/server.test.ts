@@ -9,10 +9,11 @@ import { create_task_store, type TaskStore } from './task_store.js';
 
 const TEST_API_KEY = 'test-hunter-secret-key-abc123';
 
-const create_test_app = (opts: { with_auth?: boolean } = {}) => {
+const create_test_app = (opts: { with_auth?: boolean; dev_mode?: boolean } = {}) => {
   const store = create_task_store({ db_path: ':memory:' });
   const app = create_app(store, {
     hunter_api_key: opts.with_auth ? TEST_API_KEY : undefined,
+    dev_mode: opts.dev_mode ?? true,  // Default to dev mode for tests
     rate_limit_window_ms: 60_000,
     rate_limit_max_requests: 30,
     max_output_length: 1_000,  // Small limit for testing
@@ -398,6 +399,17 @@ describe('Gateway Server', () => {
       expect(auth_res.status).toBe(200);
     });
 
+    it('should reject hunter requests when no API key and no dev mode', async () => {
+      const { store: strict_store, app: strict_app } = create_test_app({ dev_mode: false });
+
+      const res = await request(strict_app).get('/api/hunter/tasks/pending');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('AUTH_ERROR');
+      expect(res.body.message).toContain('not configured');
+
+      strict_store.close();
+    });
+
     it('should NOT require auth for captain endpoints', async () => {
       // Captain endpoints should work without API key even when auth is enabled
       const res = await request(auth_app)
@@ -574,6 +586,7 @@ describe('Gateway Server', () => {
       // Create app with very low rate limit for testing
       const rl_store = create_task_store({ db_path: ':memory:' });
       const rl_app = create_app(rl_store, {
+        dev_mode: true,
         rate_limit_window_ms: 60_000,
         rate_limit_max_requests: 2,  // Only 2 requests per minute
       });
@@ -596,6 +609,7 @@ describe('Gateway Server', () => {
     it('should not rate limit captain endpoints', async () => {
       const rl_store = create_task_store({ db_path: ':memory:' });
       const rl_app = create_app(rl_store, {
+        dev_mode: true,
         rate_limit_window_ms: 60_000,
         rate_limit_max_requests: 1,  // Very strict — 1 request per minute
       });

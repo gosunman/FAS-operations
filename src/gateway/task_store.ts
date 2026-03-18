@@ -8,7 +8,8 @@ import type { Task, TaskStatus, RiskLevel } from '../shared/types.js';
 // === Task store using SQLite ===
 
 export type TaskStoreConfig = {
-  db_path: string; // ':memory:' for testing
+  db_path: string;             // ':memory:' for testing
+  busy_timeout_ms?: number;    // SQLite busy timeout (default: 5000ms)
 };
 
 export const create_task_store = (config: TaskStoreConfig) => {
@@ -17,6 +18,8 @@ export const create_task_store = (config: TaskStoreConfig) => {
   // Enable WAL mode for better concurrent read performance
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Busy timeout: wait instead of failing immediately on SQLITE_BUSY
+  db.pragma(`busy_timeout = ${config.busy_timeout_ms ?? 5000}`);
 
   // === Initialize schema ===
   db.exec(`
@@ -183,6 +186,11 @@ export const create_task_store = (config: TaskStoreConfig) => {
     return rows.map(row_to_task);
   };
 
+  // Run a function inside a SQLite transaction (atomic, auto-rollback on error)
+  const run_in_transaction = <T>(fn: () => T): T => {
+    return db.transaction(fn)();
+  };
+
   const close = () => {
     db.close();
   };
@@ -198,6 +206,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
     quarantine_task,
     get_stats,
     get_all,
+    run_in_transaction,
     close,
     _db: db, // for testing
   };

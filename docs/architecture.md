@@ -133,6 +133,49 @@
   캡틴 ↔ 헌터: Task API만 (Tailscale 내부)
 ```
 
+## 교차 승인 플로우 (Cross-Approval)
+
+```text
+캡틴 Claude Code
+  │
+  ├── MID 리스크 액션 (git commit, 파일 쓰기 등)
+  │     │
+  │     ▼
+  │   cross_approval.ts
+  │     │
+  │     ├── Gemini CLI 프로세스 spawn
+  │     │     └── "이 액션을 승인하시겠습니까?" (JSON 응답)
+  │     │
+  │     ├── 승인 → 액션 실행
+  │     ├── 거부 → 액션 차단 + 로그
+  │     └── 타임아웃(10분) / 파싱 실패 → 자동 거부 (secure by default)
+  │
+  ├── HIGH 리스크 액션 (git push, 배포, 외부 API)
+  │     └── Telegram → 인간 승인 (기존 approval_high 플로우)
+  │
+  └── LOW 리스크 액션 (파일 읽기, 검색)
+        └── 자동 실행, 로그만 기록
+```
+
+## 자율 활동 엔진 (Planning Loop)
+
+```text
+07:30 Morning
+  │
+  ├── planning_loop.run_morning()
+  │     ├── config/schedules.yml 읽기
+  │     ├── 오늘 due인 태스크 산출 (daily / every_3_days / weekly)
+  │     ├── 중복 검사 (이미 pending/in_progress/최근 완료)
+  │     ├── TaskStore에 태스크 주입
+  │     └── [Morning Briefing] 알림 전송 (Telegram + Slack)
+  │
+23:00 Night
+  │
+  └── planning_loop.run_night()
+        ├── 일일 통계 집계 (done / blocked / pending)
+        └── [Night Summary] 알림 전송
+```
+
 ## 디렉토리 구조
 
 ```text
@@ -162,7 +205,8 @@ FAS-operations/
 │   └── cost.md                    # 비용 관리
 │
 ├── src/
-│   ├── gateway/                   # 승인 게이트웨이 + Task API
+│   ├── gateway/                   # 승인 게이트웨이 + Task API + 교차 승인
+│   ├── captain/                   # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
 │   ├── agents/                    # 에이전트 래퍼
 │   ├── orchestrator/              # n8n 커스텀 노드 & 워크플로우
 │   ├── notification/              # 알림 (Telegram + Slack + Notion)

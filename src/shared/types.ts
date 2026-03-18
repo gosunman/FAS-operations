@@ -147,6 +147,23 @@ export type HunterPendingTasksResponse = {
   count: number;
 };
 
+// === Cross Approval Types ===
+
+export type CrossApprovalDecision = 'approved' | 'rejected';
+
+export type CrossApprovalResult = {
+  decision: CrossApprovalDecision;
+  reason: string;
+  reviewed_by: string;   // e.g. 'gemini_a', 'gemini_b'
+  reviewed_at: string;   // ISO 8601
+};
+
+export type CrossApprovalConfig = {
+  gemini_command?: string;        // CLI command to invoke Gemini (default: 'gemini')
+  timeout_ms?: number;            // Timeout for approval request (default: 600_000 = 10 min)
+  auto_reject_on_error?: boolean; // Auto-reject on parse/timeout error (default: true)
+};
+
 // === Gateway Types ===
 
 export type ApprovalRequest = {
