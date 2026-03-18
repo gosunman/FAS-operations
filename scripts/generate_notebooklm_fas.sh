@@ -7,7 +7,7 @@ set -euo pipefail
 
 OPS_ROOT="${OPS_ROOT:-$HOME/FAS-operations}"
 DOCTRINE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/claude-config"
-OUTPUT_DIR="$OPS_ROOT/reviews/notebooklm"
+OUTPUT_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/FAS-reviews/notebooklm"
 MASK_FILE="$OPS_ROOT/.notebooklm-mask"
 
 GREEN='\033[0;32m'

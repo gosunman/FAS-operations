@@ -6,7 +6,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${1:-$(pwd)}"
-OUTPUT_DIR="$PROJECT_ROOT/reviews/notebooklm"
+OUTPUT_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/FAS-reviews/notebooklm"
 MASK_FILE="$PROJECT_ROOT/.notebooklm-mask"
 
 GREEN='\033[0;32m'
