@@ -1,0 +1,114 @@
+{
+  "name": "FAS Token Usage Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "command": "# Parse Claude Code usage from log files\nCLAUDE_LOG=\"$HOME/FAS-operations/logs/claude-usage.log\"\nGEMINI_LOG=\"$HOME/FAS-operations/logs/gemini-usage.log\"\n\n# Count today's entries\nTODAY=$(date +%Y-%m-%d)\nCLAUDE_COUNT=$(grep -c \"$TODAY\" \"$CLAUDE_LOG\" 2>/dev/null || echo 0)\nGEMINI_COUNT=$(grep -c \"$TODAY\" \"$GEMINI_LOG\" 2>/dev/null || echo 0)\n\necho \"{\\\"date\\\": \\\"$TODAY\\\", \\\"claude_requests\\\": $CLAUDE_COUNT, \\\"gemini_requests\\\": $GEMINI_COUNT, \\\"timestamp\\\": \\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"}\""
+      },
+      "id": "collect-usage",
+      "name": "Collect Token Usage",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse usage data and check thresholds\nconst raw = $input.first().json.stdout || '{}';\nlet usage;\ntry {\n  usage = JSON.parse(raw);\n} catch {\n  usage = { date: new Date().toISOString().slice(0, 10), claude_requests: 0, gemini_requests: 0 };\n}\n\n// Daily limits (configurable via env)\nconst CLAUDE_DAILY_LIMIT = parseInt($env.CLAUDE_DAILY_LIMIT || '1000');\nconst GEMINI_DAILY_LIMIT = parseInt($env.GEMINI_DAILY_LIMIT || '500');\n\nconst claude_pct = (usage.claude_requests / CLAUDE_DAILY_LIMIT) * 100;\nconst gemini_pct = (usage.gemini_requests / GEMINI_DAILY_LIMIT) * 100;\n\nconst alerts = [];\nif (claude_pct > 80) alerts.push(`Claude: ${usage.claude_requests}/${CLAUDE_DAILY_LIMIT} (${claude_pct.toFixed(0)}%)`);\nif (gemini_pct > 80) alerts.push(`Gemini: ${usage.gemini_requests}/${GEMINI_DAILY_LIMIT} (${gemini_pct.toFixed(0)}%)`);\n\nreturn [{\n  json: {\n    ...usage,\n    claude_pct: claude_pct.toFixed(1),\n    gemini_pct: gemini_pct.toFixed(1),\n    has_warning: alerts.length > 0,\n    warning_message: alerts.length > 0 ? `⚠️ Token Usage Warning:\\n${alerts.join('\\n')}` : ''\n  }\n}];"
+      },
+      "id": "analyze-usage",
+      "name": "Analyze Usage",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /data/reports/token_usage && echo '{{ JSON.stringify($json) }}' >> /data/reports/token_usage/$(date +%Y-%m-%d).jsonl"
+      },
+      "id": "log-usage",
+      "name": "Log Usage",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_warning }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-warning",
+      "name": "Over Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "text", "value": "={{ $json.warning_message }}" }
+          ]
+        }
+      },
+      "id": "slack-warn",
+      "name": "Slack Warning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 350]
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
+            { "name": "text", "value": "={{ $json.warning_message }}" }
+          ]
+        }
+      },
+      "id": "telegram-warn",
+      "name": "Telegram Warning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 500]
+    }
+  ],
+  "connections": {
+    "Every Hour": { "main": [[{ "node": "Collect Token Usage", "type": "main", "index": 0 }]] },
+    "Collect Token Usage": { "main": [[{ "node": "Analyze Usage", "type": "main", "index": 0 }]] },
+    "Analyze Usage": { "main": [[{ "node": "Log Usage", "type": "main", "index": 0 }, { "node": "Over Threshold?", "type": "main", "index": 0 }]] },
+    "Over Threshold?": {
+      "main": [
+        [{ "node": "Slack Warning", "type": "main", "index": 0 }, { "node": "Telegram Warning", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [{ "name": "fas-monitoring" }]
+}

@@ -1,0 +1,114 @@
+{
+  "name": "FAS Resource Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 10 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "command": "echo '{' && echo '\"cpu_idle\": '$(top -l 1 | grep 'CPU usage' | awk '{print $7}' | tr -d '%')',' && echo '\"disk_usage_pct\": '$(df -h / | tail -1 | awk '{print $5}' | tr -d '%')',' && echo '\"memory_pressure\": \"'$(memory_pressure | head -1 | awk '{print $NF}')'\",'\n&& echo '\"timestamp\": \"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"' && echo '}'"
+      },
+      "id": "exec-stats",
+      "name": "Collect System Stats",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse system stats and check thresholds\nconst raw = $input.first().json.stdout || '{}';\nlet stats;\ntry {\n  stats = JSON.parse(raw);\n} catch {\n  stats = { cpu_idle: 100, disk_usage_pct: 0, memory_pressure: 'normal', timestamp: new Date().toISOString() };\n}\n\nconst cpu_usage = 100 - (parseFloat(stats.cpu_idle) || 0);\nconst disk_pct = parseInt(stats.disk_usage_pct) || 0;\nconst mem_pressure = stats.memory_pressure || 'normal';\n\nconst alerts = [];\nif (cpu_usage > 80) alerts.push(`CPU: ${cpu_usage.toFixed(1)}%`);\nif (disk_pct > 90) alerts.push(`Disk: ${disk_pct}%`);\nif (mem_pressure !== 'normal' && mem_pressure !== 'The system has normal memory') alerts.push(`Memory: ${mem_pressure}`);\n\nconst has_alert = alerts.length > 0;\n\nreturn [{\n  json: {\n    cpu_usage: cpu_usage.toFixed(1),\n    disk_pct,\n    memory_pressure: mem_pressure,\n    timestamp: stats.timestamp,\n    has_alert,\n    alert_message: has_alert ? `⚠️ FAS Resource Alert:\\n${alerts.join('\\n')}` : 'All resources normal'\n  }\n}];"
+      },
+      "id": "analyze-stats",
+      "name": "Analyze Stats",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_alert }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-alert",
+      "name": "Has Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
+            { "name": "text", "value": "={{ $json.alert_message }}" }
+          ]
+        }
+      },
+      "id": "telegram-alert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "text", "value": "={{ $json.alert_message }}" }
+          ]
+        }
+      },
+      "id": "slack-alert",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /data/reports/resource && echo '{{ JSON.stringify($json) }}' >> /data/reports/resource/$(date +%Y-%m-%d).jsonl"
+      },
+      "id": "log-stats",
+      "name": "Log to File",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1120, 550]
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": { "main": [[{ "node": "Collect System Stats", "type": "main", "index": 0 }]] },
+    "Collect System Stats": { "main": [[{ "node": "Analyze Stats", "type": "main", "index": 0 }]] },
+    "Analyze Stats": { "main": [[{ "node": "Has Alert?", "type": "main", "index": 0 }, { "node": "Log to File", "type": "main", "index": 0 }]] },
+    "Has Alert?": {
+      "main": [
+        [{ "node": "Telegram Alert", "type": "main", "index": 0 }, { "node": "Slack Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [{ "name": "fas-monitoring" }]
+}
