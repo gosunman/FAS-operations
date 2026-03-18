@@ -83,6 +83,23 @@ with open('$BUNDLE/package.json', 'w') as f:
     json.dump(pkg, f, indent=2)
 "
 
+# Hunter operational scripts
+mkdir -p "$BUNDLE/scripts/setup"
+mkdir -p "$BUNDLE/scripts/deploy"
+mkdir -p "$BUNDLE/scripts/security"
+
+cp "$PROJECT_ROOT/scripts/setup/setup_hunter.sh" "$BUNDLE/scripts/setup/" 2>/dev/null || true
+cp "$PROJECT_ROOT/scripts/deploy/verify_hunter.sh" "$BUNDLE/scripts/deploy/" 2>/dev/null || true
+cp "$PROJECT_ROOT/scripts/security/scan_hunter_pii.sh" "$BUNDLE/scripts/security/" 2>/dev/null || true
+cp "$PROJECT_ROOT/scripts/hunter_watchdog.sh" "$BUNDLE/scripts/" 2>/dev/null || true
+
+# Hunter docs (non-sensitive)
+mkdir -p "$BUNDLE/hunter"
+cp "$PROJECT_ROOT/hunter/"*.md "$BUNDLE/hunter/" 2>/dev/null || true
+
+# NOTE: .notebooklm-mask contains PII patterns — do NOT send to hunter
+# PII scanning runs on captain side only (scan_hunter_pii.sh uses SSH)
+
 # Count what we're sending
 FILE_COUNT=$(find "$BUNDLE" -type f | wc -l | tr -d ' ')
 echo "  ✓ Bundle: $FILE_COUNT files (hunter code + shared types + build config only)"
