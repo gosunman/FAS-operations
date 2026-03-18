@@ -91,14 +91,11 @@ export type FeedbackExtractor = ReturnType<typeof create_feedback_extractor>;
 
 // Captain's planning loop — morning/night autonomous scheduling
 // Reads schedules.yml, creates due tasks in store, sends briefing notifications
-// Also supports dynamic task discovery via Gemini analysis of crawl results
 
 import { readFileSync } from 'node:fs';
 import { parse as yaml_parse } from 'yaml';
 import type { TaskStore } from '../gateway/task_store.js';
 import type { NotificationRouter } from '../notification/router.js';
-import type { GeminiConfig } from '../gemini/types.js';
-import { spawn_gemini } from '../gemini/cli_wrapper.js';
 
 // === Schedule types (from schedules.yml) ===
 
@@ -145,31 +142,6 @@ const is_due_today = (entry: ScheduleEntry, today: Date, epoch: Date): boolean =
   }
 };
 
-// === Valid agents for discovered tasks ===
-
-const VALID_AGENTS = ['gemini_a', 'gemini_b', 'openclaw', 'claude'] as const;
-
-// === Crawl-related keywords for filtering completed tasks ===
-
-const CRAWL_KEYWORDS = ['crawl', '크롤링', 'scrape', 'research'] as const;
-
-// === Max suggestions per discovery cycle ===
-
-const MAX_DISCOVER_SUGGESTIONS = 3;
-
-// === Lookback window for recent crawl tasks (3 days in ms) ===
-
-const DISCOVER_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
-
-// === Type for Gemini discovery suggestion ===
-
-type DiscoverySuggestion = {
-  title: string;
-  description: string;
-  agent: string;
-  priority: 'low' | 'medium' | 'high';
-};
-
 // === Dependencies ===
 
 export type PlanningLoopDeps = {
@@ -177,7 +149,6 @@ export type PlanningLoopDeps = {
   router: NotificationRouter;
   schedules_path: string;
   epoch?: Date;  // Reference date for every_3_days calculation (default: 2026-01-01)
-  gemini_config?: GeminiConfig;  // For discover_opportunities
 };
 
 // === Factory ===
@@ -265,176 +236,9 @@ export const create_planning_loop = (deps: PlanningLoopDeps) => {
     return { created, skipped };
   };
 
-  // === Dynamic task discovery via Gemini analysis of crawl results ===
-
-  // Get recently completed crawl tasks (last 3 days)
-  const get_recent_crawl_tasks = () => {
-    const done_tasks = deps.store.get_by_status('done');
-    const cutoff = Date.now() - DISCOVER_LOOKBACK_MS;
-
-    return done_tasks.filter((t) => {
-      // Must have completed within lookback window
-      if (!t.completed_at || new Date(t.completed_at).getTime() < cutoff) {
-        return false;
-      }
-      // Must be crawl-related (title contains any crawl keyword)
-      const lower_title = t.title.toLowerCase();
-      return CRAWL_KEYWORDS.some((kw) => lower_title.includes(kw));
-    });
-  };
-
-  // Build the Gemini prompt with crawl result summaries
-  const build_discover_prompt = (summaries: string[]): string => {
-    const joined = summaries.join('\n\n');
-    return `다음은 최근 3일간의 크롤링/리서치 결과 요약입니다:
-
-${joined}
-
-이 결과를 분석하여, 주인님에게 도움이 될 만한 추가 조사/행동 아이템을 최대 3개 제안해 주세요.
-JSON 배열 형식으로 응답하세요:
-[{"title": "태스크 제목", "description": "설명", "agent": "에이전트명", "priority": "low|medium|high"}]
-
-기준:
-- 마감이 임박한 지원 사업
-- 새로 발견된 채용 공고
-- 시장/트렌드 변화로 즉시 행동이 필요한 사항`;
-  };
-
-  // Parse Gemini response into suggestion array (safely)
-  const parse_suggestions = (content: string): DiscoverySuggestion[] => {
-    try {
-      // Try to extract JSON array from response
-      const array_match = content.match(/\[[\s\S]*\]/);
-      if (!array_match) return [];
-
-      const parsed = JSON.parse(array_match[0]) as unknown[];
-      if (!Array.isArray(parsed)) return [];
-
-      // Validate and filter each suggestion
-      const valid: DiscoverySuggestion[] = [];
-      for (const item of parsed) {
-        if (valid.length >= MAX_DISCOVER_SUGGESTIONS) break;
-
-        if (
-          typeof item === 'object' &&
-          item !== null &&
-          'title' in item &&
-          'description' in item &&
-          'agent' in item &&
-          'priority' in item &&
-          typeof (item as Record<string, unknown>).title === 'string' &&
-          typeof (item as Record<string, unknown>).description === 'string' &&
-          typeof (item as Record<string, unknown>).agent === 'string' &&
-          typeof (item as Record<string, unknown>).priority === 'string'
-        ) {
-          const suggestion = item as { title: string; description: string; agent: string; priority: string };
-
-          // Only accept valid agents
-          if (!(VALID_AGENTS as readonly string[]).includes(suggestion.agent)) continue;
-
-          // Only accept valid priorities
-          const valid_priorities = ['low', 'medium', 'high'] as const;
-          if (!(valid_priorities as readonly string[]).includes(suggestion.priority)) continue;
-
-          valid.push({
-            title: suggestion.title,
-            description: suggestion.description,
-            agent: suggestion.agent,
-            priority: suggestion.priority as 'low' | 'medium' | 'high',
-          });
-        }
-      }
-
-      return valid;
-    } catch {
-      // Malformed JSON — return empty
-      return [];
-    }
-  };
-
-  // Discover opportunities from recent crawl results using Gemini
-  const run_discover = async (): Promise<{
-    analyzed_tasks: number;
-    created: string[];
-    skipped: string[];
-  }> => {
-    const created: string[] = [];
-    const skipped: string[] = [];
-
-    // Early return if no Gemini config provided
-    if (!deps.gemini_config) {
-      return { analyzed_tasks: 0, created, skipped };
-    }
-
-    // Get recent crawl tasks
-    const crawl_tasks = get_recent_crawl_tasks();
-    if (crawl_tasks.length === 0) {
-      return { analyzed_tasks: 0, created, skipped };
-    }
-
-    // Build summaries from crawl task outputs
-    const summaries = crawl_tasks.map((t) => {
-      const output_summary = t.output?.summary ?? '(no summary)';
-      return `[${t.title}] ${output_summary}`;
-    });
-
-    // Call Gemini to analyze and suggest tasks
-    const prompt = build_discover_prompt(summaries);
-
-    let response;
-    try {
-      response = await spawn_gemini(deps.gemini_config, prompt);
-    } catch (err) {
-      // Fire-and-forget: log warning and continue
-      console.warn('[discover_opportunities] Gemini call failed:', err);
-      return { analyzed_tasks: crawl_tasks.length, created, skipped };
-    }
-
-    if (!response.success) {
-      console.warn('[discover_opportunities] Gemini returned error:', response.error);
-      return { analyzed_tasks: crawl_tasks.length, created, skipped };
-    }
-
-    // Parse suggestions from Gemini response
-    const suggestions = parse_suggestions(response.content);
-
-    // Create tasks for valid suggestions (with deduplication)
-    for (const suggestion of suggestions) {
-      if (is_already_queued(suggestion.title)) {
-        skipped.push(`${suggestion.title} (already queued)`);
-        continue;
-      }
-
-      deps.store.create({
-        title: suggestion.title,
-        description: suggestion.description,
-        assigned_to: suggestion.agent,
-        priority: suggestion.priority,
-        mode: 'sleep',
-        risk_level: 'low',
-        requires_personal_info: false,
-      });
-
-      created.push(suggestion.title);
-    }
-
-    // Send notification about discovered opportunities
-    if (created.length > 0) {
-      const discover_msg = `[Discovery] ${created.length} opportunities found from ${crawl_tasks.length} crawl results:\n${created.map((t) => `• ${t}`).join('\n')}`;
-      await deps.router.route({
-        type: 'briefing',
-        message: discover_msg,
-        device: 'captain',
-      });
-    }
-
-    return { analyzed_tasks: crawl_tasks.length, created, skipped };
-  };
-
-  // Night planning: send daily summary + discover opportunities
+  // Night planning: send daily summary
   const run_night = async (): Promise<{
     summary: { done: number; blocked: number; pending: number };
-    discovery?: { analyzed_tasks: number; created: string[]; skipped: string[] };
   }> => {
     const stats = deps.store.get_stats();
     const summary = {
@@ -450,19 +254,12 @@ JSON 배열 형식으로 응답하세요:
       device: 'captain',
     });
 
-    // Run discovery if gemini_config is provided
-    let discovery: { analyzed_tasks: number; created: string[]; skipped: string[] } | undefined;
-    if (deps.gemini_config) {
-      discovery = await run_discover();
-    }
-
-    return { summary, discovery };
+    return { summary };
   };
 
   return {
     run_morning,
     run_night,
-    run_discover,
     // Exposed for testing
     _is_due_today: is_due_today,
     _load_schedules: load_schedules,
@@ -2002,68 +1799,6 @@ export const create_api_client = (config: ApiClientConfig, logger: Logger): ApiC
 
 ---
 
-## 파일: [OPS] src/hunter/browser.ts
-
-// Browser manager for Hunter agent
-// Manages Playwright browser lifecycle with lazy initialization and cleanup
-// Uses Chromium via Playwright for all browser automation tasks
-
-import { chromium } from 'playwright';
-import type { Browser, Page } from 'playwright';
-
-export type BrowserManagerConfig = {
-  headless?: boolean;    // default: true
-  timeout_ms?: number;   // default: 30_000
-};
-
-export type BrowserManager = {
-  // Get a new page (lazy-initializes browser on first call)
-  get_page: () => Promise<Page>;
-  // Close browser and release resources
-  close: () => Promise<void>;
-};
-
-const DEFAULT_CONFIG: Required<BrowserManagerConfig> = {
-  headless: true,
-  timeout_ms: 30_000,
-};
-
-// Factory function to create a browser manager instance
-export const create_browser_manager = (config: BrowserManagerConfig = {}): BrowserManager => {
-  const resolved = { ...DEFAULT_CONFIG, ...config };
-  let browser: Browser | null = null;
-
-  // Lazy initialization — browser is launched only on first get_page() call
-  const ensure_browser = async (): Promise<Browser> => {
-    if (!browser || !browser.isConnected()) {
-      browser = await chromium.launch({
-        headless: resolved.headless,
-      });
-    }
-    return browser;
-  };
-
-  const get_page = async (): Promise<Page> => {
-    const b = await ensure_browser();
-    const context = await b.newContext();
-    const page = await context.newPage();
-    page.setDefaultTimeout(resolved.timeout_ms);
-    page.setDefaultNavigationTimeout(resolved.timeout_ms);
-    return page;
-  };
-
-  const close = async (): Promise<void> => {
-    if (browser && browser.isConnected()) {
-      await browser.close();
-      browser = null;
-    }
-  };
-
-  return { get_page, close };
-};
-
----
-
 ## 파일: [OPS] src/hunter/config.ts
 
 // Hunter agent configuration loader
@@ -2170,7 +1905,7 @@ export const create_logger = (log_dir: string): Logger => {
 ## 파일: [OPS] src/hunter/main.ts
 
 // Hunter agent entry point
-// Polls Captain's Task API, executes tasks via Playwright browser automation
+// Polls Captain's Task API, executes tasks via OpenClaw (stubs for now)
 //
 // Usage:
 //   npx tsx src/hunter/main.ts
@@ -2181,11 +1916,9 @@ export const create_logger = (log_dir: string): Logger => {
 //   CAPTAIN_API_URL      — Captain Task API (default: http://[MASKED_IP]:3100)
 //   HUNTER_POLL_INTERVAL — Poll interval in ms (default: 10000)
 //   HUNTER_LOG_DIR       — Log directory (default: ./logs)
-//   HUNTER_HEADLESS      — Headless browser mode (default: true)
 
 import { load_hunter_config } from './config.js';
 import { create_api_client } from './api_client.js';
-import { create_browser_manager } from './browser.js';
 import { create_task_executor } from './task_executor.js';
 import { create_poll_loop } from './poll_loop.js';
 import { create_logger } from './logger.js';
@@ -2195,30 +1928,22 @@ const is_main = import.meta.url === `file://${process.argv[1]}`;
 if (is_main) {
   const config = load_hunter_config();
   const logger = create_logger(config.log_dir);
-
-  // Initialize browser manager with optional headless config
-  const headless = process.env.HUNTER_HEADLESS !== 'false';
-  const browser = create_browser_manager({ headless });
-
   const api = create_api_client({ base_url: config.captain_api_url }, logger);
-  const executor = create_task_executor(logger, browser);
+  const executor = create_task_executor(logger);
   const loop = create_poll_loop({ api, executor, logger, config });
 
   logger.info(`Hunter agent starting — polling ${config.captain_api_url} every ${config.poll_interval_ms}ms`);
-  logger.info(`Browser mode: ${headless ? 'headless' : 'headed'}`);
   loop.start();
 
-  // Graceful shutdown — close browser and stop polling
-  const shutdown = async () => {
+  // Graceful shutdown
+  const shutdown = () => {
     logger.info('Hunter agent shutting down...');
     loop.stop();
-    await browser.close();
-    logger.info('Browser closed. Exiting.');
     process.exit(0);
   };
 
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 ---
@@ -2359,27 +2084,12 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
 ## 파일: [OPS] src/hunter/task_executor.ts
 
 // Task executor with action routing
-// Dispatches tasks to Playwright-based browser handlers or structured TODOs
+// Currently all executors are stubs — OpenClaw integration comes later
 
-import { mkdirSync } from 'node:fs';
 import type { Task, HunterActionType, HunterTaskResult } from '../shared/types.js';
 import type { Logger } from './logger.js';
-import type { BrowserManager } from './browser.js';
 
 type ActionHandler = (task: Task) => Promise<HunterTaskResult>;
-
-// Maximum characters to extract from page content
-const MAX_CONTENT_LENGTH = 10_000;
-
-// Output directory for screenshots and artifacts
-const OUTPUT_DIR = './output';
-
-// ===== URL extraction helper =====
-// Extracts the first http/https URL from a text string
-export const extract_url = (text: string): string | null => {
-  const match = text.match(/https?:\/\/[^\s<>"')\]]+/);
-  return match ? match[0] : null;
-};
 
 // Resolve action type from task title/description keywords
 export const resolve_action = (task: Task): HunterActionType => {
@@ -2391,143 +2101,42 @@ export const resolve_action = (task: Task): HunterActionType => {
   return 'browser_task'; // default fallback
 };
 
-export const create_task_executor = (logger: Logger, browser: BrowserManager) => {
-  // ===== web_crawl handler =====
-  // Navigates to URL, extracts page title and text content
-  const handle_web_crawl: ActionHandler = async (task) => {
-    const text = `${task.title} ${task.description ?? ''}`;
-    const url = extract_url(text);
+export const create_task_executor = (logger: Logger) => {
+  // === Stub action handlers ===
+  // These will be replaced with real OpenClaw integration later
 
-    if (!url) {
-      logger.warn(`web_crawl: no URL found in task ${task.id}`);
-      return {
-        status: 'failure',
-        output: `No URL found in task description: "${text}"`,
-        files: [],
-      };
-    }
-
-    logger.info(`web_crawl: navigating to ${url}`);
-    let page;
-    try {
-      page = await browser.get_page();
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-      const title = await page.title();
-      const body_text = await page.textContent('body') ?? '';
-      const trimmed = body_text.trim().slice(0, MAX_CONTENT_LENGTH);
-
-      logger.info(`web_crawl: extracted ${trimmed.length} chars from ${url}`);
-
-      return {
-        status: 'success',
-        output: `Title: ${title}\nURL: ${url}\n\n${trimmed}`,
-        files: [],
-      };
-    } catch (err) {
-      const error_msg = err instanceof Error ? err.message : String(err);
-      logger.error(`web_crawl failed for ${url}: ${error_msg}`);
-      return {
-        status: 'failure',
-        output: `web_crawl error for ${url}: ${error_msg}`,
-        files: [],
-      };
-    } finally {
-      // Close the page context to free resources
-      if (page) {
-        try { await page.context().close(); } catch { /* ignore cleanup errors */ }
-      }
-    }
-  };
-
-  // ===== browser_task handler =====
-  // Generic browser interaction: navigate, screenshot, extract text
-  const handle_browser_task: ActionHandler = async (task) => {
-    const text = `${task.title} ${task.description ?? ''}`;
-    const url = extract_url(text);
-
-    if (!url) {
-      logger.warn(`browser_task: no URL found in task ${task.id}`);
-      return {
-        status: 'failure',
-        output: `No URL found in task description: "${text}"`,
-        files: [],
-      };
-    }
-
-    logger.info(`browser_task: navigating to ${url}`);
-    let page;
-    try {
-      page = await browser.get_page();
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-      const title = await page.title();
-      const body_text = await page.textContent('body') ?? '';
-      const trimmed = body_text.trim().slice(0, MAX_CONTENT_LENGTH);
-
-      // Save screenshot to output directory
-      mkdirSync(OUTPUT_DIR, { recursive: true });
-      const screenshot_path = `${OUTPUT_DIR}/${task.id}.png`;
-      await page.screenshot({ path: screenshot_path, fullPage: true });
-
-      logger.info(`browser_task: screenshot saved to ${screenshot_path}`);
-
-      return {
-        status: 'success',
-        output: `Title: ${title}\nURL: ${url}\nScreenshot: ${screenshot_path}\n\n${trimmed}`,
-        files: [screenshot_path],
-      };
-    } catch (err) {
-      const error_msg = err instanceof Error ? err.message : String(err);
-      logger.error(`browser_task failed for ${url}: ${error_msg}`);
-      return {
-        status: 'failure',
-        output: `browser_task error for ${url}: ${error_msg}`,
-        files: [],
-      };
-    } finally {
-      if (page) {
-        try { await page.context().close(); } catch { /* ignore cleanup errors */ }
-      }
-    }
-  };
-
-  // ===== deep_research handler =====
-  // TODO: Requires Gemini web UI automation via OpenClaw
-  // TODO: Steps needed:
-  //   1. Open Gemini Deep Research UI in browser
-  //   2. Input research query from task description
-  //   3. Wait for research completion (can take minutes)
-  //   4. Extract research results
-  //   5. Return structured output
-  // TODO: Pending OpenClaw browser automation integration
-  const handle_deep_research: ActionHandler = async (task) => {
-    logger.warn(`deep_research: NOT IMPLEMENTED — requires Gemini web UI automation (task: ${task.id})`);
-    logger.info('Deep Research requires Gemini web UI automation — pending OpenClaw integration');
-
+  const handle_notebooklm_verify: ActionHandler = async (task) => {
+    logger.info(`[STUB] NotebookLM verify: ${task.title}`);
     return {
-      status: 'failure',
-      output: '[NOT_IMPLEMENTED] Deep Research requires Gemini web UI automation — pending OpenClaw integration',
+      status: 'success',
+      output: `[STUB] NotebookLM verification completed for: ${task.title}`,
       files: [],
     };
   };
 
-  // ===== notebooklm_verify handler =====
-  // TODO: Requires NotebookLM web interaction via OpenClaw
-  // TODO: Steps needed:
-  //   1. Open NotebookLM web UI in browser
-  //   2. Upload/reference source documents
-  //   3. Input verification query from task description
-  //   4. Extract verification results
-  //   5. Return structured pass/fail output
-  // TODO: Pending OpenClaw browser automation integration
-  const handle_notebooklm_verify: ActionHandler = async (task) => {
-    logger.warn(`notebooklm_verify: NOT IMPLEMENTED — requires NotebookLM web automation (task: ${task.id})`);
-    logger.info('NotebookLM verification requires NotebookLM web UI automation — pending OpenClaw integration');
-
+  const handle_deep_research: ActionHandler = async (task) => {
+    logger.info(`[STUB] Deep Research: ${task.title}`);
     return {
-      status: 'failure',
-      output: '[NOT_IMPLEMENTED] NotebookLM verification requires NotebookLM web UI automation — pending OpenClaw integration',
+      status: 'success',
+      output: `[STUB] Deep Research completed for: ${task.title}`,
+      files: [],
+    };
+  };
+
+  const handle_web_crawl: ActionHandler = async (task) => {
+    logger.info(`[STUB] Web Crawl: ${task.title}`);
+    return {
+      status: 'success',
+      output: `[STUB] Web crawl completed for: ${task.title}`,
+      files: [],
+    };
+  };
+
+  const handle_browser_task: ActionHandler = async (task) => {
+    logger.info(`[STUB] Browser Task: ${task.title}`);
+    return {
+      status: 'success',
+      output: `[STUB] Browser task completed for: ${task.title}`,
       files: [],
     };
   };

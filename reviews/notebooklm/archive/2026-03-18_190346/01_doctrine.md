@@ -40,14 +40,6 @@
 - 커밋은 작은 단위로 나누어 작성한다.
 - 커밋 전에 항상 변경사항을 확인한다.
 
-## Speed First — 속도 최우선 원칙
-- **시간이 최고 자원이다.** 가능한 한 빨리 업무를 처리한다.
-- 독립적인 작업이 여러 개일 때, **에이전트를 병렬로 실행**하여 시간을 절약한다.
-  - 단, 토큰이 완전 소진되어 후속 대응이 불가능해지는 경우는 피한다.
-- 병렬 작업 시 **git worktree** (`isolation: "worktree"`)를 적극 활용하여 충돌 없이 동시 작업한다.
-- worktree 작업 완료 후에는 **자동으로 main/master에 머지하고 worktree를 정리**한다. 머지·정리에 대해 별도 확인을 묻지 않는다.
-- 리소스를 "절약"하지 않는다 — 컴퓨터 여러 대, AI 최고 요금제 복수 구독 등 모든 리소스는 속도를 위해 존재한다.
-
 ## Coding Principles
 - DRY (Don't Repeat Yourself)를 따르되, 과도한 추상화는 피한다.
 - 함수는 하나의 역할만 수행하도록 작성한다.
@@ -895,27 +887,6 @@ Mac Studio (tmux + Claude Code 상시 실행)
 
 ---
 
-## 파일: [DOCTRINE] green-zone/shared/memory/feedback_speed_parallel.md
-
----
-name: 속도 최우선 — 병렬 에이전트 + worktree 활용
-description: 시간이 최고 자원. 에이전트 병렬 실행, git worktree 자동 머지/정리, 토큰 완전 소진만 아니면 속도 우선
-type: feedback
----
-
-작업은 가능한 한 빨리 처리한다. 속도가 최우선이다.
-
-**Why:** 사용자는 컴퓨터 여러 대, AI 최고 요금제 복수 구독 등 돈으로 시간을 사는 전략을 취하고 있다. 프로젝트의 궁극적 목적 자체가 24시간 인간 병목 없이 돌아가는 자동화 시스템 구축이다.
-
-**How to apply:**
-- 독립적인 작업이 여러 개일 때, 토큰이 완전 소진되어 후속 대응이 불가능해지는 경우만 아니면 **에이전트를 병렬로 실행**하여 시간을 절약한다.
-- 병렬 작업 시 **git worktree** (isolation: "worktree")를 적극 활용하여 충돌 없이 동시 작업한다.
-- worktree 작업 완료 후에는 **자동으로 main/master에 머지하고 worktree를 정리**한다. 머지·정리에 대해 별도 확인을 묻지 않는다.
-- "절약"하지 않는다 — 리소스는 속도를 위해 존재한다.
-- 이 규칙은 CLAUDE.md의 "Speed First" 섹션에도 명시되어 매 세션 자동 로드된다.
-
----
-
 ## 파일: [DOCTRINE] green-zone/shared/memory/feedback_tone.md
 
 ---
@@ -1126,7 +1097,6 @@ type: feedback
 - [feedback_readme_convention.md](feedback_readme_convention.md) — 모든 폴더에 README.md 필수, 예외 없음
 - [feedback_auto_commit.md](feedback_auto_commit.md) — 테스트 통과 후 자동 커밋, 물어보지 말 것
 - [feedback_auto_push.md](feedback_auto_push.md) — 커밋 후 자동 push, 물어보지 말 것
-- [feedback_speed_parallel.md](feedback_speed_parallel.md) — ⭐ 속도 최우선: 에이전트 병렬 실행 + git worktree 자동 머지/정리 (CLAUDE.md에도 명시)
 - [feedback_notebooklm_no_fences.md](feedback_notebooklm_no_fences.md) — NotebookLM은 코드 펜스 내부를 무시함, 평문으로 포함할 것
 
 ## References

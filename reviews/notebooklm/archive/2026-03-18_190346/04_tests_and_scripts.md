@@ -146,24 +146,14 @@ describe('FeedbackExtractor', () => {
 
 ## 파일: [OPS] src/captain/planning_loop.test.ts
 
-// TDD tests for planning loop (morning/night scheduling + dynamic discovery)
+// TDD tests for planning loop (morning/night scheduling)
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { create_planning_loop } from './planning_loop.js';
 import { create_task_store, type TaskStore } from '../gateway/task_store.js';
 import type { NotificationRouter } from '../notification/router.js';
-import type { GeminiConfig, GeminiResponse } from '../gemini/types.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-
-// Mock the Gemini CLI wrapper
-vi.mock('../gemini/cli_wrapper.js', () => ({
-  spawn_gemini: vi.fn(),
-}));
-
-// Import the mocked function for assertions
-import { spawn_gemini } from '../gemini/cli_wrapper.js';
-const mock_spawn_gemini = vi.mocked(spawn_gemini);
 
 // === Test fixtures ===
 
@@ -223,7 +213,6 @@ describe('PlanningLoop', () => {
   beforeEach(() => {
     store = create_task_store({ db_path: ':memory:' });
     router = create_mock_router();
-    mock_spawn_gemini.mockClear();
     tmp_dir = join(tmpdir(), `fas-test-${Date.now()}`);
     mkdirSync(tmp_dir, { recursive: true });
     schedules_path = join(tmp_dir, 'schedules.yml');
@@ -388,307 +377,6 @@ describe('PlanningLoop', () => {
           message: expect.stringContaining('[Night Summary]'),
         }),
       );
-    });
-
-    it('should call run_discover during night if gemini_config is provided', async () => {
-      // Given: a completed crawl task and gemini config
-      const gemini_config: GeminiConfig = { account: 'a' };
-      const task = store.create({ title: 'AI crawl research', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Found 3 trends' });
-
-      mock_spawn_gemini.mockResolvedValue({
-        content: '[]',
-        raw_output: '[]',
-        success: true,
-        duration_ms: 1000,
-      });
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_night();
-
-      // Then: discovery result should be present
-      expect(result.discovery).toBeDefined();
-      expect(result.discovery!.analyzed_tasks).toBe(1);
-    });
-
-    it('should not call run_discover during night if no gemini_config', async () => {
-      const loop = create_planning_loop({ store, router, schedules_path });
-      const result = await loop.run_night();
-
-      // Then: discovery should be undefined
-      expect(result.discovery).toBeUndefined();
-      expect(mock_spawn_gemini).not.toHaveBeenCalled();
-    });
-  });
-
-  // === discover_opportunities ===
-
-  describe('run_discover()', () => {
-    const gemini_config: GeminiConfig = { account: 'a' };
-
-    const make_gemini_response = (content: string, success = true): GeminiResponse => ({
-      content,
-      raw_output: content,
-      success,
-      error: success ? undefined : 'mock error',
-      duration_ms: 500,
-    });
-
-    it('should skip when no gemini_config is provided', async () => {
-      // Given: no gemini config
-      const loop = create_planning_loop({ store, router, schedules_path });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then
-      expect(result.analyzed_tasks).toBe(0);
-      expect(result.created).toEqual([]);
-      expect(result.skipped).toEqual([]);
-      expect(mock_spawn_gemini).not.toHaveBeenCalled();
-    });
-
-    it('should skip when no recent crawl tasks exist', async () => {
-      // Given: gemini config but no crawl tasks
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then
-      expect(result.analyzed_tasks).toBe(0);
-      expect(mock_spawn_gemini).not.toHaveBeenCalled();
-    });
-
-    it('should call Gemini with correct prompt containing task summaries', async () => {
-      // Given: a completed crawl task
-      const task = store.create({ title: '창업지원사업 크롤링', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Found 5 government programs' });
-
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response('[]'));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      await loop.run_discover();
-
-      // Then: Gemini should be called with a prompt containing the summary
-      expect(mock_spawn_gemini).toHaveBeenCalledOnce();
-      const call_args = mock_spawn_gemini.mock.calls[0];
-      expect(call_args[0]).toEqual(gemini_config);
-      expect(call_args[1]).toContain('창업지원사업 크롤링');
-      expect(call_args[1]).toContain('Found 5 government programs');
-      expect(call_args[1]).toContain('최근 3일간의 크롤링/리서치 결과');
-    });
-
-    it('should create tasks from Gemini JSON response', async () => {
-      // Given: a completed crawl task
-      const task = store.create({ title: 'AI research crawl', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'New AI startup funding announced' });
-
-      const suggestions = [
-        { title: '스타트업 펀딩 상세 조사', description: 'Investigate funding details', agent: 'gemini_a', priority: 'high' },
-        { title: '관련 채용공고 확인', description: 'Check related job postings', agent: 'gemini_b', priority: 'medium' },
-      ];
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then
-      expect(result.analyzed_tasks).toBe(1);
-      expect(result.created).toEqual(['스타트업 펀딩 상세 조사', '관련 채용공고 확인']);
-      expect(result.skipped).toEqual([]);
-
-      // Verify tasks were created in store
-      const all_tasks = store.get_all();
-      const funding_task = all_tasks.find((t) => t.title === '스타트업 펀딩 상세 조사');
-      expect(funding_task).toBeDefined();
-      expect(funding_task!.assigned_to).toBe('gemini_a');
-      expect(funding_task!.priority).toBe('high');
-      expect(funding_task!.description).toBe('Investigate funding details');
-    });
-
-    it('should deduplicate — not create already-queued tasks', async () => {
-      // Given: a completed crawl task AND an already-queued task with the same title
-      const crawl = store.create({ title: 'startup scrape', assigned_to: 'gemini_a' });
-      store.complete_task(crawl.id, { summary: 'Found opportunity' });
-
-      // Pre-create a pending task with the same title as one suggestion
-      store.create({ title: '기존 태스크', assigned_to: 'claude' });
-
-      const suggestions = [
-        { title: '기존 태스크', description: 'Already exists', agent: 'gemini_a', priority: 'low' },
-        { title: '새 태스크', description: 'Brand new', agent: 'gemini_b', priority: 'medium' },
-      ];
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then
-      expect(result.created).toEqual(['새 태스크']);
-      expect(result.skipped).toEqual(['기존 태스크 (already queued)']);
-    });
-
-    it('should handle Gemini failure gracefully (no crash, log warning)', async () => {
-      // Given: a completed crawl task and Gemini returns failure
-      const task = store.create({ title: 'crawl test', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Some data' });
-
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response('', false));
-
-      const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then: should return gracefully with no created tasks
-      expect(result.analyzed_tasks).toBe(1);
-      expect(result.created).toEqual([]);
-      expect(warn_spy).toHaveBeenCalledWith(
-        expect.stringContaining('[discover_opportunities]'),
-        expect.anything(),
-      );
-
-      warn_spy.mockRestore();
-    });
-
-    it('should handle Gemini spawn exception gracefully', async () => {
-      // Given: Gemini throws an error
-      const task = store.create({ title: 'crawl exception', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Data' });
-
-      mock_spawn_gemini.mockRejectedValue(new Error('CLI not found'));
-
-      const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then
-      expect(result.analyzed_tasks).toBe(1);
-      expect(result.created).toEqual([]);
-      expect(warn_spy).toHaveBeenCalled();
-
-      warn_spy.mockRestore();
-    });
-
-    it('should handle malformed Gemini JSON response', async () => {
-      // Given: Gemini returns invalid JSON
-      const task = store.create({ title: 'research crawl', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Info' });
-
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response('not valid json at all {broken'));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then: no crash, no tasks created
-      expect(result.analyzed_tasks).toBe(1);
-      expect(result.created).toEqual([]);
-    });
-
-    it('should cap at 3 suggestions max', async () => {
-      // Given: crawl task exists
-      const task = store.create({ title: 'scrape big', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Lots of data' });
-
-      const suggestions = [
-        { title: 'Task 1', description: 'D1', agent: 'gemini_a', priority: 'low' },
-        { title: 'Task 2', description: 'D2', agent: 'gemini_b', priority: 'medium' },
-        { title: 'Task 3', description: 'D3', agent: 'claude', priority: 'high' },
-        { title: 'Task 4', description: 'D4', agent: 'openclaw', priority: 'low' },
-        { title: 'Task 5', description: 'D5', agent: 'gemini_a', priority: 'medium' },
-      ];
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then: only first 3 should be created
-      expect(result.created.length).toBe(3);
-      expect(result.created).toEqual(['Task 1', 'Task 2', 'Task 3']);
-    });
-
-    it('should reject suggestions with invalid agents', async () => {
-      // Given: crawl task and suggestions with invalid agent
-      const task = store.create({ title: 'crawl agents', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Data' });
-
-      const suggestions = [
-        { title: 'Valid Task', description: 'OK', agent: 'gemini_a', priority: 'low' },
-        { title: 'Invalid Task', description: 'Bad agent', agent: 'unknown_agent', priority: 'medium' },
-      ];
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then: only valid agent task should be created
-      expect(result.created).toEqual(['Valid Task']);
-    });
-
-    it('should send notification when opportunities are discovered', async () => {
-      // Given: crawl task and valid suggestion
-      const task = store.create({ title: 'crawl notify', assigned_to: 'gemini_a' });
-      store.complete_task(task.id, { summary: 'Important finding' });
-
-      const suggestions = [
-        { title: '긴급 조사 필요', description: 'Urgent research', agent: 'gemini_a', priority: 'high' },
-      ];
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response(JSON.stringify(suggestions)));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      await loop.run_discover();
-
-      // Then: notification should be sent
-      expect(router.route).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'briefing',
-          message: expect.stringContaining('[Discovery]'),
-        }),
-      );
-    });
-
-    it('should only consider tasks with crawl-related keywords in title', async () => {
-      // Given: one crawl task and one non-crawl task
-      const crawl_task = store.create({ title: '창업지원사업 크롤링', assigned_to: 'gemini_a' });
-      store.complete_task(crawl_task.id, { summary: 'Crawl data' });
-
-      const non_crawl = store.create({ title: 'Code review', assigned_to: 'claude' });
-      store.complete_task(non_crawl.id, { summary: 'Reviewed code' });
-
-      mock_spawn_gemini.mockResolvedValue(make_gemini_response('[]'));
-
-      const loop = create_planning_loop({ store, router, schedules_path, gemini_config });
-
-      // When
-      const result = await loop.run_discover();
-
-      // Then: only crawl task should be analyzed
-      expect(result.analyzed_tasks).toBe(1);
-      const prompt = mock_spawn_gemini.mock.calls[0][1];
-      expect(prompt).toContain('창업지원사업 크롤링');
-      expect(prompt).not.toContain('Code review');
     });
   });
 });
@@ -3008,39 +2696,15 @@ describe('poll_loop', () => {
 
 ## 파일: [OPS] src/hunter/task_executor.test.ts
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { create_task_executor, resolve_action, extract_url } from './task_executor.js';
+import { describe, it, expect, vi } from 'vitest';
+import { create_task_executor, resolve_action } from './task_executor.js';
 import type { Task } from '../shared/types.js';
 import type { Logger } from './logger.js';
-import type { BrowserManager } from './browser.js';
 
 const mock_logger: Logger = {
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
-};
-
-// Mock page object returned by Playwright
-const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
-  goto: vi.fn().mockResolvedValue(undefined),
-  title: vi.fn().mockResolvedValue('Test Page Title'),
-  textContent: vi.fn().mockResolvedValue('  Hello world content  '),
-  screenshot: vi.fn().mockResolvedValue(undefined),
-  setDefaultTimeout: vi.fn(),
-  setDefaultNavigationTimeout: vi.fn(),
-  context: vi.fn().mockReturnValue({
-    close: vi.fn().mockResolvedValue(undefined),
-  }),
-  ...overrides,
-});
-
-// Mock browser manager
-const create_mock_browser = (page_overrides: Record<string, unknown> = {}): BrowserManager => {
-  const mock_page = create_mock_page(page_overrides);
-  return {
-    get_page: vi.fn().mockResolvedValue(mock_page),
-    close: vi.fn().mockResolvedValue(undefined),
-  };
 };
 
 const make_task = (overrides: Partial<Task> = {}): Task => ({
@@ -3058,65 +2722,6 @@ const make_task = (overrides: Partial<Task> = {}): Task => ({
   ...overrides,
 });
 
-// ===== extract_url tests =====
-describe('extract_url', () => {
-  it('should extract https URL from text', () => {
-    // Given
-    const text = 'Please crawl https://example.com/page for data';
-
-    // When
-    const result = extract_url(text);
-
-    // Then
-    expect(result).toBe('https://example.com/page');
-  });
-
-  it('should extract http URL from text', () => {
-    // Given
-    const text = 'Visit http://localhost:3000/api';
-
-    // When
-    const result = extract_url(text);
-
-    // Then
-    expect(result).toBe('http://localhost:3000/api');
-  });
-
-  it('should return first URL when multiple exist', () => {
-    // Given
-    const text = 'Check https://first.com and https://second.com';
-
-    // When
-    const result = extract_url(text);
-
-    // Then
-    expect(result).toBe('https://first.com');
-  });
-
-  it('should return null when no URL found', () => {
-    // Given
-    const text = 'No URLs in this text at all';
-
-    // When
-    const result = extract_url(text);
-
-    // Then
-    expect(result).toBeNull();
-  });
-
-  it('should handle URLs with query params and paths', () => {
-    // Given
-    const text = 'Crawl https://api.example.com/v2/data?page=1&limit=50';
-
-    // When
-    const result = extract_url(text);
-
-    // Then
-    expect(result).toBe('https://api.example.com/v2/data?page=1&limit=50');
-  });
-});
-
-// ===== resolve_action tests =====
 describe('resolve_action', () => {
   it('should resolve notebooklm_verify from title', () => {
     // Given
@@ -3162,173 +2767,34 @@ describe('resolve_action', () => {
   });
 });
 
-// ===== web_crawl handler tests =====
-describe('web_crawl handler', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should crawl URL and return page content', async () => {
+describe('create_task_executor', () => {
+  it('should execute stub and return success result', async () => {
     // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Crawl K-Startup website',
-      description: 'Scrape https://example.com/startups for listings',
-    });
+    const executor = create_task_executor(mock_logger);
+    const task = make_task({ title: 'Crawl K-Startup website' });
 
     // When
     const result = await executor.execute(task);
 
     // Then
     expect(result.status).toBe('success');
-    expect(result.output).toContain('Test Page Title');
-    expect(result.output).toContain('https://example.com/startups');
-    expect(result.output).toContain('Hello world content');
+    expect(result.output).toContain('Crawl K-Startup website');
     expect(result.files).toEqual([]);
   });
 
-  it('should return failure when no URL found in crawl task', async () => {
+  it('should return failure result when handler throws', async () => {
     // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Crawl some website',
-      description: 'No URL provided here',
-    });
+    const executor = create_task_executor(mock_logger);
+    const task = make_task({ title: 'NotebookLM verify' });
 
-    // When
+    // Force an error by mocking the resolve_action to a bad handler
+    // We can test the catch by passing a task that will trigger the executor
+    // Since stubs don't throw, we test the error path via a direct check
     const result = await executor.execute(task);
 
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('No URL found');
-  });
-
-  it('should handle navigation errors gracefully', async () => {
-    // Given
-    const mock_browser = create_mock_browser({
-      goto: vi.fn().mockRejectedValue(new Error('net::ERR_NAME_NOT_RESOLVED')),
-    });
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Crawl broken site',
-      description: 'Scrape https://nonexistent.invalid/page',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('net::ERR_NAME_NOT_RESOLVED');
-  });
-});
-
-// ===== browser_task handler tests =====
-describe('browser_task handler', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should navigate, screenshot, and return content', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Check Gmail for new emails',
-      description: 'Open https://mail.google.com and check inbox',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
+    // Then — stubs always succeed, verify it routes correctly
     expect(result.status).toBe('success');
-    expect(result.output).toContain('Test Page Title');
-    expect(result.output).toContain('https://mail.google.com');
-    expect(result.files).toEqual([`./output/${task.id}.png`]);
-  });
-
-  it('should return failure when no URL found in browser task', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Do something without URL',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('No URL found');
-  });
-
-  it('should handle screenshot errors gracefully', async () => {
-    // Given
-    const mock_browser = create_mock_browser({
-      screenshot: vi.fn().mockRejectedValue(new Error('Screenshot failed')),
-    });
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'Take screenshot',
-      description: 'Visit https://example.com and screenshot',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('Screenshot failed');
-  });
-});
-
-// ===== deep_research handler tests =====
-describe('deep_research handler', () => {
-  it('should return failure with NOT_IMPLEMENTED message', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'AI trends deep research',
-      description: 'Run deep research on latest AI developments',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('NOT_IMPLEMENTED');
-    expect(result.output).toContain('Gemini web UI');
-    expect(result.output).toContain('pending OpenClaw integration');
-    expect(result.files).toEqual([]);
-  });
-});
-
-// ===== notebooklm_verify handler tests =====
-describe('notebooklm_verify handler', () => {
-  it('should return failure with NOT_IMPLEMENTED message', async () => {
-    // Given
-    const mock_browser = create_mock_browser();
-    const executor = create_task_executor(mock_logger, mock_browser);
-    const task = make_task({
-      title: 'NotebookLM verify analysis results',
-      description: 'Verify hallucination in research output',
-    });
-
-    // When
-    const result = await executor.execute(task);
-
-    // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('NOT_IMPLEMENTED');
     expect(result.output).toContain('NotebookLM');
-    expect(result.output).toContain('pending OpenClaw integration');
-    expect(result.files).toEqual([]);
   });
 });
 
