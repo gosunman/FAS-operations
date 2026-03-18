@@ -541,12 +541,26 @@ if (is_main) {
     db_path: './state/tasks.sqlite',
   });
 
-  const dev_mode = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
+  // Dev mode: only allowed when explicitly set AND not in production
+  const is_production = process.env.NODE_ENV === 'production';
+  const dev_mode_requested = process.env.NODE_ENV === 'development' || process.env.FAS_DEV_MODE === 'true';
+  const dev_mode = dev_mode_requested && !is_production;
+
+  // Guard: reject dev_mode in production environment
+  if (dev_mode_requested && is_production) {
+    console.error('[Gateway] FATAL: FAS_DEV_MODE=true is forbidden when NODE_ENV=production. Refusing to start.');
+    process.exit(1);
+  }
 
   if (!process.env.HUNTER_API_KEY && !dev_mode) {
     console.error('[Gateway] FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
     console.error('[Gateway] Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
     process.exit(1);
+  }
+
+  // Warn loudly when dev mode is active — should never reach production
+  if (dev_mode) {
+    console.warn('[Gateway] ⚠️  DEV MODE ACTIVE — Hunter auth is DISABLED. Do NOT use in production.');
   }
 
   const app = create_app(store, {
