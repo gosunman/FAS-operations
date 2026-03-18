@@ -17,10 +17,10 @@
 │     (계정 A)               │              │   └ heartbeat sender   │
 │                            │              └────────────────────────┘
 │ tmux: fas-gemini-a         │    ┌──────────────────────┐
-│   └ Gemini CLI (research)  │    │ External Services    │
+│   └ Gemini CLI (Acc A)     │───►│ External Services    │
 │                            │    │  Telegram Bot API    │
-│ tmux: fas-gemini-b         │───►│  Slack Web API       │
-│   └ Gemini CLI (validator) │    │  Notion API          │
+│                            │    │  Slack Web API       │
+│                            │    │  Notion API          │
 │                            │    └──────────────────────┘
 │ tmux: fas-watchdog         │
 │   └ output_watcher.ts      │    주인님 ↔ 헌터 직접 소통:
@@ -64,6 +64,9 @@
 | `GOOGLE_PROFILE_DIR` | N | 구글 Chrome 프로필 디렉토리 — 헌터 전용 (기본: ./fas-google-profile-hunter) |
 | `DEEP_RESEARCH_TIMEOUT_MS` | N | Deep Research 타임아웃 ms — 헌터 전용 (기본: 300000) |
 | `NOTEBOOKLM_TIMEOUT_MS` | N | NotebookLM 타임아웃 ms — 헌터 전용 (기본: 180000) |
+| `HUNTER_TELEGRAM_BOT_TOKEN` | N* | 헌터 전용 Telegram Bot 토큰 (`hunter_6239_bot`) — 헌터 .env |
+| `HUNTER_TELEGRAM_CHAT_ID` | N* | 주인님 Telegram Chat ID — 헌터 .env |
+| `HUNTER_SLACK_WEBHOOK_URL` | N* | 헌터 전용 Slack Incoming Webhook URL — 헌터 .env |
 | `NOTION_TASK_RESULTS_DB` | N | Notion 태스크 결과 백업 DB ID (설정 시 태스크 완료마다 Notion에 fire-and-forget 백업) |
 | `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false). NODE_ENV=production 시 강제 차단 |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
@@ -90,6 +93,7 @@
 - **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. 4개 핸들러 모두 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. **주의**: 코드는 완성이나 헌터 머신 실제 배포는 미완료 (SA-001 보안 이슈 해결 후 진행).
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
+- **notify.ts**: 헌터 전용 Telegram + Slack 알림 (캡틴 봇과 격리된 별도 토큰). `alert()` → 양쪽, `report()` → Slack만. Fire-and-forget.
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 

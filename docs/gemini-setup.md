@@ -1,5 +1,8 @@
 # Gemini CLI Setup Guide
 
+> **[DEPRECATED 2026-03-18]** 캡틴은 Gemini CLI Account A만 사용. Account B는 헌터 전용.
+> 이 문서의 "Account B" 관련 내용은 폐기됨. 최신 설정: `scripts/setup/setup_gemini_cli.sh`
+
 FAS에서 Gemini CLI를 상시 실행하기 위한 설정 가이드.
 
 ## 개요

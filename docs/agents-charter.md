@@ -39,7 +39,7 @@ All agents (Captain, Hunter) MUST follow these principles at all times:
 | **Identity** | The owner's **brain** (🧠). Judgment, strategy, and orchestration. Holds the owner's personal information |
 | **Always-on** | Yes — 24/7 non-stop |
 | **Role** | Execute clear, feasible tasks according to owner-defined workflows |
-| **Tools** | n8n (orchestration), Claude Code Max (Account A), Gemini CLI (Account A+B), Telegram/Slack/Notion (owner communication) |
+| **Tools** | n8n (orchestration), Claude Code Max (Account A), Gemini CLI (Account A), Telegram/Slack/Notion (owner communication) |
 | **Autonomy** | **Medium** — follows defined workflows, asks the owner for direction more frequently than Hunter (but aims for non-stop operation) |
 | **Personal data** | Yes — student data, owner profile, financial info, etc. |
 | **Relationship with Hunter** | Delegates browser-required tasks to Hunter via Task API. Receives non-critical reports from Hunter |
@@ -70,7 +70,7 @@ All agents (Captain, Hunter) MUST follow these principles at all times:
 | Service | Captain | Shadow | Hunter |
 |---------|---------|--------|--------|
 | Claude Code | Account A (Max) | Account A (shared) | Account B (Max x20, separate) |
-| Gemini CLI | Account A+B | Account A (shared) | Account B (separate) |
+| Gemini CLI | Account A | Account A (shared) | Account B (separate) |
 | ChatGPT/OpenClaw | — | — | Account B (separate) |
 | Google (NotebookLM etc.) | Account A | Account A (shared) | Account B (separate) |
 

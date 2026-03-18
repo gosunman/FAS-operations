@@ -6,7 +6,6 @@
 #   fas-gateway   - Express Gateway + Task API (port 3100)
 #   fas-claude    - Claude Code interactive session
 #   fas-gemini-a  - Gemini CLI Account A (research)
-#   fas-gemini-b  - Gemini CLI Account B (validator)
 #   fas-watchdog  - System watchdog daemon
 
 set -euo pipefail
@@ -57,16 +56,12 @@ create_session "fas-claude" "" "$PROJECT_ROOT"
 echo "[3/6] Gemini CLI A..."
 create_session "fas-gemini-a" "bash $SCRIPT_DIR/gemini_wrapper.sh" "$PROJECT_ROOT"
 
-# === 4. Gemini CLI B ===
-echo "[4/6] Gemini CLI B..."
-create_session "fas-gemini-b" "GEMINI_ACCOUNT=B bash $SCRIPT_DIR/gemini_wrapper.sh" "$PROJECT_ROOT"
-
-# === 5. Watchdog ===
-echo "[5/6] Watchdog..."
+# === 4. Watchdog ===
+echo "[4/5] Watchdog..."
 create_session "fas-watchdog" "pnpm run watcher" "$PROJECT_ROOT"
 
 # === 6. n8n (Docker/Colima) — optional ===
-echo "[6/6] n8n (optional)..."
+echo "[5/5] n8n (optional)..."
 if command -v colima &>/dev/null; then
   create_session "fas-n8n" "cd $PROJECT_ROOT && docker compose up" "$PROJECT_ROOT"
 else

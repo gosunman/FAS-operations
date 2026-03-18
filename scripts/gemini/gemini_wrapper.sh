@@ -25,11 +25,7 @@ RETRY_COUNT=0
 
 mkdir -p "$LOG_DIR"
 
-# Account-specific environment
-if [ "$ACCOUNT" = "b" ]; then
-  export GEMINI_CONFIG_DIR="$HOME/.gemini-b"
-  echo "[Wrapper] Using alternate config: $GEMINI_CONFIG_DIR"
-fi
+# Captain uses Account A only (Account B is hunter-exclusive)
 
 # System prompt based on account role
 if [ "$ACCOUNT" = "a" ]; then

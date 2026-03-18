@@ -77,7 +77,6 @@
 | n8n | Colima (Docker) | ~3GB | `fas-n8n` |
 | Claude Code | OAuth CLI | ~500MB | `fas-claude` |
 | Gemini CLI (Account A) | CLI | ~500MB | `fas-gemini-a` |
-| Gemini CLI (Account B) | CLI | ~500MB | `fas-gemini-b` |
 | Gateway + Task API | Node.js (Express) | ~300MB | `fas-gateway` |
 | Agent Wrappers | Node.js 프로세스들 | ~300MB | 각 에이전트 세션 내 |
 | Crawlers | Node.js (cron) | ~200MB | `fas-crawlers` |
@@ -297,7 +296,6 @@ FAS-operations/
 5. tmux 세션 생성:
    a. fas-claude  → Agent Wrapper + Claude Code
    b. fas-gemini-a → Agent Wrapper + Gemini CLI
-   c. fas-gemini-b → Agent Wrapper + Gemini CLI
 6. n8n이 모든 서비스 healthy 확인 → AWAKE/SLEEP 모드 진입
 ```
 

@@ -158,12 +158,14 @@ FAS-operations/
 │   ├── watchdog/         # 출력 감시 데몬
 │   └── shared/           # 공유 타입 정의
 ├── scripts/
-│   ├── setup/            # 환경 셋업 스크립트
-│   ├── test_notifications.ts  # Telegram/Slack 연동 테스트
-│   ├── start_captain_sessions.sh
-│   ├── stop_all.sh
-│   ├── status.sh
-│   └── agent_wrapper.sh  # 자동 재시작 래퍼
+│   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
+│   ├── deploy/           # 헌터 배포 (소스코드 격리)
+│   ├── security/         # 보안 스캔 (PII 검사)
+│   ├── start_all.sh      # 전체 서비스 기동 (멱등)
+│   ├── stop_all.sh       # 전체 서비스 중지
+│   ├── status.sh         # 전체 상태 조회
+│   ├── gateway_wrapper.sh # Gateway 자동 재시작 래퍼
+│   └── agent_wrapper.sh  # Claude Code 자동 재시작 래퍼
 ├── hunter/               # 헌터 전용 설정 (CLAUDE.md, OpenClaw 설정)
 ├── shadow/               # 그림자 전용 설정 (CLAUDE.md)
 ├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
@@ -195,6 +197,15 @@ pnpm test:run
 
 # 6. Gateway 서버 시작
 pnpm run gateway
+
+# 7. (선택) Notion 태스크 백업 설정
+# .env에 NOTION_API_KEY, NOTION_TASK_RESULTS_DB 설정 후 Gateway 재시작
+
+# 8. 헌터 머신 배포 (소스코드 격리 — captain 코드 절대 미전송)
+bash scripts/deploy/deploy_hunter.sh hunter
+
+# 9. 전체 서비스 기동
+bash scripts/start_all.sh
 
 # 7. 전체 세션 시작
 ./scripts/start_captain_sessions.sh

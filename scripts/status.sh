@@ -17,7 +17,7 @@ echo ""
 
 # === tmux sessions ===
 echo "--- tmux Sessions ---"
-FAS_SESSIONS=("fas-gateway" "fas-claude" "fas-gemini-a" "fas-gemini-b" "fas-watchdog" "fas-n8n")
+FAS_SESSIONS=("fas-gateway" "fas-claude" "fas-gemini-a" "fas-watchdog" "fas-n8n")
 for session in "${FAS_SESSIONS[@]}"; do
   if tmux has-session -t "$session" 2>/dev/null; then
     echo "  [OK]   $session"

@@ -2,7 +2,7 @@
 # FAS tmux environment setup script
 # Sets up tmux configuration and session naming conventions
 #
-# Captain sessions: fas-claude, fas-gemini-a, fas-gemini-b, fas-n8n, fas-gateway, fas-watchdog
+# Captain sessions: fas-claude, fas-gemini-a, fas-n8n, fas-gateway, fas-watchdog
 # Hunter sessions:  fas-openclaw, fas-watchdog
 
 set -euo pipefail

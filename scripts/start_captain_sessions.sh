@@ -5,7 +5,6 @@
 # Sessions:
 #   fas-claude    - Claude Code (interactive AI agent)
 #   fas-gemini-a  - Gemini CLI Account A (research)
-#   fas-gemini-b  - Gemini CLI Account B (validator)
 #   fas-n8n       - n8n orchestrator (Docker/Colima)
 #   fas-gateway   - Express Gateway + Task API
 #   fas-watchdog  - System watchdog daemon
@@ -53,8 +52,7 @@ fi
 create_session "fas-claude" "" "$PROJECT_ROOT"
 
 # Gemini CLI sessions — placeholder until auth is configured
-create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT"
-create_session "fas-gemini-b" "echo 'Gemini B: waiting for auth setup'" "$PROJECT_ROOT"
+create_session "fas-gemini-a" "echo 'Gemini A: waiting for auth setup'" "$PROJECT_ROOT" "$PROJECT_ROOT"
 
 echo ""
 echo "[FAS] Captain sessions ready. List with: tmux list-sessions"

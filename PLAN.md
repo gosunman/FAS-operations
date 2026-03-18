@@ -29,7 +29,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 캡틴, 헌터에 tmux 설치
 - [x] 자동 세션 복구 스크립트 (`tmux-resurrect` 또는 커스텀)
 - [x] 세션 네이밍 컨벤션:
-  - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-gemini-b`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
+  - 캡틴: `fas-claude`, `fas-gemini-a`, `fas-n8n`, `fas-gateway`, `fas-watchdog`
   - 헌터: `fas-openclaw`, `fas-watchdog`
 
 ### 0-3. 소통 채널 구축 ✅

@@ -13,7 +13,6 @@ FAS_SESSIONS=(
   "fas-n8n"
   "fas-claude"
   "fas-gemini-a"
-  "fas-gemini-b"
   "fas-crawlers"
 )
 
