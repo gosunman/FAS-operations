@@ -25,10 +25,11 @@ const DB_PATH = resolve(process.cwd(), 'state/tasks.sqlite');
 
 const ACTIVITY_DB_PATH = resolve(process.cwd(), 'state/activity.sqlite');
 
+// Only watch sessions that actually exist — watching non-existent sessions
+// triggers crash alerts every 2s, flooding Telegram via Slack fallback.
+// fas-captain watches itself (pointless), fas-gemini-a/fas-gateway not running yet.
 const WATCHED_SESSIONS = [
   'fas-claude',
-  'fas-gemini-a',
-  'fas-captain',
 ];
 
 // Planning schedule — hours to run morning (07:30) and night (22:50)

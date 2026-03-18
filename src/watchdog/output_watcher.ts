@@ -174,7 +174,12 @@ export class OutputWatcher extends EventEmitter {
       const count = (this.crash_counts.get(session) ?? 0) + 1;
       this.crash_counts.set(session, count);
       const threshold = this.config.crash_threshold ?? 3;
-      if (count >= threshold && this.config.on_crash) {
+      // Fire on_crash at threshold (first detection), then repeat every ~5 min
+      // to avoid flooding Telegram with alerts every 2 seconds
+      const CRASH_REPEAT_INTERVAL = 150; // ~5 min at 2s poll interval
+      const should_report = count === threshold
+        || (count > threshold && (count - threshold) % CRASH_REPEAT_INTERVAL === 0);
+      if (should_report && this.config.on_crash) {
         this.emit('crash', session, count);
         await this.config.on_crash(session, count);
       }

@@ -157,6 +157,11 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 
 캡틴 heartbeat 모니터 (`src/watchdog/hunter_monitor.ts`): 2분 → Slack WARNING, 5분 → Telegram ALERT, 복구 시 → RECOVERY
 
+**알림 안전장치:**
+- Output Watcher crash 알림: threshold 도달 시 1회 + 이후 ~5분 간격 (Telegram rate limit 방지)
+- Slack-only 이벤트 실패 시 Telegram 폴백 안 함 (비크리티컬 이벤트 폭주 방지)
+- 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (`src/captain/main.ts`의 `WATCHED_SESSIONS`)
+
 상세: [docs/hunter-protocol.md](docs/hunter-protocol.md) Stage 2 섹션
 
 ### 시스템 운영

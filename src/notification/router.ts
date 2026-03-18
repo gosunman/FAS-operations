@@ -89,10 +89,9 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
         const fallback = await deps.telegram.send(`[Slack Fallback] ${event.message}`, telegram_type);
         results.telegram = fallback.success;
       } else {
-        // Slack-only event: emergency fallback to Telegram (not normally routed there)
-        console.warn(`[Router] Slack failed for slack-only event ${event.type}, emergency fallback to Telegram`);
-        const fallback = await deps.telegram.send(`[Emergency Fallback] ${event.message}`, 'alert');
-        results.telegram = fallback.success;
+        // Slack-only event: log only, do NOT flood Telegram with non-critical events.
+        // Only approval_high, alert, blocked, briefing should ever reach Telegram.
+        console.warn(`[Router] Slack failed for slack-only event ${event.type} — logged only (no Telegram fallback)`);
       }
     }
 

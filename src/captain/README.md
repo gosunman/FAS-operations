@@ -6,6 +6,7 @@
 
 | 파일 | 역할 |
 |------|------|
+| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor 등 전체 기동. 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
 | `planning_loop.ts` | 모닝/나이트 자율 스케줄링 (schedules.yml 기반 태스크 생성) |
 | `feedback_extractor.ts` | 완료된 태스크에서 교훈 추출 (Gemini CLI → Doctrine feedback 파일에 append) |
 
