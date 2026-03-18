@@ -45,6 +45,9 @@ agents:
       - research
       - trend_analysis
       - fact_checking
+      - cross_validation
+      - code_review
+      - report_review
       - crawling
       - job_search
       - startup_program_search
@@ -58,25 +61,8 @@ agents:
       retry_delay_seconds: 5
       escalate_after: 3
 
-  gemini_b:
-    display_name: "Gemini CLI (Validator) — Captain"
-    identity: "캡틴의 교차 검증 도구 + 비크리티컬 결정 프록시"
-    device: captain
-    account: B
-    autonomy: medium
-    tmux_session: fas-gemini-b
-    execution_mode: oneshot
-    capabilities:
-      - cross_validation
-      - fact_checking
-      - code_review
-      - report_review
-    max_concurrent_tasks: 2
-    allowed_modes: [sleep, awake]
-    priority_weight: 5
-    can_access_personal_info: true
-    restart_policy:
-      max_retries: 3
+  # gemini_b 제거됨 — 캡틴은 계정 A만 사용, 계정 B는 헌터 전용
+  # 교차 검증은 Claude ↔ Gemini A 간에 수행 (같은 Gemini를 계정만 바꿔 돌리는 것은 무의미)
       retry_delay_seconds: 5
       escalate_after: 3
 

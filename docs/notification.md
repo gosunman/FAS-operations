@@ -10,10 +10,20 @@
 
 ## Telegram Bot
 
-### 설정
+### 봇 구성 (에이전트별 격리)
+
+| 봇 | 이름 | 용도 | 환경변수 (토큰) | 환경변수 (Chat ID) |
+|---|------|------|-----------------|-------------------|
+| **캡틴** | `captain_6239_bot` | 긴급 알림, 승인 요청, 브리핑 | `TELEGRAM_BOT_TOKEN` (캡틴 .env) | `TELEGRAM_CHAT_ID` |
+| **헌터** | `hunter_6239_bot` | 헌터 알림, LOGIN_REQUIRED, 태스크 보고 | `HUNTER_TELEGRAM_BOT_TOKEN` (헌터 .env) | `HUNTER_TELEGRAM_CHAT_ID` |
+
+> Chat ID는 동일 (주인님의 Telegram 계정). 봇 토큰만 별도.
+> 헌터 봇이 탈취되어도 캡틴 봇은 안전.
+
+### 설정 (캡틴)
 
 ```yaml
-bot_name: FAS_Bot
+bot_name: captain_6239_bot
 token_env: TELEGRAM_BOT_TOKEN
 chat_id_env: TELEGRAM_CHAT_ID
 ```
@@ -134,32 +144,39 @@ Slack에서 상세 확인 →
 ```yaml
 workspace: fas-automation
 
+apps:
+  # 캡틴 앱 (캡틴 .env에 SLACK_BOT_TOKEN)
+  - name: "captain"
+    channels: [fas-alerts, captain-logs, captain-reports]
+
+  # 헌터 앱 (헌터 .env에 HUNTER_SLACK_WEBHOOK_URL)
+  - name: "hunter"
+    channels: [fas-alerts, hunter-logs, hunter-reports]
+
 channels:
-  # 시스템
-  - name: "#fas-general"
-    purpose: "시스템 전체 공지, 모드 전환 알림"
+  # 공통 (시스템 전체)
+  - name: "#fas-alerts"
+    purpose: "시스템 전체 긴급 알림 (캡틴+헌터 모두 발송)"
 
-  # 에이전트 로그
+  # 캡틴 전용
   - name: "#captain-logs"
-    purpose: "캡틴 에이전트 활동 (Claude, Gemini)"
-  - name: "#hunter-logs"
-    purpose: "헌터 활동 (OpenClaw, NotebookLM)"
+    purpose: "캡틴 에이전트 활동 로그 (Claude, Gemini)"
+  - name: "#captain-reports"
+    purpose: "캡틴 보고서, 브리핑, 승인 요청"
 
-  # 업무
+  # 헌터 전용
+  - name: "#hunter-logs"
+    purpose: "헌터 활동 로그 (크롤링, 브라우저 태스크)"
+  - name: "#hunter-reports"
+    purpose: "헌터 보고서 (크롤링 결과, Deep Research)"
+
+  # 업무 (향후 추가)
   - name: "#approvals"
     purpose: "MID 승인 요청/결과"
-  - name: "#reports"
-    purpose: "일일/주간 보고서 Notion URL"
   - name: "#crawl-results"
     purpose: "크롤링 결과 (창업, 청약, 블라인드, 채용)"
   - name: "#academy"
     purpose: "학원 업무 (교재, 시험지, 학부모 문자 초안)"
-  - name: "#ideas"
-    purpose: "캐시플로우/사업화 아이디어"
-
-  # 경고
-  - name: "#alerts"
-    purpose: "시스템 경고 (비긴급, 긴급은 Telegram)"
 ```
 
 ### 구현

@@ -95,8 +95,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 1-2. Gemini CLI 상시 실행 체계 (캡틴) ✅
 
-- [x] 계정 A: 리서치 전용 세션 — `scripts/setup/com.fas.gemini-a.plist`
-- [x] 계정 B: 교차 검증 전용 세션 — `scripts/setup/com.fas.gemini-b.plist`
+- [x] 계정 A: 리서치 + 교차 검증 통합 세션 — `scripts/setup/com.fas.gemini-a.plist`
+- [x] ~~계정 B~~ 제거 — 캡틴은 계정 A만 사용 (계정 B는 헌터 전용)
 - [x] 자동 재시작 래퍼 — `scripts/gemini_wrapper.sh` (지수 백오프, 최대 3회)
 - [x] 출력 로깅 + Telegram/Slack 연동 — `[GEMINI_BLOCKED]` 패턴 감지
 - [ ] 실제 계정 인증 실행 *(인간 작업 — `scripts/setup/setup_gemini_cli.sh` 실행)*
