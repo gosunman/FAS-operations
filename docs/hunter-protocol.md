@@ -175,6 +175,49 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 }
 ```
 
+## 헌터 현재 구현 상태 (2026-03-18 기준)
+
+### 코드 구현 완료 (캡틴 레포에 존재)
+
+| 모듈 | 파일 | 상태 |
+|------|------|------|
+| 폴링 루프 | `src/hunter/poll_loop.ts` | ✅ 완성 (10초 주기, 지수 백오프) |
+| API 클라이언트 | `src/hunter/api_client.ts` | ✅ 완성 (fetch, heartbeat, result) |
+| 태스크 실행기 | `src/hunter/task_executor.ts` | ✅ 4개 핸들러 모두 구현 |
+| - web_crawl | | ✅ Playwright URL 크롤링 |
+| - browser_task | | ✅ 스크린샷 + 텍스트 추출 |
+| - deep_research | | ✅ Gemini Deep Research 웹 UI 자동화 |
+| - notebooklm_verify | | ✅ NotebookLM 웹 UI 자동화 |
+| 브라우저 매니저 | `src/hunter/browser.ts` | ✅ 일반 + persistent context (구글 프로필) |
+| 설정 로더 | `src/hunter/config.ts` | ✅ 환경변수 기반 |
+| 로거 | `src/hunter/logger.ts` | ✅ 파일+콘솔 듀얼 |
+| 진입점 | `src/hunter/main.ts` | ✅ graceful shutdown |
+| 셋업 스크립트 | `scripts/setup/setup_hunter.sh` | ✅ 초기 설정 자동화 |
+| 로그인 감지 | `detect_login_wall()` | ✅ `[LOGIN_REQUIRED]` 반환 |
+| 테스트 | `tests/hunter/`, `src/hunter/*.test.ts` | ✅ 전수 통과 |
+
+### 헌터 머신 실제 상태 (미완료)
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| Tailscale 연결 | ✅ | 캡틴과 VPN 연결 완료 |
+| SSH 키 교환 | ✅ | MacBook ↔ 캡틴 ↔ 헌터 |
+| Claude Code OAuth | ⚠️ **보안 위반** | 주인님 개인 Google ID(계정 A)로 인증됨 → 계정 B로 재인증 필요 (SA-001) |
+| 계정 B 생성 | ❌ | 별도 Anthropic 계정 미생성 |
+| 구글 프로필 설정 | ❌ | 별도 구글 계정으로 수동 로그인 필요 |
+| OpenClaw (ChatGPT Pro) | ❌ | 미설치 |
+| Node.js / pnpm | ❓ | 확인 필요 |
+| Playwright | ❌ | 미설치 |
+| FAS Operations 코드 배포 | ❌ | git clone 필요 |
+
+### 보안 감사 SA-001: 계정 격리 위반
+
+**현재**: 헌터의 Claude Code가 주인님 개인 Google ID(계정 A)로 OAuth 인증됨.
+**Doctrine 규정**: 헌터는 반드시 계정 B(별도 격리 계정)를 사용해야 함.
+**조치**: [docs/security.md#SA-001](security.md) 참조.
+
+---
+
 ## 구글 계정 세션 관리
 
 구글 서비스(NotebookLM, Deep Research)는 자동화된 브라우저 로그인을 강력히 차단한다(CAPTCHA 등).

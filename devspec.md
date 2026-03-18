@@ -86,7 +86,7 @@
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. 4개 핸들러 모두 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환.
+- **task_executor.ts**: 태스크 액션 라우팅 + Playwright 기반 실행기. 4개 핸들러 모두 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. **주의**: 코드는 완성이나 헌터 머신 실제 배포는 미완료 (SA-001 보안 이슈 해결 후 진행).
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
 - **logger.ts**: 파일+콘솔 듀얼 로거 (`logs/hunter_{date}.log`)

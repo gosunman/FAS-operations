@@ -111,6 +111,43 @@ hunter_security:
     - anomaly_detection: true
 ```
 
+## 보안 감사 이력
+
+### SA-001: 헌터 Claude Code OAuth 계정 격리 위반 (2026-03-18)
+
+**심각도**: CRITICAL
+**상태**: 조치 필요 (인간 작업)
+
+**문제**: 헌터(Mac Studio #1)에서 Claude Code OAuth 인증을 주인님 개인 Google ID(계정 A)로 수행함. Doctrine에서 규정한 계정 B(별도 격리 계정) 원칙 위반.
+
+**위험**:
+- 헌터 머신 탈취 시 주인님 Google OAuth 토큰 유출 → Google 계정 전체 접근 가능
+- Claude Code 세션을 통해 주인님 프로필 정보 노출
+- 계정 격리 보안 계층(Defense in Depth의 최후 보루) 무력화
+
+**필요 조치** (주인님이 직접 수행):
+1. 헌터에서 기존 Claude Code OAuth 세션 로그아웃 및 토큰 삭제
+   ```bash
+   # 헌터 머신에서 실행
+   claude logout
+   rm -rf ~/.claude/auth*
+   ```
+2. Google 계정 보안 설정에서 헌터의 OAuth 접근 권한 해제
+   - https://myaccount.google.com/permissions → Claude Code 앱 제거
+3. 계정 B(별도 Anthropic 계정) 생성 또는 기존 보유 시 해당 계정으로 재인증
+   ```bash
+   # 헌터 머신에서 실행 — 계정 B로 로그인
+   claude login
+   ```
+4. 인증 완료 후 검증
+   ```bash
+   claude whoami  # 계정 B인지 확인
+   ```
+
+**발견 경위**: NotebookLM 교차 검증에서 Doctrine-Operations 계정 격리 불일치로 지적됨.
+
+---
+
 ## PII 산이타이저
 
 ### 감지 패턴 (10개)

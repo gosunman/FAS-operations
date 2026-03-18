@@ -56,6 +56,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 인증 가이드 스크립트 — `scripts/setup/setup_ai_cli.sh`
 - [x] Claude Code: 캡틴에 OAuth 로그인 (Max 플랜)
 - [x] Gemini CLI: 캡틴에 2개 계정 인증 설정 (v0.33.2)
+- [ ] **⚠️ SA-001**: 헌터 Claude Code OAuth 세션 계정 A → 계정 B로 교체 *(인간 작업, CRITICAL — [docs/security.md](docs/security.md) 참조)*
+- [ ] 계정 B (별도 Anthropic 계정) 생성 *(인간 작업)*
 - [ ] OpenClaw: 헌터에 ChatGPT Pro 연동 *(인간 작업 — 헌터 머신에서 `scripts/setup/setup_hunter.sh` 실행)*
 
 ### 0-6. 헌터 ↔ 캡틴 통신 구축 ✅
