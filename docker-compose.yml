@@ -15,6 +15,13 @@ services:
       - N8N_LOG_LEVEL=info
       - N8N_DIAGNOSTICS_ENABLED=false
       - WEBHOOK_URL=http://localhost:5678/
+      # FAS integration environment variables
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:3100}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - CLAUDE_DAILY_LIMIT=${CLAUDE_DAILY_LIMIT:-1000}
+      - GEMINI_DAILY_LIMIT=${GEMINI_DAILY_LIMIT:-500}
     volumes:
       - n8n_data:/home/node/.n8n
       # Mount project directories for task file access

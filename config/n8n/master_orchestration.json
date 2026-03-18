@@ -1,0 +1,153 @@
+{
+  "name": "FAS Master Orchestration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-task",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: New Task",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate incoming task and determine agent assignment\nconst body = $input.first().json.body || $input.first().json;\n\nconst title = body.title;\nconst description = body.description || '';\nconst risk_level = body.risk_level || 'low';\nconst requires_personal_info = body.requires_personal_info || false;\nconst priority = body.priority || 'medium';\n\n// Agent assignment logic:\n// - requires_personal_info=true → captain only (never hunter)\n// - risk_level=high/critical → captain\n// - Otherwise → hunter can handle\nlet assigned_to = 'hunter';\nif (requires_personal_info || risk_level === 'high' || risk_level === 'critical') {\n  assigned_to = 'captain';\n}\n\nreturn [{\n  json: {\n    title,\n    description,\n    risk_level,\n    requires_personal_info,\n    priority,\n    assigned_to,\n    mode: 'awake',\n    status: 'pending'\n  }\n}];"
+      },
+      "id": "validate-assign",
+      "name": "Validate & Assign Agent",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/tasks",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "description", "value": "={{ $json.description }}" },
+            { "name": "priority", "value": "={{ $json.priority }}" },
+            { "name": "assigned_to", "value": "={{ $json.assigned_to }}" },
+            { "name": "risk_level", "value": "={{ $json.risk_level }}" },
+            { "name": "requires_personal_info", "value": "={{ $json.requires_personal_info }}" },
+            { "name": "mode", "value": "={{ $json.mode }}" }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "create-task",
+      "name": "Create Task via Gateway",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.statusCode || 200 }}",
+              "operation": "smallerEqual",
+              "value2": 299
+            }
+          ]
+        }
+      },
+      "id": "if-created",
+      "name": "Task Created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "text",
+              "value": "=✅ Task created: *{{ $node['Validate & Assign Agent'].json.title }}*\nAssigned to: {{ $node['Validate & Assign Agent'].json.assigned_to }}\nRisk: {{ $node['Validate & Assign Agent'].json.risk_level }}"
+            }
+          ]
+        }
+      },
+      "id": "slack-success",
+      "name": "Slack: Task Created",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
+            {
+              "name": "text",
+              "value": "=❌ Task creation failed: {{ $node['Validate & Assign Agent'].json.title }}\nError: {{ $json.error || 'Unknown error' }}"
+            }
+          ]
+        }
+      },
+      "id": "telegram-fail",
+      "name": "Telegram: Task Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, task: $node['Create Task via Gateway'].json }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'Task creation failed' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-fail",
+      "name": "Respond Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Webhook: New Task": { "main": [[{ "node": "Validate & Assign Agent", "type": "main", "index": 0 }]] },
+    "Validate & Assign Agent": { "main": [[{ "node": "Create Task via Gateway", "type": "main", "index": 0 }]] },
+    "Create Task via Gateway": { "main": [[{ "node": "Task Created?", "type": "main", "index": 0 }]] },
+    "Task Created?": {
+      "main": [
+        [{ "node": "Slack: Task Created", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: Task Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Slack: Task Created": { "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]] },
+    "Telegram: Task Failed": { "main": [[{ "node": "Respond Failure", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [{ "name": "fas-core" }]
+}
