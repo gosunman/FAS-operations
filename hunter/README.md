@@ -22,9 +22,8 @@ hunter/
 
 | 도구 | 용도 |
 |------|------|
-| OpenClaw (ChatGPT Pro) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 |
-| Claude Code Max x20 | 코딩, 고지능 분석 작업 (계정 B) |
-| Gemini CLI | 소규모 검증, 비크리티컬 결정 대행 |
+| OpenClaw (ChatGPT Plus) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 (계정 B) |
+| Gemini CLI | 코딩, 소규모 검증, 비크리티컬 결정 대행 (계정 B, Claude Code 임시 대체) |
 
 ## 보안
 

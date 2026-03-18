@@ -6,23 +6,19 @@
 캡틴 (Mac Studio M4 Ultra)                    헌터 (Mac Studio M1 Ultra)
 "주인님의 뇌" — 계정 A                     "주인님의 눈" — 계정 B
 ┌────────────────────────────┐              ┌────────────────────────┐
-│ tmux: fas-gateway          │              │ tmux: fas-openclaw     │
-│   └ Express :3100          │◄──HTTP──────►│   └ Task API polling   │
-│       ├ Task CRUD API      │  (Tailscale) │                        │
-│       ├ Hunter API (sanitized)             │                        │
-│       └ Health check       │              │                        │
-│ tmux: fas-claude           │              │                        │
-│   └ agent_wrapper.sh claude│              │ tmux: fas-watchdog     │
-│     (계정 A)               │              │   └ heartbeat sender   │
-│                            │              └────────────────────────┘
-│ tmux: fas-gemini-a         │    ┌──────────────────────┐
-│   └ Gemini CLI (Acc A)     │───►│ External Services    │
-│                            │    │  Telegram Bot API    │
-│                            │    │  Slack Web API       │
-│                            │    │  Notion API          │
-│                            │    └──────────────────────┘
-│ tmux: fas-watchdog         │
-│   └ output_watcher.ts      │    주인님 ↔ 헌터 직접 소통:
+│ tmux: fas-captain          │              │ hunter_watchdog.sh     │
+│   └ pnpm captain (통합)    │◄──HTTP──────►│   └ pnpm start         │
+│       ├ Gateway :3100      │  (Tailscale) │     └ Task API polling │
+│       ├ Output Watcher     │              │     └ Playwright       │
+│       ├ Planning Loop      │              │     └ heartbeat sender │
+│       ├ Hunter Monitor     │              └────────────────────────┘
+│       ├ Activity Logger    │
+│       ├ Resource Monitor   │    ┌──────────────────────┐
+│       └ Daily Scheduler    │───►│ External Services    │
+│ tmux: fas-claude           │    │  Telegram Bot API    │
+│   └ Claude Code (계정 A)   │    │  Slack Web API       │
+│ tmux: fas-gemini-a         │    │  Notion API          │
+│   └ Gemini CLI (계정 A)    │    └──────────────────────┘    주인님 ↔ 헌터 직접 소통:
 │                            │    Telegram/Slack (막연한 업무,
 │ tmux: fas-n8n              │     크리티컬 이슈 보고)
 │   └ docker compose (n8n)   │

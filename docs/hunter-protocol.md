@@ -14,7 +14,7 @@
 
 ## 격리 원칙
 
-헌터(Mac Studio #1)는 **완전 격리된 환경**이다. OpenClaw(ChatGPT Pro)와 Claude Code Max x20이 실행되며, 개인정보가 유입되면 유출 위험이 있다.
+헌터(Mac Studio #1)는 **완전 격리된 환경**이다. OpenClaw(ChatGPT Plus)와 Gemini CLI(계정 B, Claude Code 임시 대체)가 실행되며, 개인정보가 유입되면 유출 위험이 있다.
 
 ### 격리 항목
 

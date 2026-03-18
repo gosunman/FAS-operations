@@ -64,8 +64,7 @@ FAS Operations — Doctrine을 구현하는 코드, 스크립트, 인프라
 | 도구 | 용도 | 계정 |
 |------|------|------|
 | Claude Code (Max) | 코딩, 고지능 작업 | 계정 A |
-| Gemini CLI (A) | 웹 검색, 리서치, 트렌드 분석 | 계정 A |
-| Gemini CLI (B) | 교차 검증, 팩트체킹 | 계정 B |
+| Gemini CLI (A) | 웹 검색, 리서치, 교차 검증, 팩트체킹 | 계정 A |
 | n8n | 워크플로우 오케스트레이션 | 로컬 |
 | Telegram/Slack/Notion | 주인님 소통 | 주인님 계정 |
 

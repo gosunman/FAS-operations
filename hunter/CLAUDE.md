@@ -40,10 +40,9 @@ FAS Operations — Doctrine을 구현하는 코드, 스크립트, 인프라
 
 | 도구 | 용도 | 계정 |
 |------|------|------|
-| OpenClaw (ChatGPT Pro) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 | 계정 B |
-| Claude Code Max x20 | 코딩, 고지능 분석 작업 | 계정 B (별도) |
-| Gemini CLI | 소규모 검증, 비크리티컬 결정 대행 | 계정 B |
-| Browser | 웹 탐색, 크롤링, 데이터 수집 | 헌터 전용 프로필 |
+| OpenClaw (ChatGPT Plus) | 메인 엔진, 브라우저 자동화, 봇탐지 우회 | 계정 B |
+| Gemini CLI | 코딩, 소규모 검증, 비크리티컬 결정 대행 (Claude Code 임시 대체) | 계정 B |
+| Browser (Playwright) | 웹 탐색, 크롤링, 데이터 수집 | 헌터 전용 프로필 |
 
 ## ⚠️ 보안 제약 (CRITICAL — 절대 위반 불가)
 
