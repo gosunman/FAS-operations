@@ -3,7 +3,7 @@
 
 import type { TelegramClient } from './telegram.js';
 import type { SlackClient } from './slack.js';
-import type { NotificationEvent, NotificationEventType } from '../shared/types.js';
+import type { NotificationEvent, NotificationEventType, NotificationResult } from '../shared/types.js';
 
 // === Routing matrix: which channels receive which events ===
 
@@ -54,13 +54,13 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       notion: false,
     };
 
+    const telegram_type = event.type === 'approval_high' ? 'approval' as const
+      : event.type === 'alert' || event.type === 'blocked' ? 'alert' as const
+      : event.type === 'briefing' ? 'briefing' as const
+      : 'info' as const;
+
     // Telegram
     if (rules.telegram && deps.telegram) {
-      const telegram_type = event.type === 'approval_high' ? 'approval' as const
-        : event.type === 'alert' || event.type === 'blocked' ? 'alert' as const
-        : event.type === 'briefing' ? 'briefing' as const
-        : 'info' as const;
-
       const result = await deps.telegram.send(event.message, telegram_type);
       results.telegram = result.success;
     }
@@ -68,6 +68,19 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
     // Slack
     if (rules.slack && deps.slack) {
       results.slack = await deps.slack.route(event);
+    }
+
+    // Fallback: Telegram failed → try Slack (for critical events)
+    if (rules.telegram && !results.telegram && deps.slack && !results.slack) {
+      console.warn(`[Router] Both Telegram and Slack failed for ${event.type} — critical notification lost`);
+    } else if (rules.telegram && !results.telegram && deps.slack) {
+      console.warn(`[Router] Telegram failed for ${event.type}, falling back to Slack`);
+      results.slack = await deps.slack.send('#alerts', `[Telegram Fallback] ${event.message}`);
+    } else if (rules.slack && !results.slack && deps.telegram) {
+      // Fallback: Slack failed → try Telegram
+      console.warn(`[Router] Slack failed for ${event.type}, falling back to Telegram`);
+      const fallback = await deps.telegram.send(`[Slack Fallback] ${event.message}`, telegram_type);
+      results.telegram = fallback.success;
     }
 
     // Notion — placeholder for future implementation

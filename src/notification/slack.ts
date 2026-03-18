@@ -6,6 +6,7 @@ import type {
   SlackChannel,
   NotificationEvent,
   NotificationEventType,
+  NotificationResult,
 } from '../shared/types.js';
 
 // === Configuration ===
@@ -34,26 +35,61 @@ const CHANNEL_ROUTING: Record<NotificationEventType, SlackChannel | ((event: Not
 
 // === Slack Client ===
 
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const create_slack_client = (config: SlackConfig) => {
   const web = new WebClient(config.token);
 
-  // === Send message to a specific channel ===
+  // === Send message with retry (exponential backoff, max 3 attempts) ===
   const send = async (
     channel: SlackChannel,
     text: string,
     blocks?: unknown[],
   ): Promise<boolean> => {
-    try {
-      await web.chat.postMessage({
-        channel,
-        text,
-        blocks: blocks as never[],
-      });
-      return true;
-    } catch (error) {
-      console.error(`[Slack] Failed to send to ${channel}:`, error);
-      return false;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await web.chat.postMessage({
+          channel,
+          text,
+          blocks: blocks as never[],
+        });
+        return true;
+      } catch (error) {
+        console.error(`[Slack] Attempt ${attempt}/${MAX_RETRIES} failed for ${channel}:`, error);
+        if (attempt < MAX_RETRIES) {
+          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
+        }
+      }
     }
+    console.error(`[Slack] All ${MAX_RETRIES} attempts exhausted for ${channel}`);
+    return false;
+  };
+
+  // === Send with retry returning detailed result ===
+  const send_with_result = async (
+    channel: SlackChannel,
+    text: string,
+    blocks?: unknown[],
+  ): Promise<NotificationResult> => {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await web.chat.postMessage({
+          channel,
+          text,
+          blocks: blocks as never[],
+        });
+        return { channel: 'slack', success: true, attempts: attempt };
+      } catch (error) {
+        console.error(`[Slack] Attempt ${attempt}/${MAX_RETRIES} failed for ${channel}:`, error);
+        if (attempt < MAX_RETRIES) {
+          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
+        }
+      }
+    }
+    return { channel: 'slack', success: false, attempts: MAX_RETRIES, error: 'All retry attempts exhausted' };
   };
 
   // === Route notification to the correct channel ===
@@ -95,6 +131,7 @@ export const create_slack_client = (config: SlackConfig) => {
 
   return {
     send,
+    send_with_result,
     route,
     resolve_channel,
     format_milestone,

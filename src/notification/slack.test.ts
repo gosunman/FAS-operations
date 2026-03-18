@@ -35,10 +35,11 @@ describe('Slack Client', () => {
       });
     });
 
-    it('should return false on failure', async () => {
-      vi.mocked(client._web.chat.postMessage).mockRejectedValueOnce(
-        new Error('Network error'),
-      );
+    it('should return false on failure after all retries', async () => {
+      vi.mocked(client._web.chat.postMessage)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'));
 
       const result = await client.send('#alerts', 'test');
       expect(result).toBe(false);

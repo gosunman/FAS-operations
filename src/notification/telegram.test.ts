@@ -69,10 +69,11 @@ describe('Telegram Client', () => {
       );
     });
 
-    it('should return success: false on send failure', async () => {
-      vi.mocked(client._bot.sendMessage).mockRejectedValueOnce(
-        new Error('Network error'),
-      );
+    it('should return success: false on send failure after all retries', async () => {
+      vi.mocked(client._bot.sendMessage)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'));
 
       const result = await client.send('test', 'info');
 

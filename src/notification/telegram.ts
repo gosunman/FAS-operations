@@ -2,7 +2,7 @@
 // Handles: urgent alerts, approval requests, morning briefings
 
 import TelegramBot from 'node-telegram-bot-api';
-import type { TelegramMessageType, TelegramSendResult, ApprovalResponse } from '../shared/types.js';
+import type { TelegramMessageType, TelegramSendResult, ApprovalResponse, NotificationResult } from '../shared/types.js';
 
 // === Configuration ===
 
@@ -13,6 +13,11 @@ export type TelegramConfig = {
 };
 
 // === Telegram Client ===
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const create_telegram_client = (config: TelegramConfig) => {
   const bot = new TelegramBot(config.token, {
@@ -45,33 +50,51 @@ export const create_telegram_client = (config: TelegramConfig) => {
     });
   }
 
-  // === Send message ===
+  // === Send message with retry (exponential backoff, max 3 attempts) ===
   const send = async (
     text: string,
     type: TelegramMessageType,
     request_id?: string,
   ): Promise<TelegramSendResult> => {
-    try {
-      // Build inline keyboard for approval messages
-      const reply_markup = type === 'approval' && request_id
-        ? {
-            inline_keyboard: [[
-              { text: '✅ 승인', callback_data: `approve:${request_id}` },
-              { text: '❌ 거부', callback_data: `reject:${request_id}` },
-            ]],
-          }
-        : undefined;
+    const reply_markup = type === 'approval' && request_id
+      ? {
+          inline_keyboard: [[
+            { text: '✅ 승인', callback_data: `approve:${request_id}` },
+            { text: '❌ 거부', callback_data: `reject:${request_id}` },
+          ]],
+        }
+      : undefined;
 
-      const message = await bot.sendMessage(config.chat_id, text, {
-        parse_mode: 'Markdown',
-        reply_markup,
-      });
-
-      return { message_id: message.message_id, success: true };
-    } catch (error) {
-      console.error('[Telegram] Failed to send message:', error);
-      return { message_id: 0, success: false };
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const message = await bot.sendMessage(config.chat_id, text, {
+          parse_mode: 'Markdown',
+          reply_markup,
+        });
+        return { message_id: message.message_id, success: true };
+      } catch (error) {
+        console.error(`[Telegram] Attempt ${attempt}/${MAX_RETRIES} failed:`, error);
+        if (attempt < MAX_RETRIES) {
+          await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
+        }
+      }
     }
+    console.error(`[Telegram] All ${MAX_RETRIES} attempts exhausted`);
+    return { message_id: 0, success: false };
+  };
+
+  // === Send with detailed result ===
+  const send_with_result = async (
+    text: string,
+    type: TelegramMessageType,
+    request_id?: string,
+  ): Promise<NotificationResult> => {
+    const result = await send(text, type, request_id);
+    return {
+      channel: 'telegram',
+      success: result.success,
+      attempts: MAX_RETRIES, // send already retries internally
+    };
   };
 
   // === Wait for approval response ===
@@ -137,6 +160,7 @@ export const create_telegram_client = (config: TelegramConfig) => {
 
   return {
     send,
+    send_with_result,
     wait_for_approval,
     format_approval_message,
     format_alert,
