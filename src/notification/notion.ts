@@ -53,23 +53,13 @@ export const create_notion_client = (config: NotionConfig) => {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
+        // Only use Name (title) property — other properties (Type, Device, etc.)
+        // may not exist in all Notion databases. Keep it simple and resilient.
         const response = await client.pages.create({
           parent: { database_id: config.database_id },
           properties: {
             Name: {
               title: [{ text: { content: `${emoji} [${event.type.toUpperCase()}] ${event.message.slice(0, 100)}` } }],
-            },
-            Type: {
-              select: { name: event.type },
-            },
-            Device: {
-              select: { name: event.device },
-            },
-            Severity: {
-              select: { name: event.severity ?? 'low' },
-            },
-            Timestamp: {
-              date: { start: new Date().toISOString() },
             },
           },
           children: [
