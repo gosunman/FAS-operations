@@ -134,12 +134,10 @@ export const create_notion_client = (config: NotionConfig) => {
       try {
         const response = await client.pages.create({
           parent: { database_id: db_id },
+          // Only use Name (title) — Timestamp may not exist in the DB schema
           properties: {
             Name: {
               title: [{ text: { content: params.title } }],
-            },
-            Timestamp: {
-              date: { start: new Date().toISOString() },
             },
           },
           children: chunks.map((chunk) => ({
@@ -198,15 +196,10 @@ export const create_notion_client = (config: NotionConfig) => {
       try {
         const response = await client.pages.create({
           parent: { database_id: db_id },
+          // Only use Name (title) — Type/Timestamp may not exist in the DB schema
           properties: {
             Name: {
               title: [{ text: { content: `🌅 Daily Briefing — ${params.date}` } }],
-            },
-            Type: {
-              select: { name: 'briefing' },
-            },
-            Timestamp: {
-              date: { start: params.date },
             },
           },
           children,
