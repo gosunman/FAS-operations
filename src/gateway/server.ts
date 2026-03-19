@@ -43,6 +43,8 @@ import { FASError } from '../shared/types.js';
 import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel, NotificationEvent } from '../shared/types.js';
 import type { NotificationRouter } from '../notification/router.js';
 import { create_logger } from './logger.js';
+import type { ActivityLogger } from '../watchdog/activity_logger.js';
+import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
 
 // Shared logger instance for the gateway module
 const log = create_logger({ prefix: 'Gateway' });
@@ -75,6 +77,7 @@ export type AppOptions = {
   mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
   notion_backup?: NotionBackupConfig | null;    // Notion backup for task results (fire-and-forget)
   notification_router?: NotificationRouter | null; // Notification router for crawl_result events
+  activity_logger?: ActivityLogger | null;         // Activity logger for audit trail
 };
 
 // Notion backup configuration — saves completed task results to Notion as a durable backup
@@ -186,6 +189,11 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     ? create_notion_backup(options.notion_backup)
     : null;
 
+  // Activity logging hooks (optional — audit trail for all actions)
+  const activity_hooks: ActivityHooks | null = options.activity_logger
+    ? create_activity_hooks(options.activity_logger)
+    : null;
+
   // Track hunter heartbeat (legacy, also tracked in agent_heartbeats)
   let last_hunter_heartbeat: Date | null = null;
   const start_time = Date.now();
@@ -274,6 +282,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       const { title, description, priority, assigned_to, mode, risk_level, requires_personal_info, deadline, depends_on } = req.body;
 
       if (!title || !assigned_to) {
+        activity_hooks?.log_error('gateway', 'Validation failed: title and assigned_to are required', { endpoint: '/api/tasks' });
         const err = new FASError('VALIDATION_ERROR', 'title and assigned_to are required', 400);
         res.status(400).json(err.to_json());
         return;
@@ -291,8 +300,12 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         depends_on,
       });
 
+      // Activity log: task created
+      activity_hooks?.log_task_created(task.id, task.title, task.assigned_to, task.risk_level);
+
       res.status(201).json(task);
     } catch (error) {
+      activity_hooks?.log_error('gateway', 'Failed to create task', { endpoint: '/api/tasks' });
       const err = new FASError('INTERNAL_ERROR', 'Failed to create task', 500);
       res.status(500).json(err.to_json());
     }
@@ -305,6 +318,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       const tasks = status ? store.get_by_status(status) : store.get_all();
       res.json({ tasks, count: tasks.length });
     } catch (error) {
+      activity_hooks?.log_error('gateway', 'Failed to list tasks', { endpoint: '/api/tasks' });
       const err = new FASError('INTERNAL_ERROR', 'Failed to list tasks', 500);
       res.status(500).json(err.to_json());
     }
@@ -348,8 +362,13 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       return;
     }
 
-    // Fire-and-forget Notion backup
+    // Activity log: task completed
     const task = store.get_by_id(req.params.id);
+    if (task) {
+      activity_hooks?.log_task_completed(task.id, task.title);
+    }
+
+    // Fire-and-forget Notion backup
     if (notion_backup && task) {
       notion_backup.backup_task_result(task.id, task.title, summary).catch(() => {});
     }
@@ -369,6 +388,10 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       res.status(404).json(new FASError('NOT_FOUND', 'Task not found', 404).to_json());
       return;
     }
+
+    // Activity log: task blocked/failed
+    activity_hooks?.log_task_failed(req.params.id, reason);
+
     res.json(store.get_by_id(req.params.id));
   });
 
@@ -493,8 +516,13 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         files_created: files ?? [],
       });
 
-      // Fire-and-forget Notion backup for hunter results
+      // Activity log: hunter task completed
       const completed_task = store.get_by_id(req.params.id);
+      if (completed_task) {
+        activity_hooks?.log_task_completed(completed_task.id, completed_task.title);
+      }
+
+      // Fire-and-forget Notion backup for hunter results
       if (notion_backup && completed_task) {
         notion_backup.backup_task_result(completed_task.id, completed_task.title, safe_output).catch(() => {});
       }
@@ -523,6 +551,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       }
     } else {
       store.block_task(req.params.id, safe_output);
+      // Activity log: hunter task failed
+      activity_hooks?.log_task_failed(req.params.id, safe_output);
     }
 
     res.json({ ok: true });
@@ -537,6 +567,10 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       crash_count: existing?.crash_count ?? 0,
       started_at: existing?.started_at ?? new Date(),
     });
+
+    // Activity log: hunter heartbeat received
+    activity_hooks?.log_hunter_heartbeat();
+
     res.json({ ok: true, server_time: new Date().toISOString() });
   });
 

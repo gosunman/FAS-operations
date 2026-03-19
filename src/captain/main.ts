@@ -11,6 +11,7 @@ import { create_persona_injector } from './persona_injector.js';
 import { create_routed_watcher, create_watcher_router } from '../watchdog/output_watcher.js';
 import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_monitor.js';
 import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
+import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
 import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resource_monitor.js';
 import { create_telegram_client } from '../notification/telegram.js';
 import { create_slack_client } from '../notification/slack.js';
@@ -72,7 +73,7 @@ const STALE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
 
 // === Build notification router from env vars ===
 
-const build_notification_stack = (): { router: NotificationRouter; notion: NotionClient | null } => {
+const build_notification_stack = (activity_hooks?: ActivityHooks | null): { router: NotificationRouter; notion: NotionClient | null } => {
   const telegram_token = process.env.TELEGRAM_BOT_TOKEN;
   const telegram_chat_id = process.env.TELEGRAM_CHAT_ID;
   const telegram = (telegram_token && telegram_chat_id)
@@ -97,7 +98,7 @@ const build_notification_stack = (): { router: NotificationRouter; notion: Notio
   if (!slack) console.warn('[Captain] SLACK_BOT_TOKEN not set — Slack disabled');
   if (!notion) console.warn('[Captain] NOTION_API_KEY not set — Notion routing disabled');
 
-  const router = create_notification_router({ telegram, slack, notion });
+  const router = create_notification_router({ telegram, slack, notion, activity_hooks });
   return { router, notion };
 };
 
@@ -113,8 +114,13 @@ const main = async () => {
   const store = create_task_store({ db_path: DB_PATH });
   console.log(`[Captain] Task store initialized (${DB_PATH})`);
 
+  // 1b. Activity logger + hooks (created early so all services can use it)
+  const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
+  const activity_hooks = create_activity_hooks(activity_logger);
+  console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
+
   // 2. Notification router + Notion client (shared between router and morning briefing)
-  const { router, notion } = build_notification_stack();
+  const { router, notion } = build_notification_stack(activity_hooks);
   console.log('[Captain] Notification router initialized');
 
   // 3. Gateway API server
@@ -127,6 +133,7 @@ const main = async () => {
       ? { api_key: process.env.NOTION_API_KEY, database_id: process.env.NOTION_TASK_RESULTS_DB }
       : null,
     notification_router: router,
+    activity_logger,
   });
 
   const server: Server = await new Promise((resolve) => {
@@ -191,11 +198,7 @@ const main = async () => {
   });
   console.log('[Captain] Hunter monitor started');
 
-  // 8. Activity logger (audit trail)
-  const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
-  console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
-
-  // 9. Feedback extractor (lessons learned from completed tasks → Doctrine)
+  // 8. Feedback extractor (lessons learned from completed tasks → Doctrine)
   const feedback_extractor = create_feedback_extractor({
     feedback_path: DOCTRINE_FEEDBACK_PATH,
   });
@@ -237,6 +240,7 @@ const main = async () => {
         chat_id: process.env.TELEGRAM_CHAT_ID,
       },
       store,
+      activity_hooks,
     );
     telegram_commands.start();
     console.log('[Captain] Telegram command listener started');

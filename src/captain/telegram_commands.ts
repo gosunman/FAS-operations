@@ -6,6 +6,7 @@
 
 import type { TaskStore } from '../gateway/task_store.js';
 import type { Task } from '../shared/types.js';
+import type { ActivityHooks } from '../watchdog/activity_integration.js';
 
 // === Configuration ===
 
@@ -44,6 +45,7 @@ const MAX_PENDING_DISPLAY = 10;
 export const create_telegram_commands = (
   config: TelegramCommandConfig,
   store: TaskStore,
+  activity_hooks?: ActivityHooks | null,
 ) => {
   let running = false;
   let last_update_id = 0;
@@ -192,6 +194,11 @@ export const create_telegram_commands = (
 
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Activity log: telegram command received
+    const command = trimmed.startsWith('/') ? trimmed.split(' ')[0] : '(text)';
+    const args = trimmed.startsWith('/') ? trimmed.slice(command.length).trim() : trimmed;
+    activity_hooks?.log_telegram_command(command, args);
 
     try {
       if (trimmed.startsWith('/hunter ')) {

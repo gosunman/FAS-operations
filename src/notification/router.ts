@@ -5,6 +5,7 @@ import type { TelegramClient } from './telegram.js';
 import type { SlackClient } from './slack.js';
 import type { NotionClient } from './notion.js';
 import type { NotificationEvent, NotificationEventType, NotificationResult } from '../shared/types.js';
+import type { ActivityHooks } from '../watchdog/activity_integration.js';
 
 // === Routing matrix: which channels receive which events ===
 
@@ -38,6 +39,7 @@ export type NotificationRouterDeps = {
   telegram: TelegramClient | null;
   slack: SlackClient | null;
   notion: NotionClient | null;
+  activity_hooks?: ActivityHooks | null;
 };
 
 export const create_notification_router = (deps: NotificationRouterDeps) => {
@@ -68,6 +70,7 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
     if (rules.telegram && deps.telegram) {
       const result = await deps.telegram.send(event.message, telegram_type);
       results.telegram = result.success;
+      deps.activity_hooks?.log_notification_sent('telegram', event.type, result.success);
     }
 
     // Notion — send FIRST for crawl_result so we can include the URL in Slack
@@ -76,12 +79,15 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       try {
         const notion_result = await deps.notion.send_with_result(event);
         results.notion = notion_result.success;
+        deps.activity_hooks?.log_notification_sent('notion', event.type, notion_result.success);
         if (notion_result.success && notion_result.url) {
           notion_url = notion_result.url;
         }
-      } catch {
+      } catch (err) {
         // Fire-and-forget: Notion failure should never block notifications
+        const err_msg = err instanceof Error ? err.message : String(err);
         console.warn(`[Router] Notion send failed for ${event.type} — logged only`);
+        deps.activity_hooks?.log_notification_sent('notion', event.type, false, err_msg);
       }
     }
 
@@ -95,6 +101,7 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       } else {
         results.slack = await deps.slack.route(event);
       }
+      deps.activity_hooks?.log_notification_sent('slack', event.type, results.slack);
     }
 
     // === Cross-channel fallback logic ===
