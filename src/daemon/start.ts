@@ -23,6 +23,9 @@ import { create_task_store } from '../gateway/task_store.js';
 import { create_app } from '../gateway/server.js';
 import { create_telegram_bot } from './telegram_bot.js';
 import { create_slack_bot } from './slack_bot.js';
+import { create_gemini_fallback } from './gemini_fallback.js';
+import { create_usage_monitor } from './usage_monitor.js';
+import type { CaptainMode } from './usage_monitor.js';
 
 // === Validate required environment variables ===
 
@@ -109,10 +112,51 @@ if (slack_token && slack_channel) {
   console.log('[Daemon] Slack bot disabled (SLACK_BOT_TOKEN not set)');
 }
 
+// === Initialize Gemini Fallback & Usage Monitor ===
+
+const gemini_fallback = create_gemini_fallback({
+  timeout_ms: parseInt(process.env.GEMINI_TIMEOUT_MS ?? '120000', 10),
+  model: process.env.GEMINI_MODEL,
+});
+
+const usage_monitor = create_usage_monitor({
+  failure_threshold: parseInt(process.env.CLAUDE_FAILURE_THRESHOLD ?? '5', 10),
+  warning_threshold: parseInt(process.env.CLAUDE_WARNING_THRESHOLD ?? '3', 10),
+});
+
+// Handle mode transitions — notify owner via Telegram
+usage_monitor.on_mode_change((old_mode: CaptainMode, new_mode: CaptainMode) => {
+  const mode_labels: Record<CaptainMode, string> = {
+    normal: 'Claude Code (정상)',
+    warning: 'Claude Code (경고)',
+    fallback: 'Gemini CLI (응급)',
+  };
+
+  const message = [
+    `*캡틴 모드 전환*`,
+    `${mode_labels[old_mode]} → ${mode_labels[new_mode]}`,
+    '',
+    new_mode === 'fallback'
+      ? 'Claude Code 사용량 소진. Gemini CLI로 응급 대응 중입니다.'
+      : new_mode === 'warning'
+        ? 'Claude Code 연속 실패 감지. 곧 Gemini 폴백으로 전환될 수 있습니다.'
+        : 'Claude Code 복구 완료. 정상 운영으로 복귀합니다.',
+  ].join('\n');
+
+  // Fire-and-forget notification
+  bot.send_message(message).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Daemon] Failed to send mode change notification: ${msg}`);
+  });
+});
+
+usage_monitor.start();
+
 // === Graceful shutdown ===
 
 const shutdown = () => {
   console.log('[Daemon] Shutting down...');
+  usage_monitor.stop();
   bot.stop();
   if (slack_bot) slack_bot.stop();
   server.close();
@@ -123,6 +167,17 @@ const shutdown = () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-const components = ['Gateway', 'Telegram Bot'];
+const components = ['Gateway', 'Telegram Bot', 'UsageMonitor', 'GeminiFallback'];
 if (slack_bot) components.push('Slack Bot');
 console.log(`[Daemon] FAS Daemon started — ${components.join(' + ')}`);
+
+// Check Gemini availability on startup
+gemini_fallback.is_available().then((available) => {
+  if (available) {
+    console.log('[Daemon] Gemini CLI is available — fallback ready');
+  } else {
+    console.warn('[Daemon] Gemini CLI is NOT available — fallback will not work');
+  }
+}).catch(() => {
+  console.warn('[Daemon] Could not check Gemini CLI availability');
+});
