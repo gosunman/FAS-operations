@@ -1,13 +1,15 @@
 // FAS Daemon Entrypoint
 //
-// Starts both the Gateway HTTP server and the standalone Telegram Bot.
+// Starts the Gateway HTTP server, Telegram Bot, and Slack Bot.
 // This process runs independently of Claude Code (Captain), ensuring
-// the owner can always command Hunter via Telegram even when Captain
-// is down (e.g., due to API quota exhaustion).
+// the owner can always command Hunter via Telegram or Slack even when
+// Captain is down (e.g., due to API quota exhaustion).
 //
 // Environment variables:
 //   TELEGRAM_BOT_TOKEN   — Telegram Bot API token (required)
 //   TELEGRAM_OWNER_ID    — Owner's Telegram chat ID (required)
+//   SLACK_BOT_TOKEN      — Slack Bot Token xoxb-... (optional, enables Slack bot)
+//   SLACK_CHANNEL_ID     — Slack channel ID for hunter tasks (required if SLACK_BOT_TOKEN set)
 //   GATEWAY_PORT         — HTTP port for Gateway (default: 3100)
 //   GATEWAY_HOST         — HTTP host for Gateway (default: 0.0.0.0)
 //   HUNTER_API_KEY       — API key for hunter authentication
@@ -20,6 +22,7 @@
 import { create_task_store } from '../gateway/task_store.js';
 import { create_app } from '../gateway/server.js';
 import { create_telegram_bot } from './telegram_bot.js';
+import { create_slack_bot } from './slack_bot.js';
 
 // === Validate required environment variables ===
 
@@ -84,11 +87,34 @@ const bot = create_telegram_bot(
 
 bot.start();
 
+// === Start Slack Bot (optional) ===
+
+const slack_token = process.env.SLACK_BOT_TOKEN;
+const slack_channel = process.env.SLACK_CHANNEL_ID;
+
+let slack_bot: ReturnType<typeof create_slack_bot> | null = null;
+
+if (slack_token && slack_channel) {
+  slack_bot = create_slack_bot(
+    {
+      bot_token: slack_token,
+      channel_id: slack_channel,
+    },
+    store,
+  );
+  slack_bot.start();
+} else if (slack_token && !slack_channel) {
+  console.warn('[Daemon] SLACK_BOT_TOKEN is set but SLACK_CHANNEL_ID is missing — Slack bot disabled');
+} else {
+  console.log('[Daemon] Slack bot disabled (SLACK_BOT_TOKEN not set)');
+}
+
 // === Graceful shutdown ===
 
 const shutdown = () => {
   console.log('[Daemon] Shutting down...');
   bot.stop();
+  if (slack_bot) slack_bot.stop();
   server.close();
   store.close();
   process.exit(0);
@@ -97,4 +123,6 @@ const shutdown = () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-console.log('[Daemon] FAS Daemon started — Gateway + Telegram Bot');
+const components = ['Gateway', 'Telegram Bot'];
+if (slack_bot) components.push('Slack Bot');
+console.log(`[Daemon] FAS Daemon started — ${components.join(' + ')}`);
