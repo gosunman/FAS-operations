@@ -82,13 +82,14 @@
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). `briefing` 및 `crawl_result` 이벤트는 Notion API로도 전송 (페이지 자동 생성). **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
+- **notion.ts**: Notion 클라이언트. **Name (title) 속성만 사용** — Type, Timestamp, Device 등의 커스텀 속성에 의존하지 않아 모든 Notion DB에서 동작. 메시지는 2000자 단위로 분할하여 블록 생성. `send_with_result()`는 페이지 URL을 반환하여 Slack 등 다른 채널에서 링크 가능.
 
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
 - **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenClaw CLI를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. `resolve_action()`은 Task의 `action` 필드를 우선 사용하고, 없으면 URL 유무로 자동 결정 (URL 없음 → `chatgpt_task`).
-- `chatgpt_task` 핸들러는 **OpenClaw** CLI(`openclaw -p "prompt"`)를 호출. OpenClaw은 독립 AI 에이전트 프레임워크로, ChatGPT Pro(계정 B) OAuth를 LLM 백엔드로 사용. 상세: [docs/openclaw.md](docs/openclaw.md)
+- `chatgpt_task` 핸들러는 **OpenClaw** CLI(`openclaw agent --agent main -m "prompt" --json`)를 호출. OpenClaw은 독립 AI 에이전트 프레임워크로, ChatGPT Pro(계정 B) OAuth를 LLM 백엔드로 사용. `OPENCLAW_AGENT` 환경변수로 에이전트 선택 가능 (기본: `main`). 상세: [docs/openclaw.md](docs/openclaw.md)
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
 - **notify.ts**: 헌터 전용 Telegram + Slack 알림 (캡틴 봇과 격리된 별도 토큰). `alert()` → 양쪽, `report()` → Slack만. Fire-and-forget.

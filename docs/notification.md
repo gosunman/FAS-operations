@@ -69,7 +69,7 @@ chat_id_env: TELEGRAM_CHAT_ID
 | `/status` | 태스크 통계 응답 |
 | `/tasks` | 대기중 태스크 목록 (최대 10건) |
 | `/cancel {id}` | 태스크 취소 (blocked 처리) |
-| (일반 텍스트) | 기본적으로 `/hunter`와 동일 처리 |
+| (일반 텍스트) | **캡틴 태스크로 생성** (PII 보호 — 헌터 직행 금지) |
 
 **보안:** `config.chat_id`와 일치하는 채팅만 수락. 미인가 채팅은 경고 로그 후 무시.
 
@@ -230,7 +230,9 @@ async function route_notification(event: NotificationEvent): Promise<void> {
       break
 
     case 'crawl_result':
-      await send_slack('#crawl-results', event.message)
+      // Notion에 원문 저장 후 URL을 받아 Slack에 요약 + 링크 전송
+      // (실제 로직은 router.ts에서 Notion → Slack 순서로 처리)
+      await send_slack('#crawl-results', `🔍 *[크롤링 완료]* ${summary}... 📄 <${notion_url}|Notion에서 원문 보기>`)
       break
 
     case 'approval_mid':
@@ -256,51 +258,17 @@ async function route_notification(event: NotificationEvent): Promise<void> {
 
 ### 데이터베이스 구조
 
+Notion DB는 **Name (title) 속성만 필수**. 코드가 Type/Timestamp/Device 등 커스텀 속성에 의존하지 않으므로 어떤 DB에서든 동작한다.
+
 ```yaml
 databases:
-  daily_reports:
-    title: "Daily Reports"
+  notification_log:
+    title: "FAS Notifications"
     properties:
-      - name: Date
-        type: date
-      - name: Mode
-        type: select
-        options: [SLEEP, AWAKE]
-      - name: Tasks Completed
-        type: number
-      - name: Tasks Blocked
-        type: number
-      - name: Summary
-        type: rich_text
-
-  research:
-    title: "Research"
-    properties:
-      - name: Topic
+      - name: Name        # 유일한 필수 속성 (title)
         type: title
-      - name: Category
-        type: select
-        options: [AI Trends, Startup, Job, Grad School, Market Analysis]
-      - name: Date
-        type: date
-      - name: Agent
-        type: select
-      - name: Status
-        type: select
-        options: [Draft, Verified, Outdated]
-
-  crawl_results:
-    title: "Crawl Results"
-    properties:
-      - name: Source
-        type: select
-        options: [K-Startup, 청약홈, 블라인드, 채용, D.CAMP]
-      - name: Date
-        type: date
-      - name: Items Found
-        type: number
-      - name: Action Required
-        type: checkbox
+    # 페이지 본문: paragraph 블록으로 메시지 전문 저장 (2000자 단위 분할)
+    # 메타데이터: JSON 코드 블록으로 추가 정보 저장
 ```
 
 ### 구현
@@ -332,6 +300,17 @@ async function create_report_page(
 ## Notion Router 연결
 
 `router.ts`에 NotionClient가 연결 완료되었다. `NotificationRouterDeps`에서 `notion: NotionClient | null`로 주입받으며, `ROUTING_MATRIX`에서 `notion: true`인 이벤트(`briefing`, `crawl_result`)는 자동으로 Notion에 전송된다.
+
+### 크롤링 결과 흐름 (Notion → Slack 링크)
+
+`crawl_result` 이벤트는 특별한 흐름을 탄다:
+1. **Notion에 먼저 전송** — 원문 전체를 페이지로 저장, URL 반환
+2. **Slack에 요약 + 링크** — 메시지 앞 200자 요약 + `📄 Notion에서 원문 보기` 링크
+3. Notion 실패 시 Slack에 원문 그대로 전송 (폴백)
+
+### Notion 페이지 속성
+
+모든 Notion 페이지 생성 시 **Name (title) 속성만 사용**한다. Type, Timestamp, Device 등 커스텀 속성은 DB마다 다를 수 있으므로 사용하지 않는다. 메시지 본문은 2000자 단위로 분할하여 paragraph 블록으로 저장.
 
 - Notion 실패 시 fire-and-forget — 알림 전송을 차단하지 않음
 - 환경변수 `NOTION_API_KEY` 미설정 시 `notion: null`로 graceful degradation

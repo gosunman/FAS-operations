@@ -22,6 +22,18 @@
 | `crawl_result` | X | O | O |
 | `agent_log` / `done` / `error` 등 | X | O | X |
 
+## 크롤링 결과 흐름 (Notion → Slack 링크)
+
+`crawl_result` 이벤트는 특별한 라우팅을 따른다:
+
+1. **Notion에 먼저 전송** → 원문 전체를 페이지로 저장, URL 반환
+2. **Slack에 요약 + Notion 링크** → 200자 요약 + `📄 Notion에서 원문 보기`
+3. Notion 실패 시 → Slack에 원문 그대로 전송 (폴백)
+
+## Notion 속성
+
+모든 페이지 생성 시 **Name (title) 속성만 사용**. 메시지 본문은 2000자 단위로 분할하여 paragraph 블록 생성.
+
 ## 폴백 로직
 
 - Telegram 실패 시 → Slack `#alerts`로 폴백
