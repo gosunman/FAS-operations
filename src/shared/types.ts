@@ -59,6 +59,7 @@ export type NotificationResult = {
   attempts: number;
   error?: string;
   fallback_used?: boolean;
+  url?: string; // Notion page URL (returned by notion.send_with_result)
 };
 
 // === Error Types ===

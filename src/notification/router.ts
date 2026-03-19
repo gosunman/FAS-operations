@@ -66,9 +66,31 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       results.telegram = result.success;
     }
 
-    // Slack
+    // Notion — send FIRST for crawl_result so we can include the URL in Slack
+    let notion_url: string | undefined;
+    if (rules.notion && deps.notion) {
+      try {
+        const notion_result = await deps.notion.send_with_result(event);
+        results.notion = notion_result.success;
+        if (notion_result.success && notion_result.url) {
+          notion_url = notion_result.url;
+        }
+      } catch {
+        // Fire-and-forget: Notion failure should never block notifications
+        console.warn(`[Router] Notion send failed for ${event.type} — logged only`);
+      }
+    }
+
+    // Slack — for crawl_result, send short summary + Notion link instead of raw content
     if (rules.slack && deps.slack) {
-      results.slack = await deps.slack.route(event);
+      if (event.type === 'crawl_result' && notion_url) {
+        const summary = event.message.slice(0, 200).replace(/\n/g, ' ');
+        const slack_text = `🔍 *[크롤링 완료]* ${summary}${event.message.length > 200 ? '…' : ''}\n📄 <${notion_url}|Notion에서 원문 보기>`;
+        const channel = deps.slack.resolve_channel(event);
+        results.slack = channel ? await deps.slack.send(channel, slack_text) : false;
+      } else {
+        results.slack = await deps.slack.route(event);
+      }
     }
 
     // === Cross-channel fallback logic ===
@@ -93,17 +115,6 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
         // Slack-only event: log only, do NOT flood Telegram with non-critical events.
         // Only approval_high, alert, blocked, briefing should ever reach Telegram.
         console.warn(`[Router] Slack failed for slack-only event ${event.type} — logged only (no Telegram fallback)`);
-      }
-    }
-
-    // Notion — send matching events (briefing, crawl_result)
-    if (rules.notion && deps.notion) {
-      try {
-        const notion_result = await deps.notion.send_with_result(event);
-        results.notion = notion_result.success;
-      } catch {
-        // Fire-and-forget: Notion failure should never block notifications
-        console.warn(`[Router] Notion send failed for ${event.type} — logged only`);
       }
     }
 

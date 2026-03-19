@@ -101,10 +101,11 @@ export const create_notion_client = (config: NotionConfig) => {
   };
 
   // === Send with detailed result (compatible with NotificationResult) ===
+  // Returns Notion page URL on success for cross-channel linking (e.g. Slack → Notion)
   const send_with_result = async (event: NotificationEvent): Promise<NotificationResult> => {
     try {
-      await send_notification(event);
-      return { channel: 'notion', success: true, attempts: 1 };
+      const page = await send_notification(event);
+      return { channel: 'notion', success: true, attempts: 1, url: page.url };
     } catch {
       return {
         channel: 'notion',
