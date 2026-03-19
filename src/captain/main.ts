@@ -65,15 +65,17 @@ const build_router = (): NotificationRouter => {
     : null;
 
   // Notion client (optional — requires NOTION_API_KEY + NOTION_NOTIFICATION_DB)
+  // Notion: use NOTION_DAILY_REPORTS_DB as the notification target
+  // (briefings and crawl results go here alongside daily reports)
   const notion_api_key = process.env.NOTION_API_KEY;
-  const notion_db_id = process.env.NOTION_NOTIFICATION_DB;
+  const notion_db_id = process.env.NOTION_DAILY_REPORTS_DB ?? process.env.NOTION_TASK_RESULTS_DB;
   const notion = (notion_api_key && notion_db_id)
     ? create_notion_client({ api_key: notion_api_key, database_id: notion_db_id })
     : null;
 
   if (!telegram) console.warn('[Captain] TELEGRAM_BOT_TOKEN/CHAT_ID not set — Telegram disabled');
   if (!slack) console.warn('[Captain] SLACK_BOT_TOKEN not set — Slack disabled');
-  if (!notion) console.warn('[Captain] NOTION_API_KEY/NOTIFICATION_DB not set — Notion routing disabled');
+  if (!notion) console.warn('[Captain] NOTION_API_KEY not set — Notion routing disabled');
 
   return create_notification_router({ telegram, slack, notion });
 };
