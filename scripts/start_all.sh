@@ -52,14 +52,14 @@ create_session() {
 # =============================================================
 echo "[1/5] Colima (Docker runtime)..."
 if command -v colima &>/dev/null; then
-  if colima status 2>/dev/null | grep -q "Running"; then
+  if colima status 2>&1 | grep -q "is running"; then
     echo "[FAS] Colima already running, skipping."
   else
     echo "[FAS] Starting Colima..."
     colima start
     # Wait until Colima is ready
     elapsed=0
-    while ! colima status 2>/dev/null | grep -q "Running"; do
+    while ! colima status 2>&1 | grep -q "is running"; do
       sleep 2
       elapsed=$((elapsed + 2))
       if [ "$elapsed" -ge "$MAX_WAIT" ]; then
@@ -80,7 +80,7 @@ echo ""
 # =============================================================
 echo "[2/5] n8n (Docker container)..."
 if command -v docker &>/dev/null; then
-  docker compose -f "$PROJECT_ROOT/docker-compose.yml" up -d
+  cd "$PROJECT_ROOT" && docker-compose up -d
   echo "[FAS] Waiting for n8n health check..."
   elapsed=0
   while true; do

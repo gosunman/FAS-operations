@@ -50,7 +50,7 @@ echo ""
 # Stop n8n (Docker container)
 echo "[FAS] Stopping n8n (Docker)..."
 if command -v docker &>/dev/null; then
-  docker compose -f "$PROJECT_ROOT/docker-compose.yml" down 2>/dev/null || true
+  cd "$PROJECT_ROOT" && docker-compose down 2>/dev/null || true
   echo "[FAS] n8n stopped."
 else
   echo "[FAS] Docker not available, skipping n8n."
