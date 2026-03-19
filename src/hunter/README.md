@@ -59,6 +59,12 @@ Tasks are routed by keyword matching:
 | `logger.ts` | File + console dual logger |
 | `notify.ts` | Telegram/Slack notification (fire-and-forget) |
 
+## Prerequisites
+
+- **Node.js 22+** (OpenClaw requires 22.12+; 20.x will NOT work)
+- pnpm
+- Playwright Chromium (`npx playwright install chromium`)
+
 ## How to Run
 
 ```bash
@@ -76,6 +82,7 @@ npx tsx src/hunter/main.ts
 | `CAPTAIN_API_URL` | Yes | Captain Task API URL (e.g., `http://100.64.0.1:3100`) |
 | `HUNTER_API_KEY` | Yes | Shared secret for API authentication |
 | `OPENCLAW_COMMAND` | No | OpenClaw CLI binary (default: `openclaw`) |
+| `OPENCLAW_AGENT` | No | OpenClaw agent name (default: `main`) |
 | `CHATGPT_TIMEOUT_MS` | No | OpenClaw task timeout (default: `180000`) |
 | `HUNTER_POLL_INTERVAL` | No | Poll interval in ms (default: `10000`) |
 | `HUNTER_LOG_DIR` | No | Log directory (default: `./logs`) |
