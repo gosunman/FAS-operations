@@ -15,9 +15,12 @@ import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resou
 import { create_telegram_client } from '../notification/telegram.js';
 import { create_slack_client } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
-import { create_notion_client } from '../notification/notion.js';
+import { create_notion_client, type NotionClient } from '../notification/notion.js';
 import { create_feedback_extractor, type FeedbackExtractor } from './feedback_extractor.js';
 import { create_telegram_commands, type TelegramCommands } from './telegram_commands.js';
+import { create_morning_briefing, type MorningBriefing } from './morning_briefing.js';
+import { create_task_executor, type TaskExecutor } from './task_executor.js';
+import { create_cross_approval } from '../gateway/cross_approval.js';
 import type { Server } from 'node:http';
 
 // === Constants ===
@@ -53,7 +56,7 @@ const SCHEDULE_CHECK_INTERVAL_MS = 60_000; // check every minute
 
 // === Build notification router from env vars ===
 
-const build_router = (): NotificationRouter => {
+const build_notification_stack = (): { router: NotificationRouter; notion: NotionClient | null } => {
   const telegram_token = process.env.TELEGRAM_BOT_TOKEN;
   const telegram_chat_id = process.env.TELEGRAM_CHAT_ID;
   const telegram = (telegram_token && telegram_chat_id)
@@ -78,7 +81,8 @@ const build_router = (): NotificationRouter => {
   if (!slack) console.warn('[Captain] SLACK_BOT_TOKEN not set — Slack disabled');
   if (!notion) console.warn('[Captain] NOTION_API_KEY not set — Notion routing disabled');
 
-  return create_notification_router({ telegram, slack, notion });
+  const router = create_notification_router({ telegram, slack, notion });
+  return { router, notion };
 };
 
 // === Main bootstrap ===
@@ -93,8 +97,8 @@ const main = async () => {
   const store = create_task_store({ db_path: DB_PATH });
   console.log(`[Captain] Task store initialized (${DB_PATH})`);
 
-  // 2. Notification router
-  const router = build_router();
+  // 2. Notification router + Notion client (shared between router and morning briefing)
+  const { router, notion } = build_notification_stack();
   console.log('[Captain] Notification router initialized');
 
   // 3. Gateway API server
@@ -142,6 +146,21 @@ const main = async () => {
     console.error(`[Captain] Morning planning failed: ${msg}`);
   }
 
+  // 6b. Morning briefing module (overnight summary + today's schedule + blocked tasks)
+  const morning_briefing = create_morning_briefing({
+    store,
+    router,
+    notion,
+    schedules_path: SCHEDULES_PATH,
+  });
+
+  // Run initial morning briefing on startup (fire-and-forget)
+  morning_briefing.run().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Captain] Initial morning briefing failed: ${msg}`);
+  });
+  console.log('[Captain] Morning briefing module initialized');
+
   // 7. Hunter heartbeat monitor
   start_hunter_monitor({
     gateway_url: `http://localhost:${GATEWAY_PORT}`,
@@ -171,7 +190,22 @@ const main = async () => {
   resource_monitor.start();
   console.log('[Captain] Resource monitor started (2min interval)');
 
-  // 11. Telegram command listener (inbound commands from user)
+  // 11. Cross-approval gate + Task executor (MID-risk pre-execution check)
+  const cross_approval = create_cross_approval({
+    gemini_command: process.env.GEMINI_COMMAND ?? 'gemini',
+    timeout_ms: parseInt(process.env.CROSS_APPROVAL_TIMEOUT_MS ?? '600000', 10),
+  });
+
+  const task_executor = create_task_executor({
+    store,
+    router,
+    approval: cross_approval,
+    poll_interval_ms: parseInt(process.env.TASK_EXECUTOR_POLL_MS ?? '30000', 10),
+  });
+  task_executor.start();
+  console.log('[Captain] Task executor started (cross-approval gate for MID-risk tasks)');
+
+  // 12. Telegram command listener (inbound commands from user)
   let telegram_commands: TelegramCommands | null = null;
   if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
     telegram_commands = create_telegram_commands(
@@ -207,6 +241,12 @@ const main = async () => {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[Captain] Scheduled morning planning failed: ${msg}`);
       }
+
+      // Morning briefing — runs after planning to include newly created tasks (fire-and-forget)
+      morning_briefing.run(now).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Captain] Scheduled morning briefing failed: ${msg}`);
+      });
     }
 
     // Night planning at 22:50 (once per day)
@@ -250,6 +290,7 @@ const main = async () => {
   const shutdown = () => {
     console.log('[Captain] Shutting down...');
     clearInterval(schedule_timer);
+    task_executor.stop();
     telegram_commands?.stop();
     resource_monitor.stop();
     stop_hunter_monitor();
