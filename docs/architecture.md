@@ -74,17 +74,22 @@
 | 서비스 | 실행 방식 | 예상 RAM | tmux 세션 |
 | --- | --- | --- | --- |
 | macOS 시스템 | — | ~5GB | — |
-| n8n | Colima (Docker) | ~3GB | `fas-n8n` |
-| Claude Code | OAuth CLI | ~500MB | `fas-claude` |
-| Gemini CLI (Account A) | CLI | ~500MB | `fas-gemini-a` |
-| Gateway + Task API | Node.js (Express) | ~300MB | `fas-gateway` |
-| Telegram Command Listener | Node.js (long polling) | ~50MB | `fas-gateway` 내 통합 |
-| Persona Injector | 메모리 캐시 (24h TTL) | ~10MB | `fas-gateway` 내 통합 |
+| n8n | Colima (Docker) | ~3GB | (docker) |
+| Captain (Gateway + Watcher + Planning + Monitors) | Node.js (Express) | ~500MB | `fas-captain` |
+| Claude Code (root) | OAuth CLI | ~500MB | `cc-root` |
+| Claude Code (FAS) | OAuth CLI | ~500MB | `cc-fas` |
+| Telegram Command Listener | Node.js (long polling) | ~50MB | `fas-captain` 내 통합 |
+| Persona Injector | 메모리 캐시 (24h TTL) | ~10MB | `fas-captain` 내 통합 |
 | Agent Wrappers | Node.js 프로세스들 | ~300MB | 각 에이전트 세션 내 |
 | Crawlers | Node.js (cron) | ~200MB | `fas-crawlers` |
-| Watchdog | Node.js | ~200MB | `fas-watchdog` |
-| **합계** | | **~10.5GB** | |
-| **여유** | | **~25.5GB** | |
+| **합계** | | **~10GB** | |
+| **여유** | | **~26GB** | |
+
+> **tmux 세션 구조 (현행)**
+> - `fas-captain` — `pnpm captain` (Gateway + Watcher + Planning + Monitors 통합)
+> - `cc-root` — Claude Code 원격 제어 (범용)
+> - `cc-fas` — Claude Code FAS 전용
+> - ~~`fas-claude`~~ / ~~`fas-gateway`~~ / ~~`fas-watchdog`~~ / ~~`fas-gemini-a`~~ — deprecated, 현재 미사용
 
 > CLI 도구(Claude Code, Gemini CLI)는 원격 API 호출 기반이므로 로컬 RAM을 거의 안 씀.
 
@@ -328,25 +333,42 @@ FAS-operations/
 
 ## 프로세스 시작 순서
 
-캡틴 부팅 시 (launchd 또는 start_all.sh):
+### 캡틴 부팅 시 (`start_all.sh` — `com.fas.start-all.plist`로 로그인 시 자동 실행)
 
 ```text
-1. Colima 시작 → n8n 컨테이너 시작
-2. Gateway + Task API 시작 (포트 3100)
-3. Watchdog 시작
-4. Crawler 스케줄러 시작
-5. tmux 세션 생성:
-   a. fas-claude  → Agent Wrapper + Claude Code
-   b. fas-gemini-a → Agent Wrapper + Gemini CLI
-6. n8n이 모든 서비스 healthy 확인 → AWAKE/SLEEP 모드 진입
+Phase 1: Colima (Docker runtime)
+  └─ colima start → Docker daemon 준비 대기
+
+Phase 2: n8n (Docker container)
+  └─ docker-compose up -d → n8n health check 대기 (최대 30초)
+
+Phase 3: fas-captain (pnpm captain — 통합 서비스)
+  └─ tmux: fas-captain → Gateway + Watcher + Planning + Monitors
+  └─ Gateway health check 대기 (http://localhost:3100/api/health, 최대 30초)
+
+Phase 4: Claude Code sessions (빈 세션 — 주인님이 수동 시작)
+  └─ tmux: cc-root  (Claude Code 원격 제어)
+  └─ tmux: cc-fas   (Claude Code FAS 전용)
+
+Phase 5: Post-boot
+  └─ 현재 시간 기반 AWAKE/SLEEP 모드 자동 설정 (07:00~23:00 → awake)
+  └─ Telegram 부팅 완료 알림
 ```
 
-헌터 부팅 시:
+### 헌터 부팅 시 (`hunter_watchdog.sh` — `com.fas.hunter.plist`로 자동 실행)
 
 ```text
-1. Watchdog 시작
-2. tmux 세션 생성:
-   a. fas-openclaw → OpenClaw 시작
-   b. fas-wrapper  → Agent Wrapper (Task API 폴링)
-3. Wrapper가 캡틴의 Task API에 heartbeat 전송 시작
+1. nvm 환경 자동 로드 (비로그인 셸 호환성)
+   └─ $NVM_DIR/nvm.sh source → Node.js PATH 확보
+
+2. OpenClaw Gateway health check
+   └─ $OPENCLAW_GATEWAY_URL/health 대기 (최대 60초, 5초 간격 폴링)
+   └─ 미응답 시 WARNING 로그 후 계속 진행
+
+3. Hunter Agent 시작 (npx tsx src/hunter/main.ts)
+   └─ 크래시 시 지수 백오프 자동 재시작 (최대 3회)
+   └─ 60초 이상 정상 실행 시 재시도 카운터 리셋
+   └─ 로그 경로: $DEPLOY_DIR/logs
+
+4. Task API 폴링 + heartbeat 전송 시작
 ```

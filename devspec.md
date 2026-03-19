@@ -62,6 +62,8 @@
 | `HUNTER_TELEGRAM_BOT_TOKEN` | N* | 헌터 전용 Telegram Bot 토큰 (`hunter_6239_bot`) — 헌터 .env |
 | `HUNTER_TELEGRAM_CHAT_ID` | N* | 주인님 Telegram Chat ID — 헌터 .env |
 | `HUNTER_SLACK_WEBHOOK_URL` | N* | 헌터 전용 Slack Incoming Webhook URL — 헌터 .env |
+| `OPENCLAW_GATEWAY_URL` | N | OpenClaw Gateway URL — 헌터 watchdog 전용 (기본: http://localhost:18789) |
+| `HUNTER_DEPLOY_DIR` | N | 헌터 배포 디렉토리 절대 경로 (기본: /Users/user/fas-hunter-agent) |
 | `NOTION_TASK_RESULTS_DB` | N | Notion 태스크 결과 백업 DB ID (설정 시 태스크 완료마다 Notion에 fire-and-forget 백업) |
 | `DOCTRINE_MEMORY_DIR` | N | Doctrine 메모리 디렉토리 경로 — Persona Injector가 사용자 컨텍스트를 읽는 위치 |
 | `DOCTRINE_FEEDBACK_PATH` | N | Doctrine 피드백 파일 경로 — Feedback Extractor가 교훈을 기록하는 위치 |
@@ -176,10 +178,15 @@ pnpm run mode:awake   # Switch to AWAKE mode
 | `scripts/setup/setup_tmux.sh` | tmux + resurrect 설치 |
 | `scripts/setup/com.fas.captain.plist` | 캡틴 launchd plist (로그인 시 tmux 자동 시작) |
 | `scripts/setup/com.fas.hunter.plist` | 헌터 launchd plist (로그인 시 hunter_watchdog 자동 시작, KeepAlive) |
+| `scripts/setup/com.fas.start-all.plist` | 캡틴 launchd plist (로그인 시 start_all.sh 자동 실행 — 5단계 부팅) |
+| `scripts/setup/com.fas.update-check.plist` | macOS 업데이트 감시 launchd plist (매일 09:00) |
+| `scripts/setup/com.fas.dep-check.plist` | 의존성 점검 launchd plist (매월 1일) |
 | `scripts/deploy/deploy_hunter.sh` | 헌터 배포 (소스코드 격리, PII 검사) |
 | `scripts/deploy/verify_hunter.sh` | 헌터 배포 후 검증 (연결, heartbeat, 태스크 흐름, PII, 런타임) |
-| `scripts/hunter_watchdog.sh` | 헌터 프로세스 감시 (자동 재시작, 지수 백오프, 최대 3회) |
+| `scripts/hunter_watchdog.sh` | 헌터 프로세스 감시 (자동 재시작, 지수 백오프, 최대 3회). nvm 자동 로드(비로그인 셸 호환), OpenClaw Gateway health check(최대 60초 대기), 로그 경로: `$DEPLOY_DIR/logs` (절대 경로) |
 | `scripts/resolve_hunter_login.sh` | VNC 자동 복구 — `[LOGIN_REQUIRED]` 감지 시 헌터 머신의 Screen Sharing을 자동으로 열어 수동 로그인 지원 |
+| `scripts/check_macos_update.sh` | macOS 업데이트 감시 (캡틴+헌터 SSH). 매일 09:00 LaunchAgent(`com.fas.update-check.plist`)로 실행 |
+| `scripts/check_dependencies.sh` | pnpm outdated + audit 점검. 매월 1일 LaunchAgent(`com.fas.dep-check.plist`)로 실행 |
 | `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
 
 ## 배포 유의 사항
