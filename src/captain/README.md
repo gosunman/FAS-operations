@@ -6,7 +6,7 @@
 
 | 파일 | 역할 |
 |------|------|
-| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor, Telegram Commands, Stale Task Cleanup 등 전체 기동. Gemini discovery 활성화(gemini_config 전달). 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
+| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor, Telegram Commands, Stale Task Cleanup 등 전체 기동. Gemini discovery 활성화(gemini_config 전달). 감시 대상 tmux 세션은 `config/agents.yml`에서 동적 로딩 + 실제 존재하는 세션만 자동 필터링 (캡틴 자체 세션 `fas-captain` 제외) |
 | `planning_loop.ts` | 모닝/나이트 자율 스케줄링 (schedules.yml 기반 태스크 생성) |
 | `feedback_extractor.ts` | 완료된 태스크에서 교훈 추출 (Gemini CLI → Doctrine feedback 파일에 append) |
 | `persona_injector.ts` | PII-free 사용자 컨텍스트 주입 — Doctrine memory 파일에서 안전한 프로필 정보(직업, 학력, 기술 스택 등)를 추출하여 헌터 태스크 description에 prepend. 24h TTL 캐시, PII 정규식 필터링 |

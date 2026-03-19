@@ -1,12 +1,13 @@
-# Shared Types (`src/shared/`)
+# Shared (`src/shared/`)
 
-캡틴, 헌터, 게이트웨이, 알림 모듈이 공유하는 TypeScript 타입 정의.
+캡틴, 헌터, 게이트웨이, 알림 모듈이 공유하는 TypeScript 타입 정의 및 설정 로더.
 
 ## 파일 구성
 
 | 파일 | 용도 |
 |------|------|
 | `types.ts` | 모든 공유 타입 정의 |
+| `agents_config.ts` | `config/agents.yml` 로더 — 에이전트 설정(tmux 세션명, 디바이스, 역할 등)을 동적으로 읽어 하드코딩 제거 |
 
 ## 주요 타입
 

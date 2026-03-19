@@ -14,7 +14,7 @@
 
 ## Output Watcher
 
-`fas-claude` tmux 세션을 감시하여 캡틴 출력에서 특정 패턴을 감지한다.
+`config/agents.yml`에서 captain 디바이스의 tmux 세션 목록을 동적 로딩하여 출력을 감시한다. Standalone 모드에서도 동일하게 `agents_config.ts`를 사용.
 
 | 패턴 | 동작 |
 |------|------|
@@ -24,7 +24,7 @@
 | `[DONE]` | Slack 알림 |
 | `[ERROR]` | Slack 경고 |
 
-> 감시 대상 세션은 `main.ts`에서 지정. 존재하지 않는 세션을 감시하면 crash 알림 폭주 위험.
+> 감시 대상 세션은 `config/agents.yml`에서 동적 로딩 + 실제 존재하는 tmux 세션만 자동 필터링. `src/shared/agents_config.ts` 참조.
 
 ## Hunter Monitor
 

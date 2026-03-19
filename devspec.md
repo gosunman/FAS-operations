@@ -15,7 +15,7 @@
 │       ├ Activity Logger    │
 │       ├ Resource Monitor   │    ┌──────────────────────┐
 │       └ Daily Scheduler    │───►│ External Services    │
-│ tmux: fas-claude           │    │  Telegram Bot API    │
+│ tmux: cc-fas               │    │  Telegram Bot API    │
 │   └ Claude Code (계정 A)   │    │  Slack Web API       │
 │ tmux: fas-gemini-a         │    │  Notion API          │
 │   └ Gemini CLI (계정 A)    │    └──────────────────────┘    주인님 ↔ 헌터 직접 소통:
@@ -99,7 +99,7 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands, Stale Task Cleanup를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험. 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출. **Gemini discovery 활성화**: `gemini_config` 전달로 나이트 플래닝에서 동적 태스크 발견 기능 가동. **Stale cleanup**: 5분 간격으로 in_progress 30분+ 태스크를 blocked 전환 + alert 알림.
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands, Stale Task Cleanup를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 `config/agents.yml`에서 동적 로딩(`src/shared/agents_config.ts`) + 기동 시 `tmux list-sessions`로 실제 존재하는 세션만 자동 필터링 (캡틴 자체 세션 `fas-captain` 제외). 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출. **Gemini discovery 활성화**: `gemini_config` 전달로 나이트 플래닝에서 동적 태스크 발견 기능 가동. **Stale cleanup**: 5분 간격으로 in_progress 30분+ 태스크를 blocked 전환 + alert 알림.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append). `main.ts`의 나이트 플래닝 훅에서 자동 호출되어 당일 완료 태스크의 교훈을 `DOCTRINE_FEEDBACK_PATH`에 기록.
 - **persona_injector.ts**: 동적 페르소나 주입기. Doctrine 메모리 디렉토리(`DOCTRINE_MEMORY_DIR`)에서 사용자 컨텍스트를 읽어 PII를 제거한 배경 정보를 헌터 태스크 description에 주입. 헌터가 맥락 없이 작업하는 것을 방지.
@@ -110,7 +110,7 @@
 - 10분 타임아웃, JSON 파싱 실패 시 자동 거부 (secure by default).
 
 ### Watchdog (`src/watchdog/`)
-- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export. **Crash rate limiting**: tmux 세션 unreachable 시 최초 threshold(3회) 도달 시 1회 알림, 이후 ~5분 간격으로만 재알림 (Telegram 폭주 방지).
+- **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export. Standalone 모드에서도 `config/agents.yml`에서 세션 목록을 동적 로딩. **Crash rate limiting**: tmux 세션 unreachable 시 최초 threshold(3회) 도달 시 1회 알림, 이후 ~5분 간격으로만 재알림 (Telegram 폭주 방지).
 - **hunter_monitor.ts**: 헌터 heartbeat 모니터. Gateway `/api/agents/health` 주기적 폴링으로 헌터 생존 감시. 2분 경과 → Slack WARNING, 5분 경과 → Telegram ALERT, 복구 시 → RECOVERY 알림. State transition 기반 — 동일 상태 유지 시 재알림하지 않음. `start_hunter_monitor(config)`, `stop_hunter_monitor()` export.
 
 ### Mode Switching (`scripts/`)

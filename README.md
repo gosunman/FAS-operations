@@ -188,7 +188,7 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 **알림 안전장치:**
 - Output Watcher crash 알림: threshold 도달 시 1회 + 이후 ~5분 간격 (Telegram rate limit 방지)
 - Slack-only 이벤트 실패 시 Telegram 폴백 안 함 (비크리티컬 이벤트 폭주 방지)
-- 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (`src/captain/main.ts`의 `WATCHED_SESSIONS`)
+- 감시 대상 tmux 세션은 `config/agents.yml`에서 동적 로딩 + 실제 존재하는 세션만 자동 필터링 (`src/shared/agents_config.ts`)
 - VNC 자동 복구: 헌터에서 `[LOGIN_REQUIRED]` 감지 시 `scripts/resolve_hunter_login.sh`가 Screen Sharing을 자동으로 열어 수동 로그인 지원
 
 상세: [docs/hunter-protocol.md](docs/hunter-protocol.md) Stage 2 섹션
@@ -212,7 +212,7 @@ FAS-operations/
 │   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬 + 헌터 heartbeat 모니터
-│   └── shared/           # 공유 타입 정의
+│   └── shared/           # 공유 타입 정의 + agents.yml 로더
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
 │   ├── deploy/           # 헌터 배포 (소스코드 격리) + 배포 검증
