@@ -2,10 +2,68 @@
 // Dispatches tasks to Playwright-based browser handlers or structured TODOs
 
 import { mkdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import type { Page } from 'playwright';
 import type { Task, HunterActionType, HunterTaskResult } from '../shared/types.js';
 import type { Logger } from './logger.js';
 import type { BrowserManager } from './browser.js';
+
+// === OpenClaw CLI execution ===
+// Invokes the OpenClaw agent framework to handle abstract/vague tasks.
+// OpenClaw uses ChatGPT Pro (OAuth) as its LLM backend.
+// CLI: `openclaw -p "prompt"` for one-shot execution.
+// See docs/openclaw.md for setup and architecture details.
+
+type OpenClawResult = {
+  success: boolean;
+  output: string;
+  error?: string;
+};
+
+const OPENCLAW_COMMAND = process.env.OPENCLAW_COMMAND ?? 'openclaw';
+
+const exec_openclaw = (prompt: string, timeout_ms: number): Promise<OpenClawResult> => {
+  return new Promise((resolve) => {
+    const proc = spawn(OPENCLAW_COMMAND, ['-p', prompt], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeout_ms,
+      env: { ...process.env, NO_COLOR: '1' },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve({ success: true, output: stdout.trim() });
+      } else {
+        resolve({
+          success: false,
+          output: stdout.trim(),
+          error: `OpenClaw exited with code ${code}: ${stderr.trim().slice(0, 500)}`,
+        });
+      }
+    });
+
+    proc.on('error', (err) => {
+      resolve({
+        success: false,
+        output: '',
+        error: err.message.includes('ENOENT')
+          ? 'OpenClaw not installed. Run: npm install -g openclaw@latest && openclaw onboard'
+          : err.message,
+      });
+    });
+  });
+};
 
 type ActionHandler = (task: Task) => Promise<HunterTaskResult>;
 
@@ -554,192 +612,39 @@ export const create_task_executor = (
     }
   };
 
-  // ===== ChatGPT login wall detection =====
-  // ChatGPT redirects to auth when not logged in (different from Google login wall)
-  const detect_chatgpt_login_wall = async (page: Page): Promise<boolean> => {
-    const url = page.url();
-
-    // OpenAI auth pages
-    if (url.includes('auth0.openai.com') || url.includes('auth.openai.com') ||
-        url.includes('login.chatgpt.com')) {
-      return true;
-    }
-
-    // Check for "Log in" / "Sign up" buttons on landing page
-    try {
-      const login_visible = await page.locator(
-        'button:has-text("Log in"), button:has-text("Sign up"), a:has-text("Log in")',
-      ).first().isVisible({ timeout: 2_000 });
-      return login_visible;
-    } catch {
-      return false;
-    }
-  };
-
   // ===== chatgpt_task handler =====
-  // Automates ChatGPT web UI via persistent Chrome profile (Google OAuth).
-  // Flow: navigate to ChatGPT → type prompt → send → wait for response → extract
+  // Delegates to OpenClaw — an AI agent framework that uses ChatGPT Pro (OAuth)
+  // as its LLM backend. OpenClaw controls browsers, executes shell commands,
+  // and handles abstract/vague tasks autonomously.
+  //
+  // OpenClaw runs as a separate daemon on the hunter machine:
+  //   openclaw gateway --install-daemon
+  //
+  // See docs/openclaw.md for full architecture and setup details.
   const handle_chatgpt_task: ActionHandler = async (task) => {
-    logger.info(`chatgpt_task: starting for task ${task.id}`);
-    let page: Page | undefined;
+    logger.info(`chatgpt_task: delegating to OpenClaw for task ${task.id}`);
+
+    const prompt = task.description
+      ? `${task.title}\n\n${task.description}`
+      : task.title;
 
     try {
-      // Step 1: Get a page from the persistent Google profile (shared with Gemini/NotebookLM)
-      page = await browser.get_persistent_page(executor_config.google_profile_dir);
+      const result = await exec_openclaw(prompt, executor_config.chatgpt_timeout_ms);
 
-      // Step 2: Navigate to ChatGPT
-      await page.goto('https://chatgpt.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      });
-
-      // Wait for SPA to fully render
-      await page.waitForTimeout(3_000);
-
-      // Step 3: Check for login wall
-      if (await detect_chatgpt_login_wall(page)) {
-        logger.warn(`chatgpt_task: ChatGPT login required for task ${task.id}`);
+      if (!result.success) {
+        logger.error(`chatgpt_task: OpenClaw error for task ${task.id}: ${result.error}`);
         return {
           status: 'failure',
-          output: '[LOGIN_REQUIRED] ChatGPT login session expired. Log in via Google OAuth (Account B) in the persistent Chrome profile.',
+          output: `OpenClaw error: ${result.error}`,
           files: [],
         };
       }
 
-      // Also check for Google login redirect (OAuth flow may land here)
-      if (await detect_login_wall(page)) {
-        logger.warn(`chatgpt_task: Google login required for task ${task.id}`);
-        return {
-          status: 'failure',
-          output: '[LOGIN_REQUIRED] Google OAuth session expired. Run setup_hunter.sh to re-authenticate.',
-          files: [],
-        };
-      }
-
-      // Step 4: Find the chat input
-      // ChatGPT uses a contenteditable div or textarea for the prompt
-      const input_selector = [
-        '#prompt-textarea',
-        '[contenteditable="true"][data-placeholder]',
-        'textarea[placeholder*="Message" i]',
-        'textarea[placeholder*="ChatGPT" i]',
-        '[contenteditable="true"][role="textbox"]',
-        'textarea',
-      ].join(', ');
-
-      const input = page.locator(input_selector).first();
-      await input.waitFor({ state: 'visible', timeout: 15_000 });
-
-      // Step 5: Build and type the prompt
-      const prompt = task.description
-        ? `${task.title}\n\n${task.description}`
-        : task.title;
-
-      await input.click();
-      // Use fill for textarea, type for contenteditable
-      try {
-        await input.fill(prompt);
-      } catch {
-        // Contenteditable fallback — fill() may fail, use keyboard input
-        await input.pressSequentially(prompt, { delay: 10 });
-      }
-      logger.info(`chatgpt_task: typed prompt for task ${task.id}`);
-
-      // Step 6: Send the message
-      const send_selector = [
-        'button[data-testid="send-button"]',
-        'button[aria-label*="Send" i]',
-        'button[aria-label*="보내기" i]',
-      ].join(', ');
-
-      const send_button = page.locator(send_selector).first();
-      const send_visible = await send_button.isVisible({ timeout: 3_000 }).catch(() => false);
-
-      if (send_visible) {
-        await send_button.click();
-      } else {
-        // Fallback: press Enter (Ctrl+Enter on some versions)
-        await input.press('Enter');
-      }
-      logger.info(`chatgpt_task: prompt submitted for task ${task.id}`);
-
-      // Step 7: Wait for response completion
-      // ChatGPT shows a streaming response. We wait until generation stops.
-      const deadline = Date.now() + executor_config.chatgpt_timeout_ms;
-      let response_complete = false;
-
-      // Brief initial wait for response to start streaming
-      await page.waitForTimeout(5_000);
-
-      while (Date.now() < deadline) {
-        await page.waitForTimeout(RESEARCH_POLL_INTERVAL_MS);
-
-        // Check if the "Stop generating" button is still visible (= still streaming)
-        const is_streaming = await page.locator(
-          'button[aria-label*="Stop" i], button[data-testid="stop-button"], button:has-text("Stop generating")',
-        ).first().isVisible({ timeout: 2_000 }).catch(() => false);
-
-        if (!is_streaming) {
-          // Double-check: wait a bit more and verify it's truly done
-          await page.waitForTimeout(2_000);
-          const still_streaming = await page.locator(
-            'button[aria-label*="Stop" i], button[data-testid="stop-button"]',
-          ).first().isVisible({ timeout: 1_000 }).catch(() => false);
-
-          if (!still_streaming) {
-            response_complete = true;
-            logger.info(`chatgpt_task: response completed for task ${task.id}`);
-            break;
-          }
-        }
-
-        logger.info(`chatgpt_task: still generating... (${Math.round((deadline - Date.now()) / 1000)}s remaining)`);
-      }
-
-      if (!response_complete) {
-        logger.warn(`chatgpt_task: timeout waiting for response (task ${task.id})`);
-        // Still try to extract whatever is available
-      }
-
-      // Step 8: Extract the response text
-      // ChatGPT assistant messages are in specific containers
-      const response_selectors = [
-        // Assistant message containers (data attribute based)
-        '[data-message-author-role="assistant"]',
-        // Markdown rendered content within assistant messages
-        '[data-message-author-role="assistant"] .markdown',
-        // Class-based selectors (ChatGPT variations)
-        '[class*="agent-turn"] .markdown',
-        '[class*="assistant"] .markdown',
-        // Generic message content fallback
-        '[class*="message"][class*="assistant"]',
-        '.markdown-content',
-      ];
-
-      let result_text = '';
-      for (const selector of response_selectors) {
-        const elements = page.locator(selector);
-        const count = await elements.count();
-        if (count > 0) {
-          // Get the last assistant message (most recent response)
-          const last_text = await elements.last().textContent() ?? '';
-          if (last_text.trim().length > result_text.trim().length) {
-            result_text = last_text;
-          }
-        }
-      }
-
-      // Fallback: if no specific response found, grab the main content area
-      if (result_text.trim().length < 50) {
-        result_text = await page.locator('main').textContent() ?? '';
-      }
-
-      const trimmed = result_text.trim().slice(0, MAX_CONTENT_LENGTH);
-      logger.info(`chatgpt_task: extracted ${trimmed.length} chars for task ${task.id}`);
+      logger.info(`chatgpt_task: OpenClaw returned ${result.output.length} chars for task ${task.id}`);
 
       return {
         status: 'success',
-        output: trimmed,
+        output: result.output.slice(0, MAX_CONTENT_LENGTH),
         files: [],
       };
     } catch (err) {
@@ -750,11 +655,6 @@ export const create_task_executor = (
         output: `chatgpt_task error: ${error_msg}`,
         files: [],
       };
-    } finally {
-      // Close the page but keep the persistent context alive for session reuse
-      if (page) {
-        try { await page.close(); } catch { /* ignore cleanup errors */ }
-      }
     }
   };
 

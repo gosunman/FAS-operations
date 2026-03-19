@@ -20,10 +20,10 @@ Captain (Mac Studio #2)          Hunter (Mac Studio #1)
 │              │                 │   ├ notebooklm       ✅   │
 │              │                 │   └ chatgpt_task     ✅   │
 │              │                 │   ↓                      │
-│              │                 │   ↓                      │
-│              │                 │ Playwright (Browser)      │
-│              │                 │   └ Persistent Profile    │
-│              │                 │     (Google OAuth / B)    │
+│              │                 │ ┌─────────┐ ┌──────────┐ │
+│              │                 │ │Playwright│ │OpenClaw   │ │
+│              │                 │ │(Browser) │ │(ChatGPT) │ │
+│              │                 │ └─────────┘ └──────────┘ │
 └──────────────┘                 └──────────────────────────┘
 ```
 
@@ -35,7 +35,7 @@ Captain (Mac Studio #2)          Hunter (Mac Studio #1)
 | `browser_task` | Playwright | Navigate to URL, take screenshot, extract text |
 | `deep_research` | Playwright | Gemini web UI automation (persistent Google profile) |
 | `notebooklm_verify` | Playwright | NotebookLM web UI automation (persistent Google profile) |
-| `chatgpt_task` | Playwright (ChatGPT Web UI) | Abstract reasoning, analysis, trend exploration via ChatGPT Pro (Google OAuth) |
+| `chatgpt_task` | OpenClaw (ChatGPT Pro OAuth) | Abstract reasoning, analysis, trend exploration via OpenClaw agent framework |
 
 ### Action Routing (resolve_action)
 
@@ -52,7 +52,7 @@ Tasks are routed by keyword matching:
 |------|-------------|
 | `main.ts` | Entry point — sets up browser, executor, poll loop, graceful shutdown |
 | `browser.ts` | Playwright browser manager (lazy init, ephemeral + persistent contexts) |
-| `task_executor.ts` | Action routing + handler implementations (5 handlers incl. ChatGPT browser automation) |
+| `task_executor.ts` | Action routing + handler implementations (5 handlers: 4 Playwright + 1 OpenClaw CLI) |
 | `poll_loop.ts` | Polling loop with exponential backoff |
 | `api_client.ts` | HTTP client for Captain Task API |
 | `config.ts` | Environment variable config loader |
@@ -75,7 +75,8 @@ npx tsx src/hunter/main.ts
 |----------|----------|-------------|
 | `CAPTAIN_API_URL` | Yes | Captain Task API URL (e.g., `http://100.64.0.1:3100`) |
 | `HUNTER_API_KEY` | Yes | Shared secret for API authentication |
-| `CHATGPT_TIMEOUT_MS` | No | ChatGPT response wait timeout (default: `180000`) |
+| `OPENCLAW_COMMAND` | No | OpenClaw CLI binary (default: `openclaw`) |
+| `CHATGPT_TIMEOUT_MS` | No | OpenClaw task timeout (default: `180000`) |
 | `HUNTER_POLL_INTERVAL` | No | Poll interval in ms (default: `10000`) |
 | `HUNTER_LOG_DIR` | No | Log directory (default: `./logs`) |
 | `HUNTER_HEADLESS` | No | Browser headless mode (default: `true`) |

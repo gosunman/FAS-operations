@@ -76,6 +76,9 @@ export const create_browser_manager = (config: BrowserManagerConfig = {}): Brows
       persistent_context = await chromium.launchPersistentContext(profile_dir, {
         // Google services block headless browsers — must use headed mode
         headless: false,
+        // Use system-installed Chrome instead of Playwright's bundled Chromium.
+        // Bundled Chromium (Chrome for Testing) crashes on macOS 26 Tahoe.
+        channel: 'chrome',
         // Standard viewport for consistent UI interaction
         viewport: { width: 1280, height: 900 },
       });

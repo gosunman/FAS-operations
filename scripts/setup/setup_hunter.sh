@@ -100,8 +100,7 @@ echo "  → A Chrome window will open. Please:"
 echo "    1. Sign in to your Google account (Account B)"
 echo "    2. Visit https://gemini.google.com/ and accept any terms"
 echo "    3. Visit https://notebooklm.google.com/ and accept any terms"
-echo "    4. Visit https://chatgpt.com/ and log in via Google OAuth (Account B)"
-echo "    5. Close the browser window when done"
+echo "    4. Close the browser window when done"
 echo ""
 echo "  Press Enter to open Chrome..."
 read -r
@@ -128,13 +127,46 @@ if [ -n "$CHROMIUM_PATH" ]; then
   "$CHROMIUM_PATH" --user-data-dir="$PROFILE_DIR" \
     "https://accounts.google.com" \
     "https://gemini.google.com/" \
-    "https://notebooklm.google.com/" \
-    "https://chatgpt.com/" &
+    "https://notebooklm.google.com/" &
   CHROME_PID=$!
   echo "  Chrome launched (PID: $CHROME_PID). Close it when login is complete."
   echo "  Press Enter after closing Chrome..."
   read -r
 fi
+
+# ===== Step 4.5: Install and configure OpenClaw =====
+echo ""
+echo "[4.5/8] Setting up OpenClaw (AI agent framework)..."
+
+if command -v openclaw &>/dev/null; then
+  echo "  ✓ OpenClaw already installed: $(openclaw --version 2>/dev/null || echo 'version unknown')"
+else
+  echo "  Installing OpenClaw..."
+  npm install -g openclaw@latest
+  echo "  ✓ OpenClaw installed"
+fi
+
+echo ""
+echo "  OpenClaw needs to be configured with ChatGPT Pro (Account B)."
+echo "  Run the interactive setup wizard:"
+echo ""
+echo "    openclaw onboard"
+echo ""
+echo "  During onboard:"
+echo "    1. Select 'OpenAI Codex (ChatGPT OAuth)' as the AI provider"
+echo "    2. Log in with Account B's OpenAI account in the browser"
+echo "    3. Paste the redirect URL code back into the terminal"
+echo ""
+echo "  After onboard, install as daemon for 24/7 operation:"
+echo ""
+echo "    openclaw gateway --install-daemon"
+echo ""
+echo "  Press Enter after completing OpenClaw setup (or skip with 's')..."
+read -r OPENCLAW_CONFIRM
+if [[ "$OPENCLAW_CONFIRM" != "s" && "$OPENCLAW_CONFIRM" != "S" ]]; then
+  echo "  ✓ OpenClaw setup acknowledged"
+fi
+echo ""
 
 # ===== Step 5: Create .env from .env.example =====
 echo ""
@@ -205,7 +237,7 @@ echo "  ╔═══════════════════════
 echo "  ║  CHECKLIST (셋업 완료 전 확인)                           ║"
 echo "  ║  □ Gemini CLI = 계정 B (별도 격리 계정)                  ║"
 echo "  ║  □ Google Chrome 프로필 = 별도 구글 계정 (계정 A 아님)    ║"
-echo "  ║  □ ChatGPT Pro = 별도 계정 (OPENAI_API_KEY 설정 완료)    ║"
+echo "  ║  □ OpenClaw = ChatGPT Pro OAuth 연동 완료                 ║"
 echo "  ║  □ 주인님 개인정보가 이 머신에 저장되지 않았는지 확인     ║"
 echo "  ╚══════════════════════════════════════════════════════════╝"
 

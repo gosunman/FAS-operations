@@ -85,8 +85,8 @@
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenAI API를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. URL 없는 태스크는 자동으로 `chatgpt_task`로 라우팅 (ChatGPT 미설정 시 `browser_task` 폴백).
-- ChatGPT 핸들러(`chatgpt_task`)는 task_executor.ts 내 Playwright 브라우저 자동화로 구현. ChatGPT Pro 웹 UI를 Google OAuth(계정 B) persistent 프로필로 자동화. Gemini/NotebookLM과 동일한 브라우저 프로필 공유.
+- **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenClaw CLI를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. URL 없는 태스크는 자동으로 `chatgpt_task`로 라우팅.
+- `chatgpt_task` 핸들러는 **OpenClaw** CLI(`openclaw -p "prompt"`)를 호출. OpenClaw은 독립 AI 에이전트 프레임워크로, ChatGPT Pro(계정 B) OAuth를 LLM 백엔드로 사용. 상세: [docs/openclaw.md](docs/openclaw.md)
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
 - **notify.ts**: 헌터 전용 Telegram + Slack 알림 (캡틴 봇과 격리된 별도 토큰). `alert()` → 양쪽, `report()` → Slack만. Fire-and-forget.
