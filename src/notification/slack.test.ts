@@ -82,7 +82,7 @@ describe('Slack Client', () => {
         message: 'Found 3 new startup programs',
         device: 'captain',
       };
-      expect(client.resolve_channel(event)).toBe('#crawl-results');
+      expect(client.resolve_channel(event)).toBe('#fas-general');
     });
 
     it('should route approval_mid to #approvals', () => {

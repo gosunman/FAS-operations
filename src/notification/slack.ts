@@ -21,7 +21,7 @@ export type SlackConfig = {
 const CHANNEL_ROUTING: Record<NotificationEventType, SlackChannel | ((event: NotificationEvent) => SlackChannel)> = {
   agent_log: (event) =>
     event.device === 'captain' ? '#captain-logs' : '#hunter-logs',
-  crawl_result: '#crawl-results',
+  crawl_result: '#fas-general',
   approval_mid: '#approvals',
   approval_high: '#approvals',
   academy: '#academy',
