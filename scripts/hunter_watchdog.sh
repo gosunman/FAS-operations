@@ -25,12 +25,12 @@ set -euo pipefail
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 
+DEPLOY_DIR="${HUNTER_DEPLOY_DIR:-/Users/user/fas-hunter-agent}"
 MAX_RETRIES="${HUNTER_MAX_RETRIES:-3}"
 BASE_DELAY="${HUNTER_RETRY_DELAY:-5}"
-LOG_DIR="${HUNTER_LOG_DIR:-./logs}"
+LOG_DIR="${HUNTER_LOG_DIR:-$DEPLOY_DIR/logs}"
 CAPTAIN_API="${CAPTAIN_API_URL:-}"
 API_KEY="${HUNTER_API_KEY:-}"
-DEPLOY_DIR="${HUNTER_DEPLOY_DIR:-/Users/user/fas-hunter-agent}"
 
 AGENT_NAME="hunter"
 RETRY_COUNT=0
