@@ -22,6 +22,7 @@ import { create_morning_briefing, type MorningBriefing } from './morning_briefin
 import { create_task_executor, type TaskExecutor } from './task_executor.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
 import type { GeminiConfig } from '../gemini/types.js';
+import { execSync } from 'node:child_process';
 import { get_sessions_for_device } from '../shared/agents_config.js';
 import type { Server } from 'node:http';
 
@@ -43,11 +44,22 @@ const DOCTRINE_FEEDBACK_PATH = process.env.DOCTRINE_FEEDBACK_PATH
   ?? '/Users/user/Library/Mobile Documents/com~apple~CloudDocs/claude-config/green-zone/shared/memory/feedback_lessons.md';
 
 // Dynamically load watched sessions from config/agents.yml (single source of truth).
-// Only watch captain-device sessions. The captain daemon's own session (fas-captain)
-// is excluded since watching itself is pointless.
+// Only watch captain-device sessions that actually exist as tmux sessions.
+// The captain daemon's own session (fas-captain) is excluded since watching itself is pointless.
 const CAPTAIN_SELF_SESSION = 'fas-captain';
+
+const get_live_tmux_sessions = (): Set<string> => {
+  try {
+    const output = execSync('tmux list-sessions -F "#{session_name}"', { encoding: 'utf-8' });
+    return new Set(output.trim().split('\n').filter(Boolean));
+  } catch {
+    return new Set();
+  }
+};
+
+const live_sessions = get_live_tmux_sessions();
 const WATCHED_SESSIONS = get_sessions_for_device('captain')
-  .filter((s) => s !== CAPTAIN_SELF_SESSION);
+  .filter((s) => s !== CAPTAIN_SELF_SESSION && live_sessions.has(s));
 
 // Planning schedule — hours to run morning (07:30) and night (22:50)
 const MORNING_HOUR = 7;
