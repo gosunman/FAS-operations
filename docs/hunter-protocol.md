@@ -318,6 +318,8 @@ start_hunter_monitor({
 
 헌터 머신의 `scripts/hunter_watchdog.sh`가 프로세스 크래시 시 자동 재시작한다.
 
+- **nvm 환경 자동 로드**: 비로그인 셸(launchd)에서 실행되므로, 스크립트 시작 시 `$NVM_DIR/nvm.sh`를 명시적으로 source하여 Node.js 환경을 로드한다
+- **OpenClaw Gateway health check**: 에이전트 시작 전 최대 60초 대기하며 `http://localhost:18789/health` 응답을 확인한다. Gateway가 준비되지 않으면 에이전트를 시작하지 않는다
 - 지수 백오프: `5s → 10s → 20s`
 - 최대 3회 연속 재시작 시도
 - 60초 이상 정상 실행 후 크래시 → 카운터 리셋
@@ -329,6 +331,8 @@ start_hunter_monitor({
 ### launchd 자동 시작
 
 헌터 머신에서 `com.fas.hunter.plist`를 설치하면 부팅/로그인 시 자동으로 tmux 세션이 시작된다.
+
+**nvm 호환성**: `com.fas.hunter.plist`의 `PATH` 환경변수에 nvm 경로(`$HOME/.nvm/versions/node/v22.x.x/bin`)를 포함한다. 비로그인 셸(launchd)에서는 `.zshrc`/`.bashrc`가 로드되지 않으므로, `hunter_watchdog.sh`가 `$NVM_DIR/nvm.sh`를 명시적으로 source하여 Node.js 환경을 보장한다.
 
 ```bash
 # 설치
