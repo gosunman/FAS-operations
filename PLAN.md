@@ -104,12 +104,14 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 1-3. OpenClaw 안정화 (헌터)
 
-- [ ] ChatGPT Pro 연동 완료 *(인간 작업)*
+- [x] ChatGPT Pro 연동 완료 — OpenClaw 2026.3.13 설치, OAuth 인증 완료 (2026-03-19)
 - [x] 개인정보 유입 방지 확인 — Quarantine 로직 구현 완료
 - [ ] 기본 태스크 실행 테스트
 - [x] NotebookLM 웹 자동화 코드 — `handle_notebooklm_verify` (Playwright + 구글 프로필)
 - [x] Gemini Deep Research 웹 자동화 코드 — `handle_deep_research` (Playwright + 구글 프로필)
 - [x] 구글 로그인 감지 → `[LOGIN_REQUIRED]` → Telegram 긴급 알림
+- [x] Node.js 22 업그레이드 (20 → 22, OpenClaw 요구사항) — sharp 빌드 이슈, npm 캐시 권한, nvm prefix 충돌 해결
+- [x] OpenClaw Gateway 데몬 가동 확인 (port 18789)
 - [ ] 헌터 머신 초기 세팅 *(인간 작업 — `scripts/setup/setup_hunter.sh` 실행)*
 
 ### 1-4. 작업 큐 시스템 ✅
@@ -472,7 +474,7 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 캡틴 Gemini CLI | 계정 A (무료 or 기존 플랜) | $0 | 이미 사용 중 |
 | 헌터 Google AI | **계정 B Google AI ~$20 플랜 (보유)** | $20 | Gemini CLI, NotebookLM, Deep Research, Antigravity 사용 가능 |
 | 헌터 Claude Code | ~~미결제~~ — 계정 B 생성 불가 (전화번호 인증 필수). 코딩 태스크는 Gemini CLI로 임시 대체 | $0 | — |
-| 헌터 ChatGPT | 미결제 | $0 | Playwright 기반 핸들러만 테스트 |
+| 헌터 ChatGPT | ~~미결제~~ → Pro 구독 완료 | ~~$0~~ → $200 | OpenClaw 2026.3.13 설치, OAuth 인증 완료 (Stage 2에서 완료) |
 | **월 합계** | | **~$120** | |
 
 **이 단계의 목표:**
@@ -482,7 +484,7 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 
 **승격 조건:** Task API 연속 3일 무장애, 핸들러 4종 정상 동작 확인
 
-### Stage 2: 운영 단계 (현재 — 코드 준비 완료, 인간 작업 대기)
+### Stage 2: 운영 단계 (현재 — OpenClaw 설치 완료, 헌터 머신 세팅 대기)
 
 저가 AI 플랜으로 실제 업무를 돌리며 안정성 체감.
 
@@ -502,8 +504,11 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 - [x] Notion Router 연결 — `router.ts`에 NotionClient 연결 완료
 - [x] `action` 필드 — Task 타입에 추가, schedules.yml → TaskStore → Hunter 전달
 - [x] 확장 스케줄 — `edutech_competitors`, `blind_nvc_monitor` 추가; `bigtech_jobs`, `lotto_housing` chatgpt_task로 업그레이드
+- [x] OpenClaw 설치 완료 — Node.js 22 업그레이드, OpenClaw 2026.3.13, ChatGPT Pro OAuth 인증, Gateway 데몬 가동 (2026-03-19)
+- [x] Telegram 인바운드 라우팅 보안 수정 — 일반 텍스트 기본 라우팅을 `hunter` → `captain`으로 변경 (PII 보호)
+- [x] 독트린 ↔ 로컬 심링크 정비 — 메모리 6개 파일 독트린 병합, hooks 확장 및 독트린 이전
 - [ ] **인간 작업**: 헌터 머신 초기 세팅 (`setup_hunter.sh` 실행)
-- [ ] **인간 작업**: ChatGPT Plus 구독
+- [x] **인간 작업**: ChatGPT Pro 구독 + OpenClaw OAuth 인증 완료
 - [ ] **인간 작업**: Notion API Key 발급 + DB 생성
 
 | 에이전트 | 플랜 | 월 비용 | 비고 |
@@ -512,8 +517,8 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 캡틴 Gemini CLI | 유지 | $0 | 유지 |
 | 헌터 Google AI | 계정 B (~$20 플랜) | $20 | 유지 |
 | 헌터 Claude Code | ~~Pro (계정 B)~~ — 계정 B 생성 불가. Gemini CLI로 임시 대체 | $0 | — |
-| 헌터 ChatGPT | **Plus** (~$20) | **$20** | 브라우저 자동화 |
-| **월 합계** | | **~$140** (Claude Code 항목 제외) | |
+| 헌터 ChatGPT | **Pro** ($200) | **$200** | OpenClaw 2026.3.13 설치 완료, OAuth 인증 완료 |
+| **월 합계** | | **~$320** (Claude Code 항목 제외) | |
 
 **이 단계의 목표:**
 - SLEEP 모드 야간 자동 크롤링 실운영

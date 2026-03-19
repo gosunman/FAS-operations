@@ -216,13 +216,18 @@ describe('telegram_commands', () => {
   });
 
   describe('default (non-command text)', () => {
-    it('should create a hunter chatgpt_task for plain text', async () => {
+    it('should create a captain task for plain text (security: captain triages first)', async () => {
       mock_send_ok();
       await commands._handle_message('네이버 부동산 시세 알려줘', '12345');
       expect(store.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          assigned_to: 'captain',
+        }),
+      );
+      // Must NOT go directly to hunter — PII leak risk
+      expect(store.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
           assigned_to: 'hunter',
-          action: 'chatgpt_task',
         }),
       );
     });

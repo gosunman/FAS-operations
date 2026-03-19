@@ -213,21 +213,61 @@ describe('web_crawl handler', () => {
     expect(result.files).toEqual([]);
   });
 
-  it('should return failure when no URL found in crawl task', async () => {
-    // Given
+  it('should fall back to chatgpt_task when no URL found', async () => {
+    // Given — web_crawl with no URL should delegate to OpenClaw
     const mock_browser = create_mock_browser();
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'Crawl some website',
       description: 'No URL provided here',
+      action: 'web_crawl',
+    });
+
+    // When
+    const result = await executor.execute(task);
+
+    // Then — chatgpt_task fallback runs (OpenClaw spawn will fail in test, but fallback path is exercised)
+    expect(mock_logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('falling back to chatgpt_task'),
+    );
+  });
+
+  it('should use task.url when provided (explicit URL from schedule)', async () => {
+    // Given — task.url takes priority over text extraction
+    const mock_browser = create_mock_browser();
+    const executor = create_task_executor(mock_logger, mock_browser);
+    const task = make_task({
+      title: 'Crawl K-Startup',
+      description: 'Some description without URL',
+      action: 'web_crawl',
+      url: 'https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do',
     });
 
     // When
     const result = await executor.execute(task);
 
     // Then
-    expect(result.status).toBe('failure');
-    expect(result.output).toContain('No URL found');
+    expect(result.status).toBe('success');
+    expect(result.output).toContain('https://www.k-startup.go.kr');
+  });
+
+  it('should prefer task.url over URL in description', async () => {
+    // Given — both task.url and description URL exist
+    const mock_browser = create_mock_browser();
+    const executor = create_task_executor(mock_logger, mock_browser);
+    const task = make_task({
+      title: 'Crawl site',
+      description: 'Check https://fallback.example.com for data',
+      action: 'web_crawl',
+      url: 'https://primary.example.com',
+    });
+
+    // When
+    const result = await executor.execute(task);
+
+    // Then — task.url should win
+    expect(result.output).toContain('https://primary.example.com');
+    expect(result.output).not.toContain('https://fallback.example.com');
   });
 
   it('should handle navigation errors gracefully', async () => {

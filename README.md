@@ -67,6 +67,21 @@ FAS는 두 계층으로 분리된다:
 
 > 에이전트 체계 상세: [docs/agents-charter.md](docs/agents-charter.md)
 
+## Doctrine ↔ Operations 심링크
+
+로컬 Claude Code 설정 파일들은 독트린(iCloud)으로 심링크되어 Source of Truth를 일원화한다:
+
+| 로컬 경로 | 심링크 대상 (독트린) |
+|-----------|---------------------|
+| `~/.claude/projects/-Users-user-FAS-operations/memory/` | `green-zone/shared/memory/` |
+| `~/.claude/hooks/` | `green-zone/shared/hooks/` |
+| `~/.claude/projects/-Users-user-FAS-operations/CLAUDE.md` | `green-zone/captain/CLAUDE.md` |
+| `~/.claude/projects/-Users-user-FAS-operations/settings.json` | `green-zone/shared/settings.json` |
+| `~/.claude/projects/-Users-user-FAS-operations/settings.local.json` | `green-zone/captain/settings.local.json` |
+| `~/.claude/projects/-Users-user-FAS-operations/commands/` | `green-zone/shared/commands/` |
+
+> 모든 경로는 `~/Library/Mobile Documents/com~apple~CloudDocs/claude-config/` 하위.
+
 ## 운영 모드
 
 | 모드          | 시간대      | 주요 활동                                               |

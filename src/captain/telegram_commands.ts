@@ -212,8 +212,9 @@ export const create_telegram_commands = (
         // Unknown command — ignore silently to avoid noise
         await reply(`알 수 없는 명령어: ${trimmed.split(' ')[0]}`);
       } else {
-        // Default: non-command text → create hunter chatgpt_task
-        await handle_hunter(trimmed);
+        // Default: non-command text → captain receives first, then decides routing
+        // Security: never send raw user text directly to hunter (PII leak risk)
+        await handle_captain(trimmed);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -160,18 +160,17 @@ export const create_task_executor = (
   };
 
   // ===== web_crawl handler =====
-  // Navigates to URL, extracts page title and text content
+  // Navigates to URL, extracts page title and text content.
+  // URL resolution: task.url (explicit) > extract_url(text) > fallback to chatgpt_task
   const handle_web_crawl: ActionHandler = async (task) => {
     const text = `${task.title} ${task.description ?? ''}`;
-    const url = extract_url(text);
+    const url = task.url ?? extract_url(text);
 
     if (!url) {
-      logger.warn(`web_crawl: no URL found in task ${task.id}`);
-      return {
-        status: 'failure',
-        output: `No URL found in task description: "${text}"`,
-        files: [],
-      };
+      // Fallback: delegate to OpenClaw for URL-less crawl tasks
+      // Uses get_handler() for late binding since chatgpt_task is defined after web_crawl
+      logger.info(`web_crawl: no URL found in task ${task.id}, falling back to chatgpt_task`);
+      return get_handler('chatgpt_task')(task);
     }
 
     logger.info(`web_crawl: navigating to ${url}`);
@@ -669,6 +668,9 @@ export const create_task_executor = (
       };
     }
   };
+
+  // Late-binding helper for cross-handler fallback (avoids TDZ issues with const)
+  const get_handler = (action: HunterActionType): ActionHandler => action_map[action];
 
   // Action router
   const action_map: Record<HunterActionType, ActionHandler> = {

@@ -31,7 +31,7 @@
 | 카테고리 | 기술 | 버전 |
 |---------|------|------|
 | 언어 | TypeScript (ESM) | 5.9+ |
-| 런타임 | Node.js | 20+ |
+| 런타임 | Node.js | 22+ (헌터: OpenClaw 요구사항으로 22 필수) |
 | 패키지 매니저 | pnpm | 10+ |
 | 웹 프레임워크 | Express | 5.x |
 | DB | better-sqlite3 (WAL mode) | 12+ |
@@ -100,7 +100,7 @@
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append). `main.ts`의 나이트 플래닝 훅에서 자동 호출되어 당일 완료 태스크의 교훈을 `DOCTRINE_FEEDBACK_PATH`에 기록.
 - **persona_injector.ts**: 동적 페르소나 주입기. Doctrine 메모리 디렉토리(`DOCTRINE_MEMORY_DIR`)에서 사용자 컨텍스트를 읽어 PII를 제거한 배경 정보를 헌터 태스크 description에 주입. 헌터가 맥락 없이 작업하는 것을 방지.
-- **telegram_commands.ts**: Telegram 인바운드 명령 핸들러. 주인님이 Telegram에서 `/hunter`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령을 보내면 캡틴이 해당 액션을 즉시 수행 (태스크 생성, 상태 조회 등).
+- **telegram_commands.ts**: Telegram 인바운드 명령 핸들러. 주인님이 Telegram에서 `/hunter`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령을 보내면 캡틴이 해당 액션을 즉시 수행 (태스크 생성, 상태 조회 등). **일반 텍스트는 기본 `captain` 태스크로 생성** — PII가 포함될 수 있는 일반 텍스트가 헌터로 직행하는 취약점을 방지하기 위해 캡틴이 먼저 수신하고 판단 후 PII 마스킹하여 헌터에 하위 태스크로 하달.
 
 ### Cross-Approval (`src/gateway/cross_approval.ts`)
 - Gemini CLI 교차 승인 모듈. MID 리스크 액션에 대해 Gemini CLI spawn → JSON 파싱 → 승인/거부 결정.

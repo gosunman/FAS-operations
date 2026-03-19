@@ -100,10 +100,20 @@ Captain (Mac Studio #2, M4 Ultra)     Hunter (Mac Studio #1, M1 Ultra)
 
 | 항목 | 최소 | 권장 |
 |------|------|------|
-| Node.js | 22+ | 24 LTS |
+| Node.js | **22+** (필수 — 20에서는 동작하지 않음) | 24 LTS |
 | macOS | 12 (Monterey) | 13+ |
 | RAM | 4GB+ | 8GB+ (브라우저 자동화 포함 시) |
 | 디스크 | 2GB | 5GB+ (브라우저 캐시, 스킬 데이터) |
+
+> **Node.js 22 필수**: OpenClaw 2026.3.x는 Node.js 22+ API를 사용한다. nvm으로 `nvm install 22 && nvm use 22`로 업그레이드 필요.
+
+### 설치 시 알려진 이슈 (macOS ARM)
+
+| 이슈 | 증상 | 해결 |
+|------|------|------|
+| sharp 네이티브 빌드 실패 | `node-gyp rebuild` 에러 | `npm install @img/sharp-darwin-arm64` prebuilt 바이너리 사용 |
+| npm 캐시 권한 | `EACCES: permission denied` | `sudo chown -R $(whoami) ~/.npm` |
+| nvm + npmrc prefix 충돌 | `nvm is not compatible with the "PREFIX" environment variable` | `~/.npmrc`에서 `prefix=` 라인 제거 |
 
 ### 설치 순서
 
@@ -189,7 +199,7 @@ ChatGPT Pro($200/월) 구독을 **그대로** 사용한다. 별도의 OpenAI API
 | 시점 | 백엔드 | 상태 | 사유 |
 |------|--------|------|------|
 | 초기 테스트 | GLM (Zhipu AI) | 폐기 | 개인정보 유출 우려. 한국어/영어 성능 부족 |
-| 현재 | ChatGPT Pro (OAuth) | **운영 중** | $200/월 정액제. 최고 수준 성능. API 비용 무발생 |
+| 현재 | ChatGPT Pro (OAuth) | **운영 중** | $200/월 정액제. 최고 수준 성능. API 비용 무발생. 2026-03-19 설치 완료 |
 
 OpenClaw은 LLM 백엔드를 설정으로 즉시 교체할 수 있다:
 

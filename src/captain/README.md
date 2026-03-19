@@ -10,7 +10,7 @@
 | `planning_loop.ts` | 모닝/나이트 자율 스케줄링 (schedules.yml 기반 태스크 생성) |
 | `feedback_extractor.ts` | 완료된 태스크에서 교훈 추출 (Gemini CLI → Doctrine feedback 파일에 append) |
 | `persona_injector.ts` | PII-free 사용자 컨텍스트 주입 — Doctrine memory 파일에서 안전한 프로필 정보(직업, 학력, 기술 스택 등)를 추출하여 헌터 태스크 description에 prepend. 24h TTL 캐시, PII 정규식 필터링 |
-| `telegram_commands.ts` | Telegram 인바운드 명령 수신 — long polling(`getUpdates`)으로 `/hunter`, `/captain`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령 처리. 일반 텍스트는 기본 hunter chatgpt_task로 생성 |
+| `telegram_commands.ts` | Telegram 인바운드 명령 수신 — long polling(`getUpdates`)으로 `/hunter`, `/captain`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령 처리. **일반 텍스트는 기본 `captain` 태스크로 생성** (PII 보호 — 캡틴이 먼저 수신 후 판단하여 PII 마스킹 후 헌터에 하위 태스크로 하달) |
 
 ## planning_loop.ts
 

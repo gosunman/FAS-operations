@@ -10,6 +10,7 @@ schedules:
     risk_level: low
     requires_personal_info: false
     action: web_crawl
+    url: "https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do"
     description: "K-Startup, 창업진흥원, 중소벤처기업부, SBA, Google for Startups, D.CAMP 신규 공고 크롤링"
 
   lotto_housing:
@@ -37,6 +38,7 @@ schedules:
     risk_level: low
     requires_personal_info: false
     action: web_crawl
+    url: "https://www.teamblind.com/kr/topics/naver"
     description: "블라인드 네이버 채널 인기글 감지 (댓글 50+, 좋아요 100+, 자극적 키워드)"
 
   blind_nvc_monitor:

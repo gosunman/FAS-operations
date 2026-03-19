@@ -110,6 +110,7 @@ export type Task = {
   title: string;
   description?: string;
   action?: string;  // Explicit action type (e.g., 'web_crawl', 'chatgpt_task', 'deep_research')
+  url?: string;     // Explicit target URL (from schedule config or API)
   priority: 'low' | 'medium' | 'high' | 'urgent';
   assigned_to: string;
   mode: FasMode | 'recurring';

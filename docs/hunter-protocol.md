@@ -14,7 +14,7 @@
 
 ## 격리 원칙
 
-헌터(Mac Studio #1)는 **완전 격리된 환경**이다. OpenClaw(ChatGPT Plus)와 Gemini CLI(계정 B, Claude Code 임시 대체)가 실행되며, 개인정보가 유입되면 유출 위험이 있다.
+헌터(Mac Studio #1)는 **완전 격리된 환경**이다. OpenClaw(ChatGPT Pro)와 Gemini CLI(계정 B, Claude Code 임시 대체)가 실행되며, 개인정보가 유입되면 유출 위험이 있다.
 
 ### 격리 항목
 
@@ -176,7 +176,7 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 }
 ```
 
-## 헌터 현재 구현 상태 (2026-03-18 기준)
+## 헌터 현재 구현 상태 (2026-03-19 기준)
 
 ### 코드 구현 완료 (캡틴 레포에 존재)
 
@@ -197,7 +197,7 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 | 로그인 감지 | `detect_login_wall()` | ✅ `[LOGIN_REQUIRED]` 반환 |
 | 테스트 | `tests/hunter/`, `src/hunter/*.test.ts` | ✅ 전수 통과 |
 
-### 헌터 머신 실제 상태 (미완료)
+### 헌터 머신 실제 상태
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
@@ -206,10 +206,11 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 | Claude Code OAuth | ❌ **사용 불가** | 가입 시 전화번호 인증 필수 → 헌터 전용 계정 B 생성 불가. 임시 대체: Gemini CLI 사용 (아래 참조) |
 | 계정 B 생성 | ❌ | Anthropic 가입 프로세스의 전화번호 인증 요건으로 인해 미생성 |
 | 구글 프로필 설정 | ❌ | 별도 구글 계정으로 수동 로그인 필요 |
-| OpenClaw (ChatGPT Pro) | ❌ | 미설치 |
-| Node.js / pnpm | ❓ | 확인 필요 |
+| OpenClaw (ChatGPT Pro) | ✅ | OpenClaw 2026.3.13 설치, ChatGPT Pro OAuth 인증 완료. Gateway 데몬 가동 중 (port 18789) |
+| Node.js | ✅ | v22 (OpenClaw 요구사항으로 20 → 22 업그레이드. sharp 빌드 이슈, npm 캐시 권한, nvm prefix 충돌 해결) |
+| pnpm | ❓ | 확인 필요 |
 | Playwright | ❌ | 미설치 |
-| FAS Operations 코드 배포 | ❌ | git clone 필요 |
+| FAS Operations 코드 배포 | ❌ | deploy 스크립트로 최소 파일만 전송 (git clone 금지) |
 
 ### Claude Code 사용 불가 사유 및 임시 대체 방안
 
