@@ -17,6 +17,7 @@ import { create_slack_client } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
 import { create_notion_client } from '../notification/notion.js';
 import { create_feedback_extractor, type FeedbackExtractor } from './feedback_extractor.js';
+import { create_telegram_commands, type TelegramCommands } from './telegram_commands.js';
 import type { Server } from 'node:http';
 
 // === Constants ===
@@ -170,7 +171,23 @@ const main = async () => {
   resource_monitor.start();
   console.log('[Captain] Resource monitor started (2min interval)');
 
-  // 10. Daily planning scheduler — runs morning/night planning automatically
+  // 11. Telegram command listener (inbound commands from user)
+  let telegram_commands: TelegramCommands | null = null;
+  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    telegram_commands = create_telegram_commands(
+      {
+        bot_token: process.env.TELEGRAM_BOT_TOKEN,
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+      },
+      store,
+    );
+    telegram_commands.start();
+    console.log('[Captain] Telegram command listener started');
+  } else {
+    console.warn('[Captain] TELEGRAM_BOT_TOKEN/CHAT_ID not set — Telegram commands disabled');
+  }
+
+  // 12. Daily planning scheduler — runs morning/night planning automatically
   let last_morning_date = '';
   let last_night_date = '';
 
@@ -221,7 +238,7 @@ const main = async () => {
   if (schedule_timer.unref) schedule_timer.unref();
   console.log(`[Captain] Daily scheduler started (morning ${MORNING_HOUR}:${String(MORNING_MINUTE).padStart(2, '0')}, night ${NIGHT_HOUR}:${String(NIGHT_MINUTE).padStart(2, '0')})`);
 
-  // 11. Status summary
+  // 13. Status summary
   const stats = store.get_stats();
   console.log('======================================');
   console.log('[Captain] All services started');
@@ -229,10 +246,11 @@ const main = async () => {
   console.log(`[Captain] Mode: ${dev_mode ? 'DEV' : 'PRODUCTION'}`);
   console.log('======================================');
 
-  // 12. Graceful shutdown
+  // 14. Graceful shutdown
   const shutdown = () => {
     console.log('[Captain] Shutting down...');
     clearInterval(schedule_timer);
+    telegram_commands?.stop();
     resource_monitor.stop();
     stop_hunter_monitor();
     watcher.stop();
