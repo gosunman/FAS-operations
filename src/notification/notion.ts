@@ -55,6 +55,25 @@ export const create_notion_client = (config: NotionConfig) => {
       try {
         // Only use Name (title) property — other properties (Type, Device, etc.)
         // may not exist in all Notion databases. Keep it simple and resilient.
+        // Split message into Notion-safe chunks (max 2000 chars per block)
+        const message_chunks = split_content(event.message, 2000);
+        const message_blocks = message_chunks.map((chunk) => ({
+          object: 'block' as const,
+          type: 'paragraph' as const,
+          paragraph: {
+            rich_text: [{ type: 'text' as const, text: { content: chunk } }],
+          },
+        }));
+
+        const metadata_blocks = event.metadata ? split_content(JSON.stringify(event.metadata, null, 2), 2000).map((chunk) => ({
+          object: 'block' as const,
+          type: 'code' as const,
+          code: {
+            rich_text: [{ type: 'text' as const, text: { content: chunk } }],
+            language: 'json' as const,
+          },
+        })) : [];
+
         const response = await client.pages.create({
           parent: { database_id: config.database_id },
           properties: {
@@ -62,23 +81,7 @@ export const create_notion_client = (config: NotionConfig) => {
               title: [{ text: { content: `${emoji} [${event.type.toUpperCase()}] ${event.message.slice(0, 100)}` } }],
             },
           },
-          children: [
-            {
-              object: 'block' as const,
-              type: 'paragraph' as const,
-              paragraph: {
-                rich_text: [{ type: 'text' as const, text: { content: event.message } }],
-              },
-            },
-            ...(event.metadata ? [{
-              object: 'block' as const,
-              type: 'code' as const,
-              code: {
-                rich_text: [{ type: 'text' as const, text: { content: JSON.stringify(event.metadata, null, 2) } }],
-                language: 'json' as const,
-              },
-            }] : []),
-          ],
+          children: [...message_blocks, ...metadata_blocks],
         });
 
         return {
