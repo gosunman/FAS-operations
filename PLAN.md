@@ -177,6 +177,15 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 헌터 watchdog — `scripts/hunter_watchdog.sh` (지수 백오프, Captain 크래시 보고, Telegram 알림)
 - [x] 헌터 launchd — `scripts/setup/com.fas.hunter.plist` (KeepAlive, 로그)
 - [x] 통합 테스트 — `tests/integration/captain_hunter.test.ts`
+- [x] com.fas.start-all.plist — 캡틴 로그인 시 전체 서비스 자동 기동
+- [x] com.fas.update-check.plist — macOS 업데이트 감시 (매일 09:00)
+- [x] com.fas.dep-check.plist — 의존성 점검 (매월 1일)
+- [x] start_all.sh 5단계 기동 순서 구현
+- [x] stop_all.sh / status.sh 신 아키텍처 반영
+- [x] start_captain_sessions.sh deprecated 처리
+- [x] hunter_watchdog.sh nvm 로드 + OpenClaw health check 추가
+- [x] com.fas.hunter.plist PATH 수정 (nvm 경로 추가)
+- [x] openclaw-gateway ThrottleInterval 1→30 수정
 
 ---
 

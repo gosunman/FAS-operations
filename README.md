@@ -217,9 +217,12 @@ FAS-operations/
 │   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
 │   ├── deploy/           # 헌터 배포 (소스코드 격리) + 배포 검증
 │   ├── security/         # 보안 스캔 (PII 검사)
-│   ├── start_all.sh      # 전체 서비스 기동 (멱등)
+│   ├── start_all.sh      # 전체 서비스 5단계 의존관계 기동 (멱등)
 │   ├── stop_all.sh       # 전체 서비스 중지
 │   ├── status.sh         # 전체 상태 조회
+│   ├── start_captain_sessions.sh # (deprecated — use start_all.sh)
+│   ├── check_macos_update.sh # macOS 업데이트 감시
+│   ├── check_dependencies.sh # 의존성 점검 (pnpm, node, colima 등)
 │   ├── gateway_wrapper.sh # Gateway 자동 재시작 래퍼
 │   ├── agent_wrapper.sh  # Claude Code 자동 재시작 래퍼
 │   ├── hunter_watchdog.sh # 헌터 프로세스 자동 재시작 래퍼
@@ -232,6 +235,47 @@ FAS-operations/
 ├── docker-compose.yml    # n8n (Colima)
 ├── CLAUDE.md             # AI 자율 실행 규칙
 └── PLAN.md               # 구축 계획
+```
+
+## start_all.sh — 5단계 의존관계 기동
+
+`scripts/start_all.sh`는 전체 FAS 서비스를 의존 순서에 따라 기동한다:
+
+| Phase | 대상 | 설명 |
+|-------|------|------|
+| Phase 1 | Colima | Docker 런타임 (n8n 등 컨테이너 의존) |
+| Phase 2 | n8n | 오케스트레이션 엔진 |
+| Phase 3 | Captain | Gateway + Watcher + Planning Loop |
+| Phase 4 | CC sessions | Claude Code / Gemini CLI tmux 세션 |
+| Phase 5 | mode + 알림 | SLEEP/AWAKE 모드 판별 + Slack 기동 알림 |
+
+> `start_captain_sessions.sh`는 deprecated — `start_all.sh`를 사용할 것.
+
+## launchd (LaunchAgents) plist 목록
+
+캡틴 머신에 등록된 LaunchAgent plist 파일:
+
+| plist | 용도 | 트리거 |
+|-------|------|--------|
+| `com.fas.awake.plist` | AWAKE 모드 전환 | 매일 07:30 |
+| `com.fas.sleep.plist` | SLEEP 모드 전환 | 매일 23:00 |
+| `com.fas.gemini-a.plist` | Gemini CLI 계정 A 세션 | KeepAlive |
+| `com.fas.start-all.plist` | 로그인 시 전체 서비스 자동 기동 | RunAtLoad (로그인) |
+| `com.fas.update-check.plist` | macOS 업데이트 감시 | 매일 09:00 |
+| `com.fas.dep-check.plist` | 의존성 점검 (pnpm, node, colima 등) | 매월 1일 |
+
+**설치 방법:**
+
+```bash
+# plist 복사 및 등록
+cp scripts/setup/com.fas.start-all.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.start-all.plist
+
+cp scripts/setup/com.fas.update-check.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.update-check.plist
+
+cp scripts/setup/com.fas.dep-check.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fas.dep-check.plist
 ```
 
 ## 빠른 시작
