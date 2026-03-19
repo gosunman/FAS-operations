@@ -22,6 +22,16 @@
 //   - Uses native fetch (Node 20+) for Telegram Bot API
 
 import type { TaskStore } from '../gateway/task_store.js';
+import type { PiiDetection } from '../gateway/sanitizer.js';
+
+// === Sanitizer interface for dependency injection ===
+// Optional — when not provided, no PII filtering is applied (backward compatible)
+
+export type BotSanitizer = {
+  sanitize_text: (text: string) => string;
+  contains_critical_pii: (text: string) => boolean;
+  detect_pii_with_severity: (text: string) => PiiDetection[];
+};
 
 // === Configuration ===
 
@@ -101,6 +111,7 @@ const ACTION_LABELS: Record<HunterAction, string> = {
 export const create_telegram_bot = (
   config: TelegramBotConfig,
   store: TaskStore,
+  sanitizer?: BotSanitizer,
 ) => {
   let running = false;
   let last_update_id = 0;
@@ -195,6 +206,24 @@ export const create_telegram_bot = (
 
   /** Convert a natural language message into a Hunter task */
   const handle_natural_message = async (text: string): Promise<void> => {
+    // PII filtering: block critical PII, auto-mask warning PII
+    if (sanitizer) {
+      // Check for critical PII first — block entirely if found
+      if (sanitizer.contains_critical_pii(text)) {
+        const detections = sanitizer.detect_pii_with_severity(text);
+        const critical_types = detections
+          .filter((d) => d.severity === 'critical')
+          .map((d) => d.name)
+          .join(', ');
+        console.warn(`${LOG_PREFIX} Blocked message with critical PII: ${critical_types}`);
+        await send_message(
+          `⚠️ 개인정보(${critical_types})가 포함되어 있어 헌터에게 전달할 수 없습니다.\n` +
+          '개인정보를 제거한 후 다시 시도해주세요.',
+        );
+        return;
+      }
+    }
+
     const action = infer_action(text);
 
     // Build title based on action type
@@ -213,9 +242,24 @@ export const create_telegram_bot = (
         break;
     }
 
+    // Apply sanitizer for warning-level PII (auto-mask)
+    let sanitized_title = title;
+    let sanitized_description = text;
+    let has_warning_pii = false;
+
+    if (sanitizer) {
+      const detections = sanitizer.detect_pii_with_severity(text);
+      has_warning_pii = detections.some((d) => d.severity === 'warning');
+
+      if (has_warning_pii) {
+        sanitized_title = sanitizer.sanitize_text(title);
+        sanitized_description = sanitizer.sanitize_text(text);
+      }
+    }
+
     const task = store.create({
-      title,
-      description: text,
+      title: sanitized_title,
+      description: sanitized_description,
       action,
       assigned_to: 'hunter',
       priority: 'medium',
@@ -223,6 +267,11 @@ export const create_telegram_bot = (
     });
 
     await send_message(`👁️ 헌터에게 전달했습니다. (${ACTION_LABELS[action]})\n\`${task.id}\``);
+
+    // Notify owner about auto-masking
+    if (has_warning_pii) {
+      await send_message('⚠️ 일부 개인정보가 자동 마스킹되었습니다.');
+    }
   };
 
   // === Message dispatcher ===

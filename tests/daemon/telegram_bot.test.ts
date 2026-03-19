@@ -3,7 +3,7 @@
 // allowing the owner to send tasks to Hunter via natural language messages.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { create_telegram_bot, infer_action, type TelegramBotConfig } from '../../src/daemon/telegram_bot.js';
+import { create_telegram_bot, infer_action, type TelegramBotConfig, type BotSanitizer } from '../../src/daemon/telegram_bot.js';
 
 // === Mock fetch globally ===
 const mock_fetch = vi.fn();
@@ -360,6 +360,103 @@ describe('telegram_bot (daemon)', () => {
       const body = JSON.parse(mock_fetch.mock.calls[0][1].body);
       expect(body.text).toBe('테스트 메시지입니다');
       expect(body.chat_id).toBe('12345');
+    });
+  });
+
+  // === PII Sanitizer integration ===
+
+  describe('PII sanitizer integration', () => {
+    // Mock sanitizer that simulates real sanitizer behavior
+    const create_mock_sanitizer = (): BotSanitizer => ({
+      sanitize_text: vi.fn((text: string) => text.replace(/010-\d{4}-\d{4}/g, '[전화번호 제거됨]')),
+      contains_critical_pii: vi.fn((_text: string) => false),
+      detect_pii_with_severity: vi.fn((_text: string) => []),
+    });
+
+    it('should sanitize title and description before creating task (warning PII)', async () => {
+      const sanitizer = create_mock_sanitizer();
+      // Return warning-level detection
+      (sanitizer.detect_pii_with_severity as ReturnType<typeof vi.fn>).mockReturnValue([
+        { name: 'email', severity: 'warning' },
+      ]);
+
+      const bot_with_sanitizer = create_telegram_bot(
+        config,
+        store as unknown as Parameters<typeof create_telegram_bot>[1],
+        sanitizer,
+      );
+
+      // Two sends: task confirmation + PII warning
+      mock_send_ok();
+      mock_send_ok();
+      await bot_with_sanitizer._handle_message('user@example.com에 연락해줘', '12345');
+
+      // sanitize_text should be called for title and description
+      expect(sanitizer.sanitize_text).toHaveBeenCalled();
+      // Task should be created (warning = auto-mask, not block)
+      expect(store.create).toHaveBeenCalled();
+      bot_with_sanitizer.stop();
+    });
+
+    it('should block task creation and warn owner when critical PII detected', async () => {
+      const sanitizer = create_mock_sanitizer();
+      (sanitizer.contains_critical_pii as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (sanitizer.detect_pii_with_severity as ReturnType<typeof vi.fn>).mockReturnValue([
+        { name: 'resident_id', severity: 'critical' },
+      ]);
+
+      const bot_with_sanitizer = create_telegram_bot(
+        config,
+        store as unknown as Parameters<typeof create_telegram_bot>[1],
+        sanitizer,
+      );
+
+      mock_send_ok();
+      await bot_with_sanitizer._handle_message('주민번호 900101-1234567 알려줘', '12345');
+
+      // Task should NOT be created
+      expect(store.create).not.toHaveBeenCalled();
+      // Warning message should be sent
+      const text = get_sent_text();
+      expect(text).toContain('개인정보');
+      bot_with_sanitizer.stop();
+    });
+
+    it('should work without sanitizer (backward compatible)', async () => {
+      // bot is created without sanitizer in beforeEach
+      mock_send_ok();
+      await bot._handle_message('주민번호 900101-1234567 알려줘', '12345');
+
+      // Task should be created (no sanitizer = no filtering)
+      expect(store.create).toHaveBeenCalled();
+    });
+
+    it('should notify owner about auto-masking when warning PII is found', async () => {
+      const sanitizer = create_mock_sanitizer();
+      (sanitizer.detect_pii_with_severity as ReturnType<typeof vi.fn>).mockReturnValue([
+        { name: 'email', severity: 'warning' },
+      ]);
+
+      const bot_with_sanitizer = create_telegram_bot(
+        config,
+        store as unknown as Parameters<typeof create_telegram_bot>[1],
+        sanitizer,
+      );
+
+      mock_send_ok(); // task confirmation
+      mock_send_ok(); // pii warning
+      await bot_with_sanitizer._handle_message('user@test.com 확인해줘', '12345');
+
+      // Should have two sendMessage calls: confirmation + masking notice
+      const calls = mock_fetch.mock.calls.filter((c: unknown[]) =>
+        (c[0] as string).includes('sendMessage'),
+      );
+      expect(calls.length).toBe(2);
+
+      // One of them should contain the masking notice
+      const texts = calls.map((c: unknown[]) => JSON.parse((c[1] as { body: string }).body).text as string);
+      expect(texts.some((t: string) => t.includes('마스킹'))).toBe(true);
+      bot_with_sanitizer.stop();
     });
   });
 });
