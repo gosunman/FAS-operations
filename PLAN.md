@@ -43,13 +43,16 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 채널 라우팅 모듈 — `src/notification/slack.ts`
   - [x] 통합 라우터 — `src/notification/router.ts`
   - [x] Slack 워크스페이스 생성 + Bot 토큰 발급
-- [ ] **Notion** 연동 — 보고서/긴 문서:
+- [x] **Notion** 연동 — 보고서/긴 문서:
   - [x] Notion 클라이언트 구현 — `src/notification/notion.ts` (create_page, send_notification, daily_briefing)
   - [x] 태스크 결과 Notion 백업 파이프라인 — `server.ts`에서 fire-and-forget 백업 (NOTION_TASK_RESULTS_DB)
-  - [ ] Notion API Key 발급 + DB 생성 *(인간 작업)*
-  - [ ] `.env`에 `NOTION_API_KEY`, `NOTION_TASK_RESULTS_DB` 설정 *(인간 작업)*
+  - [x] Notion API Key 발급 + DB 4개 생성 완료 (DAILY_REPORTS, RESEARCH, CRAWL_RESULTS, TASK_RESULTS)
+  - [x] `.env`에 `NOTION_API_KEY` + 4개 DB ID 설정 완료
   - [x] 라우터(`router.ts`)에 NotionClient 연결
-  - [ ] 모닝 브리핑 → Notion 페이지 자동 생성
+  - [x] 모닝 브리핑 → Notion 페이지 자동 생성 — `morning_briefing.ts`
+  - [x] 크롤링 결과 자동 알림: Notion 원문 → Slack 요약 + Notion 링크 (2026-03-19)
+  - [x] Notion 페이지 Name 속성만 사용 (Type/Timestamp 제거, DB 호환성 강화)
+  - [x] 메시지 2000자 청크 분할 (Notion API 제한 대응)
 
 ### 0-4. Docker 환경 (캡틴) ✅
 
@@ -106,7 +109,9 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 - [x] ChatGPT Pro 연동 완료 — OpenClaw 2026.3.13 설치, OAuth 인증 완료 (2026-03-19)
 - [x] 개인정보 유입 방지 확인 — Quarantine 로직 구현 완료
-- [ ] 기본 태스크 실행 테스트
+- [x] 기본 태스크 실행 테스트 — web_crawl(HN 크롤링 성공), chatgpt_task(OpenClaw 텍스트 리서치 + 브라우저 모드 성공) 확인 (2026-03-19)
+- [x] OpenClaw tools profile → `full` (브라우저 도구 포함), `openclaw browser start` 완료
+- [x] OpenClaw CLI 호출 방식 변경: `openclaw agent --agent main -m "prompt" --json`
 - [x] NotebookLM 웹 자동화 코드 — `handle_notebooklm_verify` (Playwright + 구글 프로필)
 - [x] Gemini Deep Research 웹 자동화 코드 — `handle_deep_research` (Playwright + 구글 프로필)
 - [x] 구글 로그인 감지 → `[LOGIN_REQUIRED]` → Telegram 긴급 알림

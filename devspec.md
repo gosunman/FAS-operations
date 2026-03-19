@@ -74,14 +74,14 @@
 ## 주요 모듈
 
 ### Gateway (`src/gateway/`)
-- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check. 헌터 pending 태스크 필터는 `assigned_to: 'hunter'`로 조회 (기존 `'openclaw'`에서 변경).
+- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check. 헌터 pending 태스크 필터는 `assigned_to: 'hunter'`로 조회 (기존 `'openclaw'`에서 변경). **자동 알림**: 헌터 태스크 완료 시 `notification_router`를 통해 `crawl_result` 이벤트를 자동 발송 (Notion 원문 + Slack 요약 링크). OpenClaw JSON 응답의 `payloads[].text`를 자동 추출.
 - **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block). `action` 필드 지원 — `config/schedules.yml`의 `action` 값이 태스크 생성 시 저장되어 헌터 API를 통해 `resolve_action()`에서 사용됨.
 - **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
 - **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
 
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
-- **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
+- **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, crawl_result → #fas-general, alert → #alerts 등)
 - **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
 - **notion.ts**: Notion 클라이언트. **Name (title) 속성만 사용** — Type, Timestamp, Device 등의 커스텀 속성에 의존하지 않아 모든 Notion DB에서 동작. 메시지는 2000자 단위로 분할하여 블록 생성. `send_with_result()`는 페이지 URL을 반환하여 Slack 등 다른 채널에서 링크 가능.
 

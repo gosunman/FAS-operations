@@ -175,27 +175,19 @@ apps:
     channels: [fas-alerts, hunter-logs, hunter-reports]
 
 channels:
-  # 공통 (시스템 전체)
-  - name: "#fas-alerts"
-    purpose: "시스템 전체 긴급 알림 (캡틴+헌터 모두 발송)"
+  # 현재 활성 채널
+  - name: "#fas-general"
+    purpose: "브리핑, 마일스톤, 크롤링 결과 요약 + Notion 링크"
+  - name: "#alerts"
+    purpose: "시스템 긴급 알림 (에이전트 크래시, 리소스 부족)"
 
-  # 캡틴 전용
+  # 향후 추가 예정 (봇에 channels:manage 권한 필요)
   - name: "#captain-logs"
-    purpose: "캡틴 에이전트 활동 로그 (Claude, Gemini)"
-  - name: "#captain-reports"
-    purpose: "캡틴 보고서, 브리핑, 승인 요청"
-
-  # 헌터 전용
+    purpose: "캡틴 에이전트 활동 로그"
   - name: "#hunter-logs"
-    purpose: "헌터 활동 로그 (크롤링, 브라우저 태스크)"
-  - name: "#hunter-reports"
-    purpose: "헌터 보고서 (크롤링 결과, Deep Research)"
-
-  # 업무 (향후 추가)
+    purpose: "헌터 활동 로그"
   - name: "#approvals"
     purpose: "MID 승인 요청/결과"
-  - name: "#crawl-results"
-    purpose: "크롤링 결과 (창업, 청약, 블라인드, 채용)"
   - name: "#academy"
     purpose: "학원 업무 (교재, 시험지, 학부모 문자 초안)"
 ```
@@ -324,7 +316,7 @@ async function create_report_page(
 | MID 승인 요청 | X | #approvals | X |
 | HIGH 승인 요청 | O | #approvals | X |
 | CRITICAL 승인 요청 | O (반복) | #approvals | X |
-| 크롤링 결과 | X | #crawl-results | O |
+| 크롤링 결과 | X | #fas-general (요약 + Notion 링크) | O (원문) |
 | 마감 임박 (D-7) | O | #crawl-results | X |
 | 에이전트 크래시 | O | #alerts | X |
 | 리소스 부족 | O | #alerts | X |

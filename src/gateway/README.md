@@ -24,8 +24,18 @@
 | `POST` | `/api/hunter/heartbeat` | 헌터 생존 체크 |
 | `GET` | `/api/health` | 헬스체크 |
 
+## 자동 알림 (헌터 태스크 완료 시)
+
+헌터가 `POST /api/hunter/tasks/:id/result`로 결과를 제출하면, Gateway가 자동으로 `crawl_result` 알림을 발송한다:
+
+1. **Notion** — 원문 전체를 페이지로 저장 (URL 반환)
+2. **Slack `#fas-general`** — 200자 요약 + `📄 Notion에서 원문 보기` 링크
+
+OpenClaw JSON 응답의 `payloads[].text`를 자동 추출하여 알림 메시지에 사용. Fire-and-forget 방식으로 HTTP 응답을 차단하지 않음.
+
 ## 보안
 
 - 헌터는 Task API를 통해서만 캡틴과 통신 (파일시스템 직접 접근 불가)
 - Tailscale VPN 내부에서만 접근 허용
 - 산이타이저가 모든 헌터 응답에서 PII를 제거
+- PII 오탐 방지: 주민번호 정규식에 lookbehind/lookahead 적용 (UUID/타임스탬프 오탐 제거)
