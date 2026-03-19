@@ -82,7 +82,7 @@
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, crawl_result → #fas-general, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). **Telegram: approval_high + discovery only** — 워치 알림 최소화 정책. `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
 - **notion.ts**: Notion 클라이언트. **Name (title) 속성만 사용** — Type, Timestamp, Device 등의 커스텀 속성에 의존하지 않아 모든 Notion DB에서 동작. 메시지는 2000자 단위로 분할하여 블록 생성. `send_with_result()`는 페이지 URL을 반환하여 Slack 등 다른 채널에서 링크 가능.
 
 ### Hunter (`src/hunter/`)

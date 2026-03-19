@@ -34,10 +34,7 @@ chat_id_env: TELEGRAM_CHAT_ID
 | --- | --- | --- | --- |
 | APPROVAL_HIGH | HIGH 위험도 승인 요청 | O (반복) | O (yes/no) |
 | APPROVAL_CRITICAL | CRITICAL 위험도 승인 요청 | O (연속) | O (필수) |
-| ALERT | 에이전트 크래시, 리소스 부족 | O (연속) | X |
-| MORNING_BRIEFING | 매일 07:30 | O | X |
-| DEADLINE_REMINDER | 마감 임박 (D-7, D-3) | O | X |
-| HUNTER_COMMAND | `/hunter {명령}` 응답 | X | X |
+| DISCOVERY | 흥미로운 발견 (기회, 트렌드 등) | O | X |
 
 ### Bot 커맨드
 
@@ -311,15 +308,16 @@ async function create_report_page(
 
 | 이벤트 | Telegram | Slack 채널 | Notion |
 | --- | --- | --- | --- |
-| 모닝 브리핑 | O (요약) | #fas-general (상세) | O (전체) |
+| 모닝 브리핑 | X | #fas-general (상세) | O (전체) |
 | LOW 태스크 완료 | X | #captain-logs | X |
 | MID 승인 요청 | X | #approvals | X |
 | HIGH 승인 요청 | O | #approvals | X |
 | CRITICAL 승인 요청 | O (반복) | #approvals | X |
+| Discovery (흥미로운 발견) | O | #fas-general | O |
 | 크롤링 결과 | X | #fas-general (요약 + Notion 링크) | O (원문) |
-| 마감 임박 (D-7) | O | #crawl-results | X |
-| 에이전트 크래시 | O | #alerts | X |
-| 리소스 부족 | O | #alerts | X |
+| 마감 임박 (D-7) | X | #crawl-results | X |
+| 에이전트 크래시 | X | #alerts | X |
+| 리소스 부족 | X | #alerts | X |
 | 학원 문자 초안 | X | #academy | X |
 | 시험지 생성 완료 | X | #academy | X |
 | 아이디어 분석 완료 | X | #ideas | O |

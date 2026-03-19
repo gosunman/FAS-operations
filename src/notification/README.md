@@ -16,11 +16,14 @@
 
 | 이벤트 | Telegram | Slack | Notion |
 |--------|----------|-------|--------|
-| `briefing` | O | O | O |
+| `briefing` | X | O | O |
 | `approval_high` | O | O | X |
-| `alert` / `blocked` | O | O | X |
+| `discovery` | O | O | O |
+| `alert` / `blocked` | X | O | X |
 | `crawl_result` | X | O | O |
 | `agent_log` / `done` / `error` 등 | X | O | X |
+
+> **헌터 알림**: 헌터의 모든 알림(LOGIN_REQUIRED, BLOCKED, 태스크 완료 등)은 Slack 전용. Telegram으로 전송하지 않음.
 
 ## 크롤링 결과 흐름 (Notion → Slack 링크)
 
