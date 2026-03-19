@@ -63,6 +63,8 @@
 | `HUNTER_TELEGRAM_CHAT_ID` | N* | 주인님 Telegram Chat ID — 헌터 .env |
 | `HUNTER_SLACK_WEBHOOK_URL` | N* | 헌터 전용 Slack Incoming Webhook URL — 헌터 .env |
 | `NOTION_TASK_RESULTS_DB` | N | Notion 태스크 결과 백업 DB ID (설정 시 태스크 완료마다 Notion에 fire-and-forget 백업) |
+| `DOCTRINE_MEMORY_DIR` | N | Doctrine 메모리 디렉토리 경로 — Persona Injector가 사용자 컨텍스트를 읽는 위치 |
+| `DOCTRINE_FEEDBACK_PATH` | N | Doctrine 피드백 파일 경로 — Feedback Extractor가 교훈을 기록하는 위치 |
 | `FAS_DEV_MODE` | N | dev 모드 (true일 때 API key 미설정 허용, 기본: false). NODE_ENV=production 시 강제 차단 |
 | `FAS_MODE` | N | 시스템 모드 (awake/sleep) |
 | `FAS_DEVICE` | N | 디바이스 구분 (captain/hunter) |
@@ -72,20 +74,20 @@
 ## 주요 모듈
 
 ### Gateway (`src/gateway/`)
-- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check
-- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block)
+- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check. 헌터 pending 태스크 필터는 `assigned_to: 'hunter'`로 조회 (기존 `'openclaw'`에서 변경).
+- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block). `action` 필드 지원 — `config/schedules.yml`의 `action` 값이 태스크 생성 시 저장되어 헌터 API를 통해 `resolve_action()`에서 사용됨.
 - **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
 - **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
 
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). `briefing` 및 `crawl_result` 이벤트는 Notion API로도 전송 (페이지 자동 생성). **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
 
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
 - **api_client.ts**: Captain Task API HTTP 클라이언트 (fetch, heartbeat, result submit). API Key 인증 헤더 자동 포함.
-- **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenClaw CLI를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. URL 없는 태스크는 자동으로 `chatgpt_task`로 라우팅.
+- **task_executor.ts**: 태스크 액션 라우팅 + 실행기. 5개 핸들러 구현 완료: `web_crawl`(URL 크롤링), `browser_task`(스크린샷+텍스트), `deep_research`(Gemini Deep Research 웹 UI 자동화), `notebooklm_verify`(NotebookLM 웹 UI 자동화), `chatgpt_task`(OpenClaw CLI를 통한 추상적 태스크/분석/리서치). 구글 로그인 감지 → `[LOGIN_REQUIRED]` 반환. `resolve_action()`은 Task의 `action` 필드를 우선 사용하고, 없으면 URL 유무로 자동 결정 (URL 없음 → `chatgpt_task`).
 - `chatgpt_task` 핸들러는 **OpenClaw** CLI(`openclaw -p "prompt"`)를 호출. OpenClaw은 독립 AI 에이전트 프레임워크로, ChatGPT Pro(계정 B) OAuth를 LLM 백엔드로 사용. 상세: [docs/openclaw.md](docs/openclaw.md)
 - **poll_loop.ts**: 메인 폴링 루프 (10초 주기, 지수 백오프, 최대 5분)
 - **config.ts**: 환경변수 기반 설정 로더 (`CAPTAIN_API_URL`, `HUNTER_POLL_INTERVAL`, `GOOGLE_PROFILE_DIR`, `DEEP_RESEARCH_TIMEOUT_MS`, `NOTEBOOKLM_TIMEOUT_MS`)
@@ -94,9 +96,11 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험.
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험. 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
-- **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append)
+- **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append). `main.ts`의 나이트 플래닝 훅에서 자동 호출되어 당일 완료 태스크의 교훈을 `DOCTRINE_FEEDBACK_PATH`에 기록.
+- **persona_injector.ts**: 동적 페르소나 주입기. Doctrine 메모리 디렉토리(`DOCTRINE_MEMORY_DIR`)에서 사용자 컨텍스트를 읽어 PII를 제거한 배경 정보를 헌터 태스크 description에 주입. 헌터가 맥락 없이 작업하는 것을 방지.
+- **telegram_commands.ts**: Telegram 인바운드 명령 핸들러. 주인님이 Telegram에서 `/hunter`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령을 보내면 캡틴이 해당 액션을 즉시 수행 (태스크 생성, 상태 조회 등).
 
 ### Cross-Approval (`src/gateway/cross_approval.ts`)
 - Gemini CLI 교차 승인 모듈. MID 리스크 액션에 대해 Gemini CLI spawn → JSON 파싱 → 승인/거부 결정.
@@ -174,6 +178,7 @@ pnpm run mode:awake   # Switch to AWAKE mode
 | `scripts/deploy/deploy_hunter.sh` | 헌터 배포 (소스코드 격리, PII 검사) |
 | `scripts/deploy/verify_hunter.sh` | 헌터 배포 후 검증 (연결, heartbeat, 태스크 흐름, PII, 런타임) |
 | `scripts/hunter_watchdog.sh` | 헌터 프로세스 감시 (자동 재시작, 지수 백오프, 최대 3회) |
+| `scripts/resolve_hunter_login.sh` | VNC 자동 복구 — `[LOGIN_REQUIRED]` 감지 시 헌터 머신의 Screen Sharing을 자동으로 열어 수동 로그인 지원 |
 | `scripts/test_notifications.ts` | Telegram/Slack 실제 메시지 전송 테스트 |
 
 ## 배포 유의 사항

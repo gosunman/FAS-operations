@@ -101,6 +101,19 @@ FAS는 두 계층으로 분리된다:
 | **Slack**    | 업무 소통, 디바이스별 채널 그룹핑         | Fold에서 확인                   |
 | **Notion**   | 보고서, 긴 문서 → 페이지 생성 후 URL 전달 | Fold에서 확인                   |
 
+## Telegram 명령어
+
+주인님이 Telegram에서 캡틴에게 직접 명령을 보낼 수 있다 (`src/captain/telegram_commands.ts`).
+
+| 명령어 | 설명 |
+|--------|------|
+| `/hunter <설명>` | 헌터에게 즉시 태스크 생성 및 위임 |
+| `/crawl <URL>` | 지정 URL 크롤링 태스크 생성 |
+| `/research <주제>` | Gemini 리서치 태스크 생성 |
+| `/status` | 현재 시스템 상태 조회 |
+| `/tasks` | 진행 중/대기 중 태스크 목록 조회 |
+| `/cancel <task_id>` | 태스크 취소 |
+
 ## 교차 승인 체계
 
 ```
@@ -161,6 +174,7 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 - Output Watcher crash 알림: threshold 도달 시 1회 + 이후 ~5분 간격 (Telegram rate limit 방지)
 - Slack-only 이벤트 실패 시 Telegram 폴백 안 함 (비크리티컬 이벤트 폭주 방지)
 - 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (`src/captain/main.ts`의 `WATCHED_SESSIONS`)
+- VNC 자동 복구: 헌터에서 `[LOGIN_REQUIRED]` 감지 시 `scripts/resolve_hunter_login.sh`가 Screen Sharing을 자동으로 열어 수동 로그인 지원
 
 상세: [docs/hunter-protocol.md](docs/hunter-protocol.md) Stage 2 섹션
 
@@ -177,7 +191,7 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 FAS-operations/
 ├── src/
 │   ├── gateway/          # Task API 서버 (Express, SQLite) + 교차 승인
-│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor, Dynamic Discovery)
+│   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor, Dynamic Discovery, Persona Injector, Telegram Commands)
 │   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
 │   ├── notification/     # Telegram Bot + Slack 알림 모듈
 │   ├── watchdog/         # 출력 감시 데몬 + 헌터 heartbeat 모니터
@@ -191,7 +205,8 @@ FAS-operations/
 │   ├── status.sh         # 전체 상태 조회
 │   ├── gateway_wrapper.sh # Gateway 자동 재시작 래퍼
 │   ├── agent_wrapper.sh  # Claude Code 자동 재시작 래퍼
-│   └── hunter_watchdog.sh # 헌터 프로세스 자동 재시작 래퍼
+│   ├── hunter_watchdog.sh # 헌터 프로세스 자동 재시작 래퍼
+│   └── resolve_hunter_login.sh # VNC 자동 복구 (헌터 로그인 필요 시 Screen Sharing 실행)
 ├── hunter/               # 헌터 전용 설정 (CLAUDE.md, OpenClaw 설정)
 ├── shadow/               # 그림자 전용 설정 (CLAUDE.md)
 ├── config/               # 설정 파일 (agents.yml, tmux.conf 등)
@@ -256,14 +271,16 @@ launchctl load ~/Library/LaunchAgents/com.fas.awake.plist
 
 스케줄 정의 파일: `config/schedules.yml`
 
-| 태스크 | 주기 | 담당 | 시간 |
-|--------|------|------|------|
-| 창업지원사업 신규 공고 수집 | 3일 | hunter | 02:00 |
-| 청약홈 신규 공고 수집 | 3일 | hunter | 02:30 |
-| 블라인드 네이버 인기글 | 매일 | hunter | 03:00 |
-| AI 트렌드 리서치 | 매일 | gemini_a | 01:00 |
-| 글로벌 빅테크 채용 공고 | 3일 | hunter | 03:30 |
-| 대학원 지원 일정 | 주간 (월) | gemini_a | 04:00 |
+| 태스크 | 주기 | 담당 | 시간 | 액션 |
+|--------|------|------|------|------|
+| 창업지원사업 신규 공고 수집 | 3일 | hunter | 02:00 | `web_crawl` |
+| 청약홈 로또 청약 심층 필터링 | 3일 | hunter | 02:30 | `chatgpt_task` |
+| 블라인드 네이버 인기글 | 매일 | hunter | 03:00 | `web_crawl` |
+| 블라인드 NVC 수요 검증 모니터링 | 매일 | hunter | 03:15 | `chatgpt_task` |
+| AI 트렌드 리서치 | 매일 | gemini_a | 01:00 | `research` |
+| 글로벌 빅테크 원격 커리어 스캐닝 | 3일 | hunter | 03:30 | `chatgpt_task` |
+| 에듀테크 경쟁사 딥 리서치 | 주간 (수) | hunter | 02:00 | `chatgpt_task` |
+| 대학원 지원 일정 | 주간 (월) | gemini_a | 04:00 | `research` |
 
 > 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
 
