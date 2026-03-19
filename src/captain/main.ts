@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { create_app } from '../gateway/server.js';
 import { create_task_store } from '../gateway/task_store.js';
 import { create_planning_loop, type PlanningLoop } from './planning_loop.js';
+import { create_persona_injector } from './persona_injector.js';
 import { create_routed_watcher, create_watcher_router } from '../watchdog/output_watcher.js';
 import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_monitor.js';
 import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
@@ -24,6 +25,10 @@ const SCHEDULES_PATH = resolve(process.cwd(), 'config/schedules.yml');
 const DB_PATH = resolve(process.cwd(), 'state/tasks.sqlite');
 
 const ACTIVITY_DB_PATH = resolve(process.cwd(), 'state/activity.sqlite');
+
+// Doctrine memory directory — source of user context for persona injection
+const DOCTRINE_MEMORY_DIR = process.env.DOCTRINE_MEMORY_DIR
+  ?? '/Users/user/Library/Mobile Documents/com~apple~CloudDocs/claude-config/green-zone/shared/memory';
 
 // Only watch sessions that actually exist — watching non-existent sessions
 // triggers crash alerts every 2s, flooding Telegram via Slack fallback.
@@ -99,11 +104,16 @@ const main = async () => {
   watcher.start();
   console.log(`[Captain] Output watcher started (sessions: ${WATCHED_SESSIONS.join(', ')})`);
 
-  // 5. Planning loop
+  // 5. Persona injector (enriches hunter task descriptions with user context)
+  const persona_injector = create_persona_injector(DOCTRINE_MEMORY_DIR);
+  console.log(`[Captain] Persona injector initialized (${DOCTRINE_MEMORY_DIR})`);
+
+  // 6. Planning loop
   const planning = create_planning_loop({
     store,
     router,
     schedules_path: SCHEDULES_PATH,
+    persona_injector,
   });
 
   // Run morning planning on startup (creates due tasks)
@@ -115,18 +125,18 @@ const main = async () => {
     console.error(`[Captain] Morning planning failed: ${msg}`);
   }
 
-  // 6. Hunter heartbeat monitor
+  // 7. Hunter heartbeat monitor
   start_hunter_monitor({
     gateway_url: `http://localhost:${GATEWAY_PORT}`,
     notification_router: router,
   });
   console.log('[Captain] Hunter monitor started');
 
-  // 7. Activity logger (audit trail)
+  // 8. Activity logger (audit trail)
   const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
   console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
 
-  // 8. Resource monitor (CPU/memory/disk alerts)
+  // 9. Resource monitor (CPU/memory/disk alerts)
   const resource_monitor = create_resource_monitor({
     check_interval_ms: 120_000, // every 2 minutes
     on_alert: async (metric, value, threshold) => {
@@ -138,7 +148,7 @@ const main = async () => {
   resource_monitor.start();
   console.log('[Captain] Resource monitor started (2min interval)');
 
-  // 9. Daily planning scheduler — runs morning/night planning automatically
+  // 10. Daily planning scheduler — runs morning/night planning automatically
   let last_morning_date = '';
   let last_night_date = '';
 
@@ -175,7 +185,7 @@ const main = async () => {
   if (schedule_timer.unref) schedule_timer.unref();
   console.log(`[Captain] Daily scheduler started (morning ${MORNING_HOUR}:${String(MORNING_MINUTE).padStart(2, '0')}, night ${NIGHT_HOUR}:${String(NIGHT_MINUTE).padStart(2, '0')})`);
 
-  // 10. Status summary
+  // 11. Status summary
   const stats = store.get_stats();
   console.log('======================================');
   console.log('[Captain] All services started');
@@ -183,7 +193,7 @@ const main = async () => {
   console.log(`[Captain] Mode: ${dev_mode ? 'DEV' : 'PRODUCTION'}`);
   console.log('======================================');
 
-  // 11. Graceful shutdown
+  // 12. Graceful shutdown
   const shutdown = () => {
     console.log('[Captain] Shutting down...');
     clearInterval(schedule_timer);

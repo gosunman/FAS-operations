@@ -8,6 +8,7 @@ import type { TaskStore } from '../gateway/task_store.js';
 import type { NotificationRouter } from '../notification/router.js';
 import type { GeminiConfig } from '../gemini/types.js';
 import { spawn_gemini } from '../gemini/cli_wrapper.js';
+import type { PersonaInjector } from './persona_injector.js';
 
 // === Schedule types (from schedules.yml) ===
 
@@ -23,6 +24,8 @@ type ScheduleEntry = {
   requires_personal_info?: boolean;
   day?: string;          // For weekly schedules (e.g., 'monday')
   workflow?: string;     // System workflows (not task-based)
+  action?: string;       // Action type (e.g., 'web_crawl', 'research', 'chatgpt_task')
+  description?: string;  // Task description from schedule config
 };
 
 type SchedulesFile = {
@@ -87,6 +90,7 @@ export type PlanningLoopDeps = {
   schedules_path: string;
   epoch?: Date;  // Reference date for every_3_days calculation (default: 2026-01-01)
   gemini_config?: GeminiConfig;  // For discover_opportunities
+  persona_injector?: PersonaInjector;  // Optional: enriches hunter task descriptions with user context
 };
 
 // === Factory ===
@@ -149,9 +153,28 @@ export const create_planning_loop = (deps: PlanningLoopDeps) => {
         continue;
       }
 
+      // Build task description — inject persona context for hunter chatgpt_task routes
+      // Hunter tasks without a URL will route to OpenClaw (chatgpt_task), so we enrich
+      // the description with user background to give Hunter proper context.
+      let description = entry.description;
+      if (
+        entry.agent === 'hunter' &&
+        deps.persona_injector &&
+        description &&
+        !description.match(/https?:\/\//)
+      ) {
+        try {
+          description = await deps.persona_injector.inject(description);
+        } catch {
+          // Fire-and-forget: persona injection failure should never block task creation
+          console.warn(`[planning_loop] Persona injection failed for "${entry.title}", using original description`);
+        }
+      }
+
       // Create task
       deps.store.create({
         title: entry.title,
+        description,
         assigned_to: entry.agent,
         mode: (entry.mode as 'awake' | 'sleep' | 'recurring') ?? 'awake',
         risk_level: (entry.risk_level as 'low' | 'mid' | 'high' | 'critical') ?? 'low',

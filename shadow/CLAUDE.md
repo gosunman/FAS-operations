@@ -31,6 +31,19 @@ FAS Operations — Doctrine을 구현하는 코드, 스크립트, 인프라
 | SSH | 캡틴/헌터 원격 접근 | Tailscale VPN |
 | 웹 브라우저 | NotebookLM 검증, 모니터링 대시보드 | 주인님 계정 |
 
+## 스킬
+
+### `/resolve_hunter_login` — 헌터 로그인 해결
+헌터에서 `[LOGIN_REQUIRED]` 알림이 왔을 때, VNC로 헌터에 자동 접속하여 Google 로그인을 해결합니다.
+
+```bash
+./scripts/resolve_hunter_login.sh
+```
+
+- Tailscale VPN 연결 필수
+- 실행 후 헌터의 Chrome 브라우저에서 Google 로그인 완료
+- 로그인 완료 후 헌터가 자동으로 태스크 재시작
+
 ## 특성
 
 - **자율 실행 없음**: 모든 행동은 주인님의 명시적 지시에 의해서만 수행

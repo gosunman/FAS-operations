@@ -13,15 +13,20 @@ schedules:
     description: "K-Startup, 창업진흥원, 중소벤처기업부, SBA, Google for Startups, D.CAMP 신규 공고 크롤링"
 
   lotto_housing:
-    title: "청약홈 신규 공고 수집"
+    title: "청약홈 로또 청약 심층 필터링"
     type: every_3_days
     time: "02:30"
     mode: sleep
     agent: hunter
     risk_level: low
     requires_personal_info: false
-    action: web_crawl
-    description: "applyhome.co.kr 로또 청약 신규 공고 모니터링, 위치/가격/경쟁률 분석"
+    action: chatgpt_task
+    description: >-
+      applyhome.co.kr 청약홈에서 신규 공고 수집 후 심층 분석.
+      조건: 강남 1시간 이내, 50㎡ 이상, 34세 무주택자 지원 가능.
+      각 공고의 입주자 모집 공고문(PDF)을 분석하여
+      전매 제한 여부, 거주 의무 기간, 분양가 대비 예상 시세 차익을 산출.
+      매칭 우선순위(수익 확실/거주 목적/스킵)로 필터링하여 표로 출력.
 
   blind_naver:
     title: "블라인드 네이버 인기글 모니터링"
@@ -33,6 +38,22 @@ schedules:
     requires_personal_info: false
     action: web_crawl
     description: "블라인드 네이버 채널 인기글 감지 (댓글 50+, 좋아요 100+, 자극적 키워드)"
+
+  blind_nvc_monitor:
+    title: "블라인드 NVC 수요 검증 모니터링"
+    type: daily
+    time: "03:15"
+    mode: recurring
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: chatgpt_task
+    description: >-
+      블라인드에서 '우울증', '가족 갈등', '대화 단절', '이혼', '부부 상담',
+      '직장 갈등', '번아웃' 관련 인기글(댓글 30+)의 댓글 반응 패턴 수집.
+      감정적 내용은 제거하고, '사람들이 가장 고통받는 대화 형태'를
+      카테고리별로 분류하여 NVC 챗봇(SafelyHonest) 핵심 기능 기획에
+      필요한 수요 데이터만 정제된 상태로 출력.
 
   ai_trends:
     title: "AI 트렌드 리서치"
@@ -46,15 +67,36 @@ schedules:
     description: "Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, X 일일 트렌드. 키워드: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM"
 
   bigtech_jobs:
-    title: "글로벌 빅테크 채용 공고 체크"
+    title: "글로벌 빅테크 원격 커리어 스캐닝"
     type: every_3_days
     time: "03:30"
     mode: sleep
     agent: hunter
     risk_level: low
     requires_personal_info: false
-    action: web_crawl
-    description: "Google, Meta, Apple, Amazon, Microsoft, Netflix 한국+해외 포지션. TS 풀스택 6년, 석사, 영어 가능 조건 필터"
+    action: chatgpt_task
+    description: >-
+      Google, Meta, Apple, Amazon, Microsoft, Netflix 커리어 페이지에서
+      TypeScript 풀스택 6년차, 물리학 석사, 영어 가능 조건에 맞는
+      한국 원격(Remote) 또는 단기 계약직 포지션을 탐색.
+      JD를 읽고 역할/기술 스택/근무 형태/자격 요건을 정리하여
+      매칭 우선순위(높음/중간/낮음)와 지원 마감일을 포함한 표로 출력.
+
+  edutech_competitors:
+    title: "에듀테크 경쟁사 딥 리서치"
+    type: weekly
+    day: wednesday
+    time: "02:00"
+    mode: sleep
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: chatgpt_task
+    description: >-
+      국내외 중등 과학 시뮬레이션 웹 서비스 운영 에듀테크 스타트업 전체 리서치.
+      각 서비스의 과금 모델, 학생 관리 기능 유무, MAU 추정, 기술 스택,
+      투자 유치 현황을 표로 정리. 예비창업패키지 사업계획서 경쟁사 분석 섹션에
+      활용할 수 있도록 차별점과 시장 기회를 분석.
 
   grad_school_deadlines:
     title: "대학원 지원 일정 체크"
