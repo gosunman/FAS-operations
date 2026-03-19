@@ -36,6 +36,7 @@ description: |
   - 결과를 reports/crawl_results/startup/ 에 저장
 
 category: info_gathering   # info_gathering | academy | development | cashflow | system
+action: web_crawl          # (optional) 명시적 액션 타입 — 아래 "Action 라우팅" 참조
 priority: medium           # critical | high | medium | low
 mode: recurring            # sleep | awake | recurring
 risk_level: low            # low | mid | high | critical
@@ -240,6 +241,29 @@ function calculate_next_run(schedule: Schedule): Date {
       throw new Error(`Unknown schedule type: ${schedule.type}`)
   }
 }
+```
+
+## Action 라우팅
+
+Task의 `action` 필드는 헌터가 태스크를 어떤 핸들러로 실행할지 결정하는 힌트.
+`config/schedules.yml`에서 정의되어 Planning Loop → TaskStore → Hunter API 응답까지 전달된다.
+
+### 지원 액션 타입
+
+| action | 설명 | 실행 핸들러 |
+|--------|------|------------|
+| `web_crawl` | 웹페이지 크롤링 (Playwright) | handle_web_crawl |
+| `chatgpt_task` | ChatGPT Pro(OpenClaw)로 복잡한 분석 위임 | handle_chatgpt_task |
+| `deep_research` | Google Deep Research 실행 | handle_deep_research |
+| `research` | Gemini CLI 리서치 | 캡틴 내부 처리 |
+| (미지정) | 아래 우선순위로 자동 판별 | — |
+
+### 라우팅 우선순위
+
+```text
+1. action 필드 명시 (최우선) — schedules.yml 또는 Telegram 명령에서 직접 지정
+2. 키워드 매칭 — description에서 '크롤링', 'crawl' 등 감지
+3. URL 감지 — description이 URL로 시작하면 web_crawl로 판별
 ```
 
 ## 동시성 제어

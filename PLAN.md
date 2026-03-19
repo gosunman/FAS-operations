@@ -48,7 +48,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 태스크 결과 Notion 백업 파이프라인 — `server.ts`에서 fire-and-forget 백업 (NOTION_TASK_RESULTS_DB)
   - [ ] Notion API Key 발급 + DB 생성 *(인간 작업)*
   - [ ] `.env`에 `NOTION_API_KEY`, `NOTION_TASK_RESULTS_DB` 설정 *(인간 작업)*
-  - [ ] 라우터(`router.ts`)에 NotionClient 연결
+  - [x] 라우터(`router.ts`)에 NotionClient 연결
   - [ ] 모닝 브리핑 → Notion 페이지 자동 생성
 
 ### 0-4. Docker 환경 (캡틴) ✅
@@ -495,6 +495,13 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 - [x] 헌터 watchdog (자동 재시작 + 크래시 보고)
 - [x] 통합 테스트 (캡틴 ↔ 헌터 왕복 15건)
 - [x] 활동 로거 + 리소스 모니터
+- [x] Persona Injector — PII-free 사용자 컨텍스트 주입 (`src/captain/persona_injector.ts`)
+- [x] Telegram Command Listener — 인바운드 명령 수신 (`src/captain/telegram_commands.ts`)
+- [x] VNC Restorer — 헌터 로그인 화면 복구 스크립트 (`scripts/resolve_hunter_login.sh`)
+- [x] Feedback Extractor — 나이트 사이클에서 교훈 추출 통합 (`main.ts`)
+- [x] Notion Router 연결 — `router.ts`에 NotionClient 연결 완료
+- [x] `action` 필드 — Task 타입에 추가, schedules.yml → TaskStore → Hunter 전달
+- [x] 확장 스케줄 — `edutech_competitors`, `blind_nvc_monitor` 추가; `bigtech_jobs`, `lotto_housing` chatgpt_task로 업그레이드
 - [ ] **인간 작업**: 헌터 머신 초기 세팅 (`setup_hunter.sh` 실행)
 - [ ] **인간 작업**: ChatGPT Plus 구독
 - [ ] **인간 작업**: Notion API Key 발급 + DB 생성

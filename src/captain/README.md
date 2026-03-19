@@ -6,9 +6,11 @@
 
 | 파일 | 역할 |
 |------|------|
-| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor 등 전체 기동. 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
+| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor, Telegram Commands 등 전체 기동. 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
 | `planning_loop.ts` | 모닝/나이트 자율 스케줄링 (schedules.yml 기반 태스크 생성) |
 | `feedback_extractor.ts` | 완료된 태스크에서 교훈 추출 (Gemini CLI → Doctrine feedback 파일에 append) |
+| `persona_injector.ts` | PII-free 사용자 컨텍스트 주입 — Doctrine memory 파일에서 안전한 프로필 정보(직업, 학력, 기술 스택 등)를 추출하여 헌터 태스크 description에 prepend. 24h TTL 캐시, PII 정규식 필터링 |
+| `telegram_commands.ts` | Telegram 인바운드 명령 수신 — long polling(`getUpdates`)으로 `/hunter`, `/captain`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령 처리. 일반 텍스트는 기본 hunter chatgpt_task로 생성 |
 
 ## planning_loop.ts
 

@@ -54,6 +54,27 @@ chat_id_env: TELEGRAM_CHAT_ID
 /cost            — 오늘 비용 현황
 ```
 
+### Telegram 인바운드 명령 (Command Listener)
+
+아웃바운드 알림과 별도로, `src/captain/telegram_commands.ts`가 Telegram long polling(`getUpdates`)으로 주인님의 명령을 수신한다. 캡틴 `main.ts`에서 Gateway와 함께 기동.
+
+**지원 명령:**
+
+| 명령 | 동작 |
+|------|------|
+| `/hunter {명령}` | 헌터에게 chatgpt_task 태스크 생성 |
+| `/captain {명령}` | 캡틴 태스크 생성 |
+| `/crawl {URL}` | 헌터에게 web_crawl 태스크 생성 |
+| `/research {주제}` | 헌터에게 deep_research 태스크 생성 |
+| `/status` | 태스크 통계 응답 |
+| `/tasks` | 대기중 태스크 목록 (최대 10건) |
+| `/cancel {id}` | 태스크 취소 (blocked 처리) |
+| (일반 텍스트) | 기본적으로 `/hunter`와 동일 처리 |
+
+**보안:** `config.chat_id`와 일치하는 채팅만 수락. 미인가 채팅은 경고 로그 후 무시.
+
+**기존 아웃바운드 모듈과의 분리:** `telegram.ts`(아웃바운드, `polling: false`)와 충돌 없도록 native `fetch`로 구현.
+
 ### 구현
 
 ```typescript
@@ -307,6 +328,13 @@ async function create_report_page(
   return page.url  // 이 URL을 Slack으로 전송
 }
 ```
+
+## Notion Router 연결
+
+`router.ts`에 NotionClient가 연결 완료되었다. `NotificationRouterDeps`에서 `notion: NotionClient | null`로 주입받으며, `ROUTING_MATRIX`에서 `notion: true`인 이벤트(`briefing`, `crawl_result`)는 자동으로 Notion에 전송된다.
+
+- Notion 실패 시 fire-and-forget — 알림 전송을 차단하지 않음
+- 환경변수 `NOTION_API_KEY` 미설정 시 `notion: null`로 graceful degradation
 
 ## 알림 라우팅 매트릭스
 

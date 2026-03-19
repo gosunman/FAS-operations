@@ -78,6 +78,8 @@
 | Claude Code | OAuth CLI | ~500MB | `fas-claude` |
 | Gemini CLI (Account A) | CLI | ~500MB | `fas-gemini-a` |
 | Gateway + Task API | Node.js (Express) | ~300MB | `fas-gateway` |
+| Telegram Command Listener | Node.js (long polling) | ~50MB | `fas-gateway` 내 통합 |
+| Persona Injector | 메모리 캐시 (24h TTL) | ~10MB | `fas-gateway` 내 통합 |
 | Agent Wrappers | Node.js 프로세스들 | ~300MB | 각 에이전트 세션 내 |
 | Crawlers | Node.js (cron) | ~200MB | `fas-crawlers` |
 | Watchdog | Node.js | ~200MB | `fas-watchdog` |
@@ -187,6 +189,42 @@
         └── 자동 실행, 로그만 기록
 ```
 
+## Telegram Command Listener
+
+Telegram long polling으로 주인님의 명령을 수신하여 태스크를 생성하는 인바운드 채널.
+`create_telegram_commands()`로 생성, 캡틴 `main.ts`에서 Gateway와 함께 기동.
+
+```text
+주인님 (Telegram)
+  │
+  ├── /hunter {명령} → chatgpt_task 태스크 생성 (헌터 배정)
+  ├── /captain {명령} → 캡틴 태스크 생성
+  ├── /crawl {URL} → web_crawl 태스크 생성
+  ├── /research {주제} → deep_research 태스크 생성
+  ├── /status → 태스크 통계 응답
+  ├── /tasks → 대기중 태스크 목록
+  ├── /cancel {id} → 태스크 취소
+  └── (일반 텍스트) → 기본 hunter chatgpt_task로 생성
+```
+
+보안: `config.chat_id`와 일치하는 채팅만 처리, 미인가 채팅은 무시.
+
+## Persona Injector
+
+Doctrine memory 파일에서 PII를 제거한 사용자 컨텍스트를 추출하여 태스크 description에 주입.
+헌터에게 전달되는 태스크에 배경 정보를 제공하되, 개인정보는 절대 포함하지 않음.
+
+```text
+Doctrine memory files (user_overview.md, user_values.md, ...)
+  │
+  └── PersonaInjector.inject(description)
+        ├── strip_pii() — PII 패턴 정규식으로 제거
+        ├── extract_career_context() — 직업/경력 (안전)
+        ├── extract_education() — 학력 (안전)
+        ├── extract_tech_stack() — 기술 스택 (안전)
+        └── 24시간 TTL 캐시 → "[Background - 의뢰인 프로필]\n..."
+```
+
 ## 자율 활동 엔진 (Planning Loop)
 
 ```text
@@ -236,7 +274,7 @@ FAS-operations/
 │
 ├── src/
 │   ├── gateway/                   # 승인 게이트웨이 + Task API + 교차 승인
-│   ├── captain/                   # 자율 활동 엔진 (Planning Loop, Feedback Extractor)
+│   ├── captain/                   # 자율 활동 엔진 (Planning Loop, Persona Injector, Telegram Commands, Feedback Extractor)
 │   ├── agents/                    # 에이전트 래퍼
 │   ├── orchestrator/              # n8n 커스텀 노드 & 워크플로우
 │   ├── notification/              # 알림 (Telegram + Slack + Notion)
