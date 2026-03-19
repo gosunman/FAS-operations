@@ -1,9 +1,9 @@
-// TDD tests for standalone Telegram bot daemon
+// TDD tests for standalone Telegram bot daemon (natural language mode)
 // This bot runs independently of Claude Code (Captain),
-// allowing the owner to send tasks to Hunter even when Captain is down.
+// allowing the owner to send tasks to Hunter via natural language messages.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { create_telegram_bot, type TelegramBotConfig } from '../../src/daemon/telegram_bot.js';
+import { create_telegram_bot, infer_action, type TelegramBotConfig } from '../../src/daemon/telegram_bot.js';
 
 // === Mock fetch globally ===
 const mock_fetch = vi.fn();
@@ -133,12 +133,39 @@ describe('telegram_bot (daemon)', () => {
     });
   });
 
-  // === /hunter command ===
+  // === Action inference ===
 
-  describe('/hunter command', () => {
-    it('should create a hunter task with chatgpt_task action', async () => {
+  describe('infer_action', () => {
+    it('should return web_crawl when URL is present', () => {
+      expect(infer_action('https://example.com 이거 크롤링해줘')).toBe('web_crawl');
+      expect(infer_action('http://naver.com/news')).toBe('web_crawl');
+    });
+
+    it('should return deep_research for research keywords', () => {
+      expect(infer_action('AI 트렌드 2026 리서치해줘')).toBe('deep_research');
+      expect(infer_action('부동산 시세 조사해줘')).toBe('deep_research');
+      expect(infer_action('경쟁사 분석 좀')).toBe('deep_research');
+      expect(infer_action('맛집 좀 찾아봐')).toBe('deep_research');
+      expect(infer_action('research AI trends')).toBe('deep_research');
+    });
+
+    it('should return chatgpt_task as default', () => {
+      expect(infer_action('블라인드 인기글 긁어와')).toBe('chatgpt_task');
+      expect(infer_action('오늘 날씨 어때')).toBe('chatgpt_task');
+    });
+
+    it('should prioritize URL over research keywords', () => {
+      // URL takes precedence even if research keywords are present
+      expect(infer_action('https://example.com 이거 조사해줘')).toBe('web_crawl');
+    });
+  });
+
+  // === Natural language → Hunter task ===
+
+  describe('natural language task creation', () => {
+    it('should create chatgpt_task for plain text', async () => {
       mock_send_ok();
-      await bot._handle_message('/hunter 블라인드 인기글 긁어와', '12345');
+      await bot._handle_message('블라인드 인기글 긁어와', '12345');
       expect(store.create).toHaveBeenCalledWith(
         expect.objectContaining({
           assigned_to: 'hunter',
@@ -148,73 +175,70 @@ describe('telegram_bot (daemon)', () => {
       );
     });
 
-    it('should reply with confirmation including task ID', async () => {
+    it('should create web_crawl task when URL is present', async () => {
       mock_send_ok();
-      await bot._handle_message('/hunter test task', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('태스크 생성');
-      expect(text).toContain('test-task-1');
-    });
-
-    it('should require a description after /hunter', async () => {
-      mock_send_ok();
-      await bot._handle_message('/hunter', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('설명');
-    });
-  });
-
-  // === /crawl command ===
-
-  describe('/crawl command', () => {
-    it('should create a web_crawl task for hunter', async () => {
-      mock_send_ok();
-      await bot._handle_message('/crawl https://example.com', '12345');
+      await bot._handle_message('https://example.com 이거 봐줘', '12345');
       expect(store.create).toHaveBeenCalledWith(
         expect.objectContaining({
           assigned_to: 'hunter',
           action: 'web_crawl',
-          description: 'https://example.com',
+          description: 'https://example.com 이거 봐줘',
         }),
       );
     });
 
-    it('should reply with crawl task confirmation', async () => {
+    it('should create deep_research task for research keywords', async () => {
       mock_send_ok();
-      await bot._handle_message('/crawl https://example.com', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('크롤링');
-      expect(text).toContain('https://example.com');
-    });
-
-    it('should require a URL after /crawl', async () => {
-      mock_send_ok();
-      await bot._handle_message('/crawl', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('URL');
-    });
-  });
-
-  // === /research command ===
-
-  describe('/research command', () => {
-    it('should create a deep_research task for hunter', async () => {
-      mock_send_ok();
-      await bot._handle_message('/research AI 트렌드 2026', '12345');
+      await bot._handle_message('AI 트렌드 2026 리서치해줘', '12345');
       expect(store.create).toHaveBeenCalledWith(
         expect.objectContaining({
           assigned_to: 'hunter',
           action: 'deep_research',
-          description: 'AI 트렌드 2026',
+          description: 'AI 트렌드 2026 리서치해줘',
         }),
       );
     });
 
-    it('should require a topic after /research', async () => {
+    it('should reply with confirmation including action type and task ID', async () => {
       mock_send_ok();
-      await bot._handle_message('/research', '12345');
+      await bot._handle_message('블라인드 인기글 긁어와', '12345');
       const text = get_sent_text();
-      expect(text).toContain('주제');
+      expect(text).toContain('헌터에게 전달');
+      expect(text).toContain('chatgpt_task');
+      expect(text).toContain('test-task-1');
+    });
+
+    it('should reply with web_crawl confirmation for URL messages', async () => {
+      mock_send_ok();
+      await bot._handle_message('https://example.com', '12345');
+      const text = get_sent_text();
+      expect(text).toContain('헌터에게 전달');
+      expect(text).toContain('web_crawl');
+    });
+
+    it('should reply with deep_research confirmation for research messages', async () => {
+      mock_send_ok();
+      await bot._handle_message('경쟁사 분석해줘', '12345');
+      const text = get_sent_text();
+      expect(text).toContain('헌터에게 전달');
+      expect(text).toContain('deep_research');
+    });
+  });
+
+  // === Unknown slash commands → natural language fallback ===
+
+  describe('unknown slash commands', () => {
+    it('should treat unknown slash commands as natural language tasks', async () => {
+      mock_send_ok();
+      await bot._handle_message('/hunter 블라인드 인기글 긁어와', '12345');
+      // Should create task (treated as natural language, not rejected)
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigned_to: 'hunter',
+          action: 'chatgpt_task',
+          description: '/hunter 블라인드 인기글 긁어와',
+        }),
+      );
     });
   });
 
@@ -282,35 +306,6 @@ describe('telegram_bot (daemon)', () => {
     });
   });
 
-  // === Unknown commands ===
-
-  describe('unknown commands', () => {
-    it('should reply with help text for unknown commands', async () => {
-      mock_send_ok();
-      await bot._handle_message('/unknown something', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('알 수 없는 명령어');
-    });
-  });
-
-  // === Non-command text (security: no default routing to hunter) ===
-
-  describe('non-command text', () => {
-    it('should NOT route plain text to hunter (PII leak risk)', async () => {
-      mock_send_ok();
-      await bot._handle_message('네이버 부동산 시세 알려줘', '12345');
-      // Daemon does NOT have captain — plain text should show help message
-      expect(store.create).not.toHaveBeenCalled();
-    });
-
-    it('should suggest using commands for plain text', async () => {
-      mock_send_ok();
-      await bot._handle_message('네이버 부동산 시세 알려줘', '12345');
-      const text = get_sent_text();
-      expect(text).toContain('/hunter');
-    });
-  });
-
   // === Error handling ===
 
   describe('error handling', () => {
@@ -318,7 +313,7 @@ describe('telegram_bot (daemon)', () => {
       store.create.mockImplementationOnce(() => { throw new Error('DB error'); });
       mock_send_ok();
 
-      await bot._handle_message('/hunter test', '12345');
+      await bot._handle_message('블라인드 인기글 긁어와', '12345');
       const text = get_sent_text();
       expect(text).toContain('오류');
     });

@@ -2,21 +2,24 @@
 //
 // Runs independently of Claude Code (Captain). When Captain is down
 // (e.g., Claude Code quota exhausted), the owner can still send tasks
-// to Hunter via Telegram commands. This bot creates tasks directly
+// to Hunter via Telegram. This bot creates tasks directly
 // in the TaskStore, which Hunter polls for pending work.
 //
-// Security:
-//   - Only accepts messages from the configured owner chat ID
-//   - Non-command text is NOT routed anywhere (no PII leak risk)
-//   - Uses native fetch (Node 20+) for Telegram Bot API
+// Natural language mode:
+//   Any message from the owner is automatically converted to a Hunter task.
+//   The action type is inferred from message content:
+//     - URL detected → web_crawl
+//     - Research keywords → deep_research
+//     - Everything else → chatgpt_task (default)
 //
-// Supported commands:
-//   /hunter <desc>    — Create chatgpt_task for Hunter
-//   /crawl <url>      — Create web_crawl task for Hunter
-//   /research <topic> — Create deep_research task for Hunter
+// Utility slash commands (kept for convenience):
 //   /status           — Show task statistics
 //   /tasks            — List pending tasks
 //   /cancel <task_id> — Cancel a task
+//
+// Security:
+//   - Only accepts messages from the configured owner chat ID
+//   - Uses native fetch (Node 20+) for Telegram Bot API
 
 import type { TaskStore } from '../gateway/task_store.js';
 
@@ -46,6 +49,39 @@ type TelegramGetUpdatesResponse = {
   result: TelegramUpdate[];
 };
 
+// === Action type inference ===
+
+export type HunterAction = 'web_crawl' | 'deep_research' | 'chatgpt_task';
+
+// URL detection regex — matches http/https URLs
+const URL_PATTERN = /https?:\/\/\S+/i;
+
+// Keywords that indicate a research/investigation request
+const RESEARCH_KEYWORDS = [
+  '리서치', '조사', '알아봐', '찾아봐', '찾아줘',
+  '검색', '분석', '비교', '살펴봐',
+  'research', 'investigate', 'analyze', 'compare',
+];
+
+/** Infer the appropriate Hunter action from message content */
+export const infer_action = (text: string): HunterAction => {
+  // If a URL is present, treat as web crawl
+  if (URL_PATTERN.test(text)) {
+    return 'web_crawl';
+  }
+
+  // Check for research keywords (case-insensitive)
+  const lower = text.toLowerCase();
+  for (const keyword of RESEARCH_KEYWORDS) {
+    if (lower.includes(keyword)) {
+      return 'deep_research';
+    }
+  }
+
+  // Default: general chatgpt task
+  return 'chatgpt_task';
+};
+
 // === Constants ===
 
 const LONG_POLL_TIMEOUT_S = 30;
@@ -53,18 +89,12 @@ const DEFAULT_POLL_INTERVAL_MS = 3_000;
 const MAX_PENDING_DISPLAY = 10;
 const LOG_PREFIX = '[TelegramBot]';
 
-// Help text shown for non-command messages
-const HELP_TEXT = [
-  '*FAS Telegram Bot (Daemon)*',
-  '',
-  '사용 가능한 명령어:',
-  '`/hunter <설명>` — 헌터에게 태스크 배정',
-  '`/crawl <URL>` — 웹 크롤링 태스크',
-  '`/research <주제>` — Deep Research 태스크',
-  '`/status` — 태스크 현황',
-  '`/tasks` — 대기 중 태스크 목록',
-  '`/cancel <task_id>` — 태스크 취소',
-].join('\n');
+// Action label mapping for user-friendly confirmation messages
+const ACTION_LABELS: Record<HunterAction, string> = {
+  web_crawl: 'web_crawl',
+  deep_research: 'deep_research',
+  chatgpt_task: 'chatgpt_task',
+};
 
 // === Factory ===
 
@@ -102,58 +132,7 @@ export const create_telegram_bot = (
     }
   };
 
-  // === Command handlers ===
-
-  /** /hunter <description> — Create a chatgpt_task for Hunter */
-  const handle_hunter = async (args: string): Promise<void> => {
-    if (!args) {
-      await send_message('사용법: `/hunter <설명>`\n태스크 설명을 입력해주세요.');
-      return;
-    }
-    const task = store.create({
-      title: args.slice(0, 80),
-      description: args,
-      action: 'chatgpt_task',
-      assigned_to: 'hunter',
-      priority: 'medium',
-      risk_level: 'low',
-    });
-    await send_message(`*태스크 생성됨* (hunter)\n\`${task.id}\`\n${task.title}`);
-  };
-
-  /** /crawl <url> — Create a web_crawl task for Hunter */
-  const handle_crawl = async (args: string): Promise<void> => {
-    if (!args) {
-      await send_message('사용법: `/crawl <URL>`\nURL을 입력해주세요.');
-      return;
-    }
-    const task = store.create({
-      title: `웹 크롤링: ${args.slice(0, 60)}`,
-      description: args,
-      action: 'web_crawl',
-      assigned_to: 'hunter',
-      priority: 'medium',
-      risk_level: 'low',
-    });
-    await send_message(`*크롤링 태스크 생성됨*\n\`${task.id}\`\n${args}`);
-  };
-
-  /** /research <topic> — Create a deep_research task for Hunter */
-  const handle_research = async (args: string): Promise<void> => {
-    if (!args) {
-      await send_message('사용법: `/research <주제>`\n주제를 입력해주세요.');
-      return;
-    }
-    const task = store.create({
-      title: `리서치: ${args.slice(0, 60)}`,
-      description: args,
-      action: 'deep_research',
-      assigned_to: 'hunter',
-      priority: 'medium',
-      risk_level: 'low',
-    });
-    await send_message(`*리서치 태스크 생성됨*\n\`${task.id}\`\n${args}`);
-  };
+  // === Slash command handlers (utility only) ===
 
   /** /status — Reply with current task statistics */
   const handle_status = async (): Promise<void> => {
@@ -212,6 +191,40 @@ export const create_telegram_bot = (
     }
   };
 
+  // === Natural language task creation ===
+
+  /** Convert a natural language message into a Hunter task */
+  const handle_natural_message = async (text: string): Promise<void> => {
+    const action = infer_action(text);
+
+    // Build title based on action type
+    let title: string;
+    switch (action) {
+      case 'web_crawl': {
+        const url_match = text.match(URL_PATTERN);
+        title = `웹 크롤링: ${url_match ? url_match[0].slice(0, 60) : text.slice(0, 60)}`;
+        break;
+      }
+      case 'deep_research':
+        title = `리서치: ${text.slice(0, 60)}`;
+        break;
+      default:
+        title = text.slice(0, 80);
+        break;
+    }
+
+    const task = store.create({
+      title,
+      description: text,
+      action,
+      assigned_to: 'hunter',
+      priority: 'medium',
+      risk_level: 'low',
+    });
+
+    await send_message(`👁️ 헌터에게 전달했습니다. (${ACTION_LABELS[action]})\n\`${task.id}\``);
+  };
+
   // === Message dispatcher ===
 
   /** Parse and dispatch a single message */
@@ -226,41 +239,31 @@ export const create_telegram_bot = (
     if (!trimmed) return;
 
     try {
-      // Extract command and arguments
-      const space_index = trimmed.indexOf(' ');
-      const command = space_index > 0 ? trimmed.slice(0, space_index) : trimmed;
-      const args = space_index > 0 ? trimmed.slice(space_index + 1).trim() : '';
+      // Check for utility slash commands first
+      if (trimmed.startsWith('/')) {
+        const space_index = trimmed.indexOf(' ');
+        const command = space_index > 0 ? trimmed.slice(0, space_index) : trimmed;
+        const args = space_index > 0 ? trimmed.slice(space_index + 1).trim() : '';
 
-      switch (command) {
-        case '/hunter':
-          await handle_hunter(args);
-          break;
-        case '/crawl':
-          await handle_crawl(args);
-          break;
-        case '/research':
-          await handle_research(args);
-          break;
-        case '/status':
-          await handle_status();
-          break;
-        case '/tasks':
-          await handle_tasks();
-          break;
-        case '/cancel':
-          await handle_cancel(args);
-          break;
-        default:
-          if (trimmed.startsWith('/')) {
-            // Unknown command — show error
-            await send_message(`알 수 없는 명령어: ${command}\n\n${HELP_TEXT}`);
-          } else {
-            // Non-command text — show help (do NOT route to hunter/captain)
-            // Security: daemon has no captain, so plain text must not go anywhere
-            await send_message(HELP_TEXT);
-          }
-          break;
+        switch (command) {
+          case '/status':
+            await handle_status();
+            return;
+          case '/tasks':
+            await handle_tasks();
+            return;
+          case '/cancel':
+            await handle_cancel(args);
+            return;
+          default:
+            // Unknown slash command — still treat as natural language task
+            // (user might have typed /something out of habit)
+            break;
+        }
       }
+
+      // Natural language: create Hunter task automatically
+      await handle_natural_message(trimmed);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`${LOG_PREFIX} Error handling message: ${msg}`);
@@ -347,7 +350,7 @@ export const create_telegram_bot = (
   const start = () => {
     if (running) return;
     running = true;
-    console.log(`${LOG_PREFIX} Daemon started — polling for commands`);
+    console.log(`${LOG_PREFIX} Daemon started — polling for messages`);
     // Fire-and-forget — poll_loop handles its own lifecycle
     poll_loop().catch((err) => {
       console.error(`${LOG_PREFIX} Poll loop crashed:`, err);
