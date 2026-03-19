@@ -45,6 +45,9 @@ export const create_browser_manager = (config: BrowserManagerConfig = {}): Brows
     if (!browser || !browser.isConnected()) {
       browser = await chromium.launch({
         headless: resolved.headless,
+        // Use system-installed Chrome instead of Playwright's bundled Chromium.
+        // Bundled Chromium (Chrome for Testing) crashes on macOS 26 Tahoe.
+        channel: 'chrome',
       });
     }
     return browser;
