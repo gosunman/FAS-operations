@@ -79,12 +79,12 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
         state.total_tasks_processed += 1;
         logger.info(`Task ${task.id} completed: ${result.status}`);
 
-        // Notify owner of task completion
-        await notify?.report(`Task completed: ${task.title} — ${result.status}`);
+        // Task completion notification is handled by Captain Gateway (crawl_result → Notion + Slack)
+        // Hunter does NOT send separate completion reports to avoid notification flooding
 
-        // Alert if login is required (Google session expired)
+        // Report login issues to Slack only (not Telegram — minimize watch alerts)
         if (result.status === 'failure' && result.output?.includes('[LOGIN_REQUIRED]')) {
-          await notify?.alert('[LOGIN_REQUIRED] Google session expired — manual re-login needed');
+          await notify?.report('[LOGIN_REQUIRED] Google session expired — manual re-login needed');
         }
       } else {
         logger.warn(`Task ${task.id} result submission failed — will retry`);
@@ -97,9 +97,9 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
       const error_msg = err instanceof Error ? err.message : String(err);
       logger.error(`Poll cycle error (failures: ${state.consecutive_failures}): ${error_msg}`);
 
-      // Alert owner when failures pile up
+      // Report to Slack only when failures pile up (not Telegram — minimize watch alerts)
       if (state.consecutive_failures >= 3) {
-        await notify?.alert(`[BLOCKED] Hunter poll loop failing (${state.consecutive_failures}x): ${error_msg}`);
+        await notify?.report(`[BLOCKED] Hunter poll loop failing (${state.consecutive_failures}x): ${error_msg}`);
       }
     }
   };
