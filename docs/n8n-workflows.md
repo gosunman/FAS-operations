@@ -9,6 +9,7 @@ n8n은 FAS의 **오케스트레이션 엔진**으로, 다음을 담당한다:
 - 시스템 헬스체크 및 장애 감지
 - 리소스 모니터링
 - AI 토큰 사용량 추적
+- 멘토 공고 모니터링 및 알림
 
 ## 워크플로우 목록
 
@@ -53,6 +54,26 @@ curl -X POST http://localhost:5678/webhook/new-task \
 **트리거**: 1시간마다
 
 **한도**: Claude 1000/day, Gemini 500/day (환경변수로 설정)
+
+### 5. Mentor Recruitment Monitor (`mentor_recruitment_monitor.json`)
+
+**역할**: 개발자 멘토 모집 공고를 자동 감지하여 텔레그램으로 알림.
+
+**트리거**: 매일 오전 9시 (KST)
+
+**크롤링 대상**:
+| 사이트 | URL | 비고 |
+|--------|-----|------|
+| KISED (창업진흥원) | kised.or.kr 공지사항 | 예비/초기/도약 창업패키지 전담멘토 |
+| Bizinfo | bizinfo.go.kr 통합공고 | 범부처 창업지원 공고 |
+| K-Startup | k-startup.go.kr 진행중 공고 | K-Startup 멘토링 |
+| 한이음 | hanium.or.kr 공지사항 | 한이음 ICT멘토링 모집 |
+
+**감지 키워드**: 전담멘토, 멘토 모집, 창업패키지 멘토, 한이음 멘토, 멘토단, 멘토 선발, 멘토 위촉, 멘토링 전문가
+
+**알림**: 키워드 매칭 시 텔레그램 발송 (출처, 키워드, URL 포함)
+
+**Credential**: Telegram Bot (ID: 57R5OYW9j6khyUXW) — API로 생성 완료, 기존 FAS 봇 토큰 사용
 
 ## 환경변수
 

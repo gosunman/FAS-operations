@@ -1,0 +1,334 @@
+[
+  {
+    "updatedAt": "2026-03-19T06:27:34.093Z",
+    "createdAt": "2026-03-19T06:14:32.829Z",
+    "id": "5",
+    "name": "Mentor Recruitment Monitor",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "cronExpression",
+                "expression": "0 9 * * *"
+              }
+            ]
+          }
+        },
+        "id": "schedule-trigger",
+        "name": "Daily 9AM KST",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          240,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.kised.or.kr/menu.es?mid=a10305010000",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": {
+                "fullResponse": false,
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "http-kised",
+        "name": "KISED 공지사항",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          480,
+          100
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200View.do",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": {
+                "fullResponse": false,
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "http-bizinfo",
+        "name": "Bizinfo 통합공고",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          480,
+          280
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "url": "https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": {
+                "fullResponse": false,
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "http-kstartup",
+        "name": "K-Startup 공고",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          480,
+          460
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "url": "https://www.hanium.or.kr/portal/comm/noticeBoard.do",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": {
+                "fullResponse": false,
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "http-hanium",
+        "name": "한이음 공지",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          480,
+          640
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "functionCode": "const keywords = ['전담멘토', '멘토 모집', '창업패키지 멘토', '한이음 멘토', '멘토단', '멘토 선발', '멘토 위촉', '멘토링 전문가'];\n\nconst sources = [\n  { name: 'KISED', url: 'https://www.kised.or.kr/menu.es?mid=a10305010000' },\n  { name: 'Bizinfo', url: 'https://www.bizinfo.go.kr/sii/siia/selectSIIA200View.do' },\n  { name: 'K-Startup', url: 'https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do' },\n  { name: '한이음', url: 'https://www.hanium.or.kr/portal/comm/noticeBoard.do' }\n];\n\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const text = (items[i].json.data || items[i].json.body || JSON.stringify(items[i].json) || '').toString();\n  const source = sources[i] || { name: 'Unknown', url: '' };\n  \n  for (const keyword of keywords) {\n    if (text.includes(keyword)) {\n      results.push({\n        json: {\n          source: source.name,\n          url: source.url,\n          keyword: keyword,\n          timestamp: new Date().toISOString()\n        }\n      });\n      break;\n    }\n  }\n}\n\nif (results.length === 0) {\n  return [{ json: { matched: false } }];\n}\n\nreturn results;"
+        },
+        "id": "keyword-matcher",
+        "name": "키워드 매칭",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [
+          760,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.matched !== false }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "id": "if-matched",
+        "name": "매칭 결과 확인",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          980,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+          "text": "=🔔 **멘토 공고 감지!**\n\n출처: {{ $json.source }}\n키워드: {{ $json.keyword }}\nURL: {{ $json.url }}\n\n시각: {{ $json.timestamp }}",
+          "additionalFields": {
+            "parse_mode": "Markdown"
+          }
+        },
+        "id": "telegram-notify",
+        "name": "텔레그램 알림",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          1200,
+          200
+        ],
+        "credentials": {
+          "telegramApi": {
+            "id": "57R5OYW9j6khyUXW",
+            "name": "Telegram Bot"
+          }
+        }
+      },
+      {
+        "parameters": {},
+        "id": "no-op",
+        "name": "매칭 없음",
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [
+          1200,
+          420
+        ]
+      }
+    ],
+    "connections": {
+      "Daily 9AM KST": {
+        "main": [
+          [
+            {
+              "node": "KISED 공지사항",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Bizinfo 통합공고",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "K-Startup 공고",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "한이음 공지",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "KISED 공지사항": {
+        "main": [
+          [
+            {
+              "node": "키워드 매칭",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Bizinfo 통합공고": {
+        "main": [
+          [
+            {
+              "node": "키워드 매칭",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "K-Startup 공고": {
+        "main": [
+          [
+            {
+              "node": "키워드 매칭",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "한이음 공지": {
+        "main": [
+          [
+            {
+              "node": "키워드 매칭",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "키워드 매칭": {
+        "main": [
+          [
+            {
+              "node": "매칭 결과 확인",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "매칭 결과 확인": {
+        "main": [
+          [
+            {
+              "node": "텔레그램 알림",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "매칭 없음",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "timezone": "Asia/Seoul",
+      "callerPolicy": "workflowsFromSameOwner",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Daily 9AM KST": {
+        "recurrenceRules": []
+      }
+    },
+    "meta": null,
+    "pinData": null,
+    "versionId": "82bf7a46-d1cf-4349-886a-f0769617fb77",
+    "activeVersionId": "82bf7a46-d1cf-4349-886a-f0769617fb77",
+    "versionCounter": 8,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-03-19T06:14:32.830Z",
+        "createdAt": "2026-03-19T06:14:32.830Z",
+        "role": "workflow:owner",
+        "workflowId": "5",
+        "projectId": "rrrFyDVaKptoq2NS",
+        "project": {
+          "updatedAt": "2026-03-19T06:11:44.590Z",
+          "createdAt": "2026-03-19T06:02:37.979Z",
+          "id": "rrrFyDVaKptoq2NS",
+          "name": "FAS Admin <admin@fas.local>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "8be6d20e-f5c6-457a-b2f8-2a943817b565"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  }
+]
