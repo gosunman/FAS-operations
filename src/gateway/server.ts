@@ -42,6 +42,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { FASError } from '../shared/types.js';
 import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel, NotificationEvent } from '../shared/types.js';
 import type { NotificationRouter } from '../notification/router.js';
+import { create_logger } from './logger.js';
+
+// Shared logger instance for the gateway module
+const log = create_logger({ prefix: 'Gateway' });
 
 // === Hunter API security constants ===
 
@@ -101,14 +105,14 @@ const create_notion_backup = (config: NotionBackupConfig) => {
         });
         if (!res.ok) {
           const err = await res.text();
-          console.warn(`[Notion Backup] API ${res.status}: ${err}`);
+          log.warn(`[Notion Backup] API ${res.status}: ${err}`);
           return false;
         }
-        console.log(`[Notion Backup] Flushed queued request ${request.id}`);
+        log.info(`[Notion Backup] Flushed queued request ${request.id}`);
         return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[Notion Backup] Flush failed: ${msg}`);
+        log.warn(`[Notion Backup] Flush failed: ${msg}`);
         return false;
       }
     },
@@ -151,7 +155,7 @@ const create_notion_backup = (config: NotionBackupConfig) => {
 
     // Enqueue instead of direct fetch — survives network outages
     queue.enqueue('https://api.notion.com/v1/pages', 'POST', body);
-    console.log(`[Notion Backup] Task ${task_id} enqueued for backup`);
+    log.info(`[Notion Backup] Task ${task_id} enqueued for backup`);
 
     // Attempt immediate flush (best-effort, non-blocking)
     queue.flush().catch(() => {});
@@ -225,7 +229,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         return;
       }
       // No key configured + production — reject (secure by default)
-      console.error('[SECURITY] Hunter API key not configured — rejecting request');
+      log.error('[SECURITY] Hunter API key not configured — rejecting request');
       const err = new FASError('AUTH_ERROR', 'Hunter API key not configured on server', 401);
       res.status(401).json(err.to_json());
       return;
@@ -233,13 +237,13 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
     const provided_key = req.headers[HUNTER_API_KEY_HEADER] as string | undefined;
     if (!provided_key) {
-      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — missing API key`);
+      log.warn(`[SECURITY] Hunter auth failed from ${req.ip} — missing API key`);
       const err = new FASError('AUTH_ERROR', 'API key is required in x-hunter-api-key header', 401);
       res.status(401).json(err.to_json());
       return;
     }
     if (provided_key !== options.hunter_api_key) {
-      console.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid API key`);
+      log.warn(`[SECURITY] Hunter auth failed from ${req.ip} — invalid API key`);
       const err = new FASError('AUTH_ERROR', 'Invalid API key', 401);
       res.status(401).json(err.to_json());
       return;
@@ -250,7 +254,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   // === Hunter rate limiting middleware ===
   const hunter_rate_limit = (_req: Request, res: Response, next: NextFunction): void => {
     if (!hunter_rate_limiter.is_allowed()) {
-      console.warn('[SECURITY] Hunter rate limit exceeded');
+      log.warn('[SECURITY] Hunter rate limit exceeded');
       const retry_after_ms = options.rate_limit_window_ms ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
       const err = new FASError('RATE_LIMIT', 'Rate limit exceeded', 429, { retry_after_ms });
       res.status(429).json(err.to_json());
@@ -454,7 +458,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         // Critical PII: quarantine for human review (identity-revealing data)
         const sanitized_preview = sanitize_text(safe_output);
 
-        console.warn(
+        log.warn(
           `[SECURITY] Hunter task ${req.params.id} output contains critical PII ` +
           `(${detected_names.join(', ')}) — quarantined for human review`
         );
@@ -473,7 +477,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
       // Warning-only PII: auto-sanitize and allow through with a log warning
       const warning_types = detections.filter((d) => d.severity === 'warning').map((d) => d.name);
-      console.warn(
+      log.warn(
         `[SECURITY] Hunter task ${req.params.id} output contains warning-level PII ` +
         `(${warning_types.join(', ')}) — auto-sanitized and passed through`
       );
@@ -514,7 +518,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
           severity: 'low',
         };
         options.notification_router.route(event).catch((err) => {
-          console.warn(`[Gateway] Notification failed for task ${req.params.id}:`, err);
+          log.warn(`Notification failed for task ${req.params.id}:`, err);
         });
       }
     } else {
@@ -706,19 +710,19 @@ if (is_main) {
 
   // Guard: reject dev_mode in production environment
   if (dev_mode_requested && is_production) {
-    console.error('[Gateway] FATAL: FAS_DEV_MODE=true is forbidden when NODE_ENV=production. Refusing to start.');
+    log.error('FATAL: FAS_DEV_MODE=true is forbidden when NODE_ENV=production. Refusing to start.');
     process.exit(1);
   }
 
   if (!process.env.HUNTER_API_KEY && !dev_mode) {
-    console.error('[Gateway] FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
-    console.error('[Gateway] Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
+    log.error('FATAL: HUNTER_API_KEY is not set and dev mode is off. Refusing to start.');
+    log.error('Set HUNTER_API_KEY or FAS_DEV_MODE=true to proceed.');
     process.exit(1);
   }
 
   // Warn loudly when dev mode is active — should never reach production
   if (dev_mode) {
-    console.warn('[Gateway] ⚠️  DEV MODE ACTIVE — Hunter auth is DISABLED. Do NOT use in production.');
+    log.warn('DEV MODE ACTIVE — Hunter auth is DISABLED. Do NOT use in production.');
   }
 
   // Notion backup (optional — set NOTION_API_KEY and NOTION_TASK_RESULTS_DB to enable)
@@ -733,20 +737,20 @@ if (is_main) {
   });
 
   app.listen(port, host, () => {
-    console.log(`[Gateway] FAS Gateway + Task API listening on ${host}:${port}`);
+    log.info(`FAS Gateway + Task API listening on ${host}:${port}`);
     if (process.env.HUNTER_API_KEY) {
-      console.log('[Gateway] Hunter API key authentication: ENABLED');
+      log.info('Hunter API key authentication: ENABLED');
     } else if (dev_mode) {
-      console.warn('[Gateway] Hunter API key authentication: DISABLED (dev mode)');
+      log.warn('Hunter API key authentication: DISABLED (dev mode)');
     }
     if (notion_backup) {
-      console.log('[Gateway] Notion task backup: ENABLED');
+      log.info('Notion task backup: ENABLED');
     }
   });
 
   // Graceful shutdown
   process.on('SIGINT', () => {
-    console.log('[Gateway] Shutting down...');
+    log.info('Shutting down...');
     store.close();
     process.exit(0);
   });
