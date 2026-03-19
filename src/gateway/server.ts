@@ -40,7 +40,8 @@ import { create_cross_approval, type CrossApproval } from './cross_approval.js';
 import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
 import type { Request, Response, NextFunction } from 'express';
 import { FASError } from '../shared/types.js';
-import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel } from '../shared/types.js';
+import type { TaskStatus, FasMode, AgentHealthInfo, CrossApprovalConfig, RiskLevel, NotificationEvent } from '../shared/types.js';
+import type { NotificationRouter } from '../notification/router.js';
 
 // === Hunter API security constants ===
 
@@ -69,6 +70,7 @@ export type AppOptions = {
   cross_approval_config?: CrossApprovalConfig;  // Gemini CLI cross-approval config
   mode_config?: ModeManagerConfig;              // SLEEP/AWAKE mode config
   notion_backup?: NotionBackupConfig | null;    // Notion backup for task results (fire-and-forget)
+  notification_router?: NotificationRouter | null; // Notification router for crawl_result events
 };
 
 // Notion backup configuration — saves completed task results to Notion as a durable backup
@@ -476,6 +478,29 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       const completed_task = store.get_by_id(req.params.id);
       if (notion_backup && completed_task) {
         notion_backup.backup_task_result(completed_task.id, completed_task.title, raw_output).catch(() => {});
+      }
+
+      // Fire-and-forget notification: crawl_result → Notion (full) + Slack (summary + link)
+      if (options.notification_router && completed_task) {
+        // Extract text payload from OpenClaw JSON result
+        let notify_text = raw_output;
+        try {
+          const parsed = JSON.parse(raw_output);
+          const payloads = parsed?.result?.payloads ?? parsed?.payloads ?? [];
+          if (payloads.length > 0) {
+            notify_text = payloads.map((p: { text: string }) => p.text).join('\n\n');
+          }
+        } catch { /* not JSON, use raw_output as-is */ }
+
+        const event: NotificationEvent = {
+          type: 'crawl_result',
+          message: `[${completed_task.title}]\n\n${notify_text}`,
+          device: 'hunter',
+          severity: 'low',
+        };
+        options.notification_router.route(event).catch((err) => {
+          console.warn(`[Gateway] Notification failed for task ${req.params.id}:`, err);
+        });
       }
     } else {
       store.block_task(req.params.id, raw_output);

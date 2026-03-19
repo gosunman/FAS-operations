@@ -110,6 +110,7 @@ const main = async () => {
     notion_backup: (process.env.NOTION_API_KEY && process.env.NOTION_TASK_RESULTS_DB)
       ? { api_key: process.env.NOTION_API_KEY, database_id: process.env.NOTION_TASK_RESULTS_DB }
       : null,
+    notification_router: router,
   });
 
   const server: Server = await new Promise((resolve) => {
