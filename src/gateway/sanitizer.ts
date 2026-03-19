@@ -21,10 +21,11 @@ const PII_PATTERNS: SanitizePattern[] = [
     replacement: '$1: [이름 제거됨]',
   },
   // Korean resident registration numbers (주민번호) — must be before phone numbers
-  // to avoid partial match (13 digits without hyphen)
+  // Format: YYMMDD-[1-4]XXXXXX (with hyphen) or YYMMDD[1-4]XXXXXX (13 digits, no hyphen)
+  // Lookbehind/lookahead prevents matching inside longer numeric strings (UUIDs, hashes, etc.)
   {
     name: 'resident_id',
-    regex: /\d{6}-?[1-4]\d{6}/g,
+    regex: /(?<![0-9a-fA-F-])\d{6}-[1-4]\d{6}(?!\d)|(?<!\d)\d{6}[1-4]\d{6}(?!\d)/g,
     replacement: '[주민번호 제거됨]',
   },
   // Phone numbers (010-xxxx-xxxx variants, with optional spaces around hyphens)
