@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# DEPRECATED (2026-03-19): This script uses the old architecture (separate gateway/watchdog/n8n sessions).
+# Use scripts/start_all.sh instead, which uses the unified captain architecture.
+# This file is kept for reference only. Do not use in production.
+echo "WARNING: This script is deprecated. Use scripts/start_all.sh instead." >&2
+exit 1
+
+# --- Original script below (kept for reference) ---
 # Start all FAS tmux sessions on Captain
 # Naming convention: fas-{service}
 #
