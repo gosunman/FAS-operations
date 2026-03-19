@@ -21,6 +21,10 @@
 
 set -euo pipefail
 
+# Load nvm if available (for non-login shell compatibility)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+
 MAX_RETRIES="${HUNTER_MAX_RETRIES:-3}"
 BASE_DELAY="${HUNTER_RETRY_DELAY:-5}"
 LOG_DIR="${HUNTER_LOG_DIR:-./logs}"
@@ -73,6 +77,26 @@ notify_final_failure() {
       2>/dev/null || true
   fi
 }
+
+# === Wait for OpenClaw Gateway to be ready before starting hunter agent ===
+OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://localhost:18789}"
+OPENCLAW_MAX_WAIT=60
+OPENCLAW_WAITED=0
+
+echo "[HunterWatchdog] Waiting for OpenClaw Gateway at $OPENCLAW_GATEWAY_URL ..."
+while [ $OPENCLAW_WAITED -lt $OPENCLAW_MAX_WAIT ]; do
+  if curl -s --max-time 2 "$OPENCLAW_GATEWAY_URL/health" | grep -q '"ok"' 2>/dev/null; then
+    echo "[HunterWatchdog] OpenClaw Gateway is ready"
+    break
+  fi
+  sleep 5
+  OPENCLAW_WAITED=$((OPENCLAW_WAITED + 5))
+  echo "[HunterWatchdog] Waiting for OpenClaw Gateway... (${OPENCLAW_WAITED}s/${OPENCLAW_MAX_WAIT}s)"
+done
+
+if [ $OPENCLAW_WAITED -ge $OPENCLAW_MAX_WAIT ]; then
+  echo "[HunterWatchdog] WARNING: OpenClaw Gateway not ready after ${OPENCLAW_MAX_WAIT}s, starting anyway"
+fi
 
 # === Main loop ===
 
