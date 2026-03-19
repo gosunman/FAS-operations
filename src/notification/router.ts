@@ -3,6 +3,7 @@
 
 import type { TelegramClient } from './telegram.js';
 import type { SlackClient } from './slack.js';
+import type { NotionClient } from './notion.js';
 import type { NotificationEvent, NotificationEventType, NotificationResult } from '../shared/types.js';
 
 // === Routing matrix: which channels receive which events ===
@@ -32,7 +33,7 @@ const ROUTING_MATRIX: Record<NotificationEventType, RoutingRule> = {
 export type NotificationRouterDeps = {
   telegram: TelegramClient | null;
   slack: SlackClient | null;
-  // notion: NotionClient | null; // TODO: add in Phase 0-3 extension
+  notion: NotionClient | null;
 };
 
 export const create_notification_router = (deps: NotificationRouterDeps) => {
@@ -95,10 +96,16 @@ export const create_notification_router = (deps: NotificationRouterDeps) => {
       }
     }
 
-    // Notion — placeholder for future implementation
-    // if (rules.notion && deps.notion) {
-    //   results.notion = await deps.notion.create_page(event);
-    // }
+    // Notion — send matching events (briefing, crawl_result)
+    if (rules.notion && deps.notion) {
+      try {
+        const notion_result = await deps.notion.send_with_result(event);
+        results.notion = notion_result.success;
+      } catch {
+        // Fire-and-forget: Notion failure should never block notifications
+        console.warn(`[Router] Notion send failed for ${event.type} — logged only`);
+      }
+    }
 
     return results;
   };

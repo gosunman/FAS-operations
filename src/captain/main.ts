@@ -15,6 +15,8 @@ import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resou
 import { create_telegram_client } from '../notification/telegram.js';
 import { create_slack_client } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
+import { create_notion_client } from '../notification/notion.js';
+import { create_feedback_extractor, type FeedbackExtractor } from './feedback_extractor.js';
 import type { Server } from 'node:http';
 
 // === Constants ===
@@ -29,6 +31,10 @@ const ACTIVITY_DB_PATH = resolve(process.cwd(), 'state/activity.sqlite');
 // Doctrine memory directory — source of user context for persona injection
 const DOCTRINE_MEMORY_DIR = process.env.DOCTRINE_MEMORY_DIR
   ?? '/Users/user/Library/Mobile Documents/com~apple~CloudDocs/claude-config/green-zone/shared/memory';
+
+// Doctrine feedback file — feedback extractor appends lessons learned here
+const DOCTRINE_FEEDBACK_PATH = process.env.DOCTRINE_FEEDBACK_PATH
+  ?? '/Users/user/Library/Mobile Documents/com~apple~CloudDocs/claude-config/green-zone/shared/memory/feedback_lessons.md';
 
 // Only watch sessions that actually exist — watching non-existent sessions
 // triggers crash alerts every 2s, flooding Telegram via Slack fallback.
@@ -58,10 +64,18 @@ const build_router = (): NotificationRouter => {
     ? create_slack_client({ token: slack_token })
     : null;
 
+  // Notion client (optional — requires NOTION_API_KEY + NOTION_NOTIFICATION_DB)
+  const notion_api_key = process.env.NOTION_API_KEY;
+  const notion_db_id = process.env.NOTION_NOTIFICATION_DB;
+  const notion = (notion_api_key && notion_db_id)
+    ? create_notion_client({ api_key: notion_api_key, database_id: notion_db_id })
+    : null;
+
   if (!telegram) console.warn('[Captain] TELEGRAM_BOT_TOKEN/CHAT_ID not set — Telegram disabled');
   if (!slack) console.warn('[Captain] SLACK_BOT_TOKEN not set — Slack disabled');
+  if (!notion) console.warn('[Captain] NOTION_API_KEY/NOTIFICATION_DB not set — Notion routing disabled');
 
-  return create_notification_router({ telegram, slack });
+  return create_notification_router({ telegram, slack, notion });
 };
 
 // === Main bootstrap ===
@@ -136,7 +150,13 @@ const main = async () => {
   const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
   console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
 
-  // 9. Resource monitor (CPU/memory/disk alerts)
+  // 9. Feedback extractor (lessons learned from completed tasks → Doctrine)
+  const feedback_extractor = create_feedback_extractor({
+    feedback_path: DOCTRINE_FEEDBACK_PATH,
+  });
+  console.log(`[Captain] Feedback extractor initialized (${DOCTRINE_FEEDBACK_PATH})`);
+
+  // 10. Resource monitor (CPU/memory/disk alerts)
   const resource_monitor = create_resource_monitor({
     check_interval_ms: 120_000, // every 2 minutes
     on_alert: async (metric, value, threshold) => {
@@ -176,6 +196,20 @@ const main = async () => {
       try {
         const result = await planning.run_night();
         console.log(`[Captain] Scheduled night planning: done=${result.summary.done}, blocked=${result.summary.blocked}`);
+
+        // Extract feedback from today's completed tasks (fire-and-forget)
+        const done_tasks = store.get_by_status('done');
+        const today_done = done_tasks.filter((t) =>
+          t.completed_at && t.completed_at.startsWith(today),
+        );
+        for (const task of today_done) {
+          if (task.output?.summary) {
+            feedback_extractor.extract(task.title, task.output.summary).catch(() => {});
+          }
+        }
+        if (today_done.length > 0) {
+          console.log(`[Captain] Feedback extraction queued for ${today_done.length} completed tasks`);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[Captain] Scheduled night planning failed: ${msg}`);

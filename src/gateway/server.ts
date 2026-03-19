@@ -371,7 +371,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   // Get pending tasks for hunter (PII removed)
   app.get('/api/hunter/tasks/pending', (_req, res) => {
     try {
-      const tasks = store.get_pending_for_agent('openclaw');
+      const tasks = store.get_pending_for_agent('hunter');
       const sanitized = tasks
         .filter((t) => !t.requires_personal_info) // never send PII tasks to hunter
         .map(sanitize_task);

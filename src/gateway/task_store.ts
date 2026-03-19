@@ -27,6 +27,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
+      action TEXT,
       priority TEXT NOT NULL DEFAULT 'medium',
       assigned_to TEXT NOT NULL,
       mode TEXT NOT NULL DEFAULT 'awake',
@@ -45,11 +46,17 @@ export const create_task_store = (config: TaskStoreConfig) => {
     CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to);
   `);
 
+  // Migration: add 'action' column if it doesn't exist (for existing DBs)
+  const columns = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
+  if (!columns.some((c) => c.name === 'action')) {
+    db.exec("ALTER TABLE tasks ADD COLUMN action TEXT");
+  }
+
   // === Prepared statements ===
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO tasks (id, title, description, priority, assigned_to, mode, risk_level, requires_personal_info, status, created_at, deadline, depends_on)
-      VALUES (@id, @title, @description, @priority, @assigned_to, @mode, @risk_level, @requires_personal_info, @status, @created_at, @deadline, @depends_on)
+      INSERT INTO tasks (id, title, description, action, priority, assigned_to, mode, risk_level, requires_personal_info, status, created_at, deadline, depends_on)
+      VALUES (@id, @title, @description, @action, @priority, @assigned_to, @mode, @risk_level, @requires_personal_info, @status, @created_at, @deadline, @depends_on)
     `),
     get_by_id: db.prepare('SELECT * FROM tasks WHERE id = ?'),
     get_by_status: db.prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC'),
@@ -67,6 +74,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
     id: row.id as string,
     title: row.title as string,
     description: row.description as string | undefined,
+    action: row.action as string | undefined,
     priority: row.priority as Task['priority'],
     assigned_to: row.assigned_to as string,
     mode: row.mode as Task['mode'],
@@ -88,6 +96,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
   const create = (params: {
     title: string;
     description?: string;
+    action?: string;
     priority?: Task['priority'];
     assigned_to: string;
     mode?: Task['mode'];
@@ -103,6 +112,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
       id,
       title: params.title,
       description: params.description ?? null,
+      action: params.action ?? null,
       priority: params.priority ?? 'medium',
       assigned_to: params.assigned_to,
       mode: params.mode ?? 'awake',

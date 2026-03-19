@@ -109,6 +109,7 @@ export type Task = {
   id: string;
   title: string;
   description?: string;
+  action?: string;  // Explicit action type (e.g., 'web_crawl', 'chatgpt_task', 'deep_research')
   priority: 'low' | 'medium' | 'high' | 'urgent';
   assigned_to: string;
   mode: FasMode | 'recurring';

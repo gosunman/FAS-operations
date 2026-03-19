@@ -111,8 +111,20 @@ export const detect_login_wall = async (page: Page): Promise<boolean> => {
   return false;
 };
 
-// Resolve action type from task title/description keywords
+// Valid action types for type-safe casting
+const VALID_ACTIONS: ReadonlySet<string> = new Set([
+  'notebooklm_verify', 'deep_research', 'web_crawl', 'browser_task', 'chatgpt_task',
+]);
+
+// Resolve action type from task — checks explicit action field first,
+// then falls back to keyword analysis of title/description
 export const resolve_action = (task: Task): HunterActionType => {
+  // Priority 1: Explicit action field from schedule config / API
+  if (task.action && VALID_ACTIONS.has(task.action)) {
+    return task.action as HunterActionType;
+  }
+
+  // Priority 2: Keyword-based routing from title/description
   const text = `${task.title} ${task.description ?? ''}`.toLowerCase();
 
   if (text.includes('notebooklm') || text.includes('notebook_lm')) return 'notebooklm_verify';
@@ -122,7 +134,7 @@ export const resolve_action = (task: Task): HunterActionType => {
       text.includes('탐색') || text.includes('트렌드') || text.includes('analyze') ||
       text.includes('trend') || text.includes('explore') || text.includes('research')) return 'chatgpt_task';
 
-  // Default: URL present → browser_task, no URL → chatgpt_task
+  // Priority 3: Default — URL present → browser_task, no URL → chatgpt_task
   const has_url = /https?:\/\//.test(text);
   return has_url ? 'browser_task' : 'chatgpt_task';
 };

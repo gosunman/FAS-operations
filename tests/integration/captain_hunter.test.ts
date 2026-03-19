@@ -57,7 +57,7 @@ const create_hunter_task = async (
     .send({
       title: 'Test web crawl task',
       description: 'Crawl https://example.com for data',
-      assigned_to: 'openclaw',
+      assigned_to: 'hunter',
       priority: 'medium',
       risk_level: 'low',
       mode: 'awake',

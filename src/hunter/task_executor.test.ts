@@ -162,12 +162,28 @@ describe('resolve_action', () => {
     expect(resolve_action(task)).toBe('web_crawl');
   });
 
-  it('should default to browser_task for unknown tasks', () => {
-    // Given
+  it('should default to chatgpt_task for tasks without URL', () => {
+    // Given — no URL, no keywords → OpenClaw handles abstract tasks
     const task = make_task({ title: 'Check Gmail for new emails' });
 
     // When / Then
-    expect(resolve_action(task)).toBe('browser_task');
+    expect(resolve_action(task)).toBe('chatgpt_task');
+  });
+
+  it('should use explicit action field when present', () => {
+    // Given — action field overrides keyword analysis
+    const task = make_task({ title: 'Some task', action: 'deep_research' });
+
+    // When / Then
+    expect(resolve_action(task)).toBe('deep_research');
+  });
+
+  it('should fall back to keyword analysis when action field is missing', () => {
+    // Given — no action field, but 'crawl' keyword present
+    const task = make_task({ title: 'Crawl startup websites' });
+
+    // When / Then
+    expect(resolve_action(task)).toBe('web_crawl');
   });
 });
 
@@ -260,11 +276,12 @@ describe('browser_task handler', () => {
   });
 
   it('should return failure when no URL found in browser task', async () => {
-    // Given
+    // Given — explicit action forces browser_task routing
     const mock_browser = create_mock_browser();
     const executor = create_task_executor(mock_logger, mock_browser);
     const task = make_task({
       title: 'Do something without URL',
+      action: 'browser_task',
     });
 
     // When

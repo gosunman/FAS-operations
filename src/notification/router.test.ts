@@ -40,6 +40,7 @@ describe('Notification Router', () => {
     router = create_notification_router({
       telegram: mock_telegram,
       slack: mock_slack,
+      notion: null,
     });
   });
 
@@ -179,6 +180,7 @@ describe('Notification Router', () => {
       const router_no_telegram = create_notification_router({
         telegram: null,
         slack: mock_slack,
+        notion: null,
       });
 
       const event: NotificationEvent = {
@@ -196,6 +198,7 @@ describe('Notification Router', () => {
       const router_no_slack = create_notification_router({
         telegram: mock_telegram,
         slack: null,
+        notion: null,
       });
 
       const event: NotificationEvent = {
@@ -212,14 +215,17 @@ describe('Notification Router', () => {
 
   // === Cross-channel fallback ===
 
-  describe('emergency fallback for slack-only events', () => {
-    it('should fallback error event to Telegram when Slack fails', async () => {
+  describe('slack-only event fallback policy', () => {
+    it('should NOT fallback error event to Telegram when Slack fails', async () => {
+      // Slack-only events (error, milestone, done, agent_log) should never
+      // flood Telegram — they are logged only when Slack fails.
       const failing_slack = create_mock_slack();
       (failing_slack.route as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
       const router_with_failing_slack = create_notification_router({
         telegram: mock_telegram,
         slack: failing_slack,
+        notion: null,
       });
 
       const event: NotificationEvent = {
@@ -230,22 +236,20 @@ describe('Notification Router', () => {
 
       const result = await router_with_failing_slack.route(event);
 
-      // error is slack-only, but should emergency fallback to Telegram
+      // error is slack-only — no Telegram fallback (prevents alert flooding)
       expect(result.slack).toBe(false);
-      expect(result.telegram).toBe(true);
-      expect(mock_telegram.send).toHaveBeenCalledWith(
-        '[Emergency Fallback] Database connection lost',
-        'alert',
-      );
+      expect(result.telegram).toBe(false);
+      expect(mock_telegram.send).not.toHaveBeenCalled();
     });
 
-    it('should fallback milestone event to Telegram when Slack fails', async () => {
+    it('should NOT fallback milestone event to Telegram when Slack fails', async () => {
       const failing_slack = create_mock_slack();
       (failing_slack.route as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
       const router_with_failing_slack = create_notification_router({
         telegram: mock_telegram,
         slack: failing_slack,
+        notion: null,
       });
 
       const event: NotificationEvent = {
@@ -256,12 +260,10 @@ describe('Notification Router', () => {
 
       const result = await router_with_failing_slack.route(event);
 
+      // milestone is slack-only — no Telegram fallback
       expect(result.slack).toBe(false);
-      expect(result.telegram).toBe(true);
-      expect(mock_telegram.send).toHaveBeenCalledWith(
-        '[Emergency Fallback] Phase 1 complete',
-        'alert',
-      );
+      expect(result.telegram).toBe(false);
+      expect(mock_telegram.send).not.toHaveBeenCalled();
     });
 
     it('should use [Slack Fallback] tag for dual-route events', async () => {
@@ -271,6 +273,7 @@ describe('Notification Router', () => {
       const router_with_failing_slack = create_notification_router({
         telegram: mock_telegram,
         slack: failing_slack,
+        notion: null,
       });
 
       // alert is dual-route (telegram + slack)

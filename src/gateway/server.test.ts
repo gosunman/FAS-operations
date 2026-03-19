@@ -190,10 +190,10 @@ describe('Gateway Server', () => {
   // === Hunter API (no auth mode) ===
 
   describe('GET /api/hunter/tasks/pending', () => {
-    it('should return sanitized pending tasks for openclaw', async () => {
+    it('should return sanitized pending tasks for hunter', async () => {
       await request(app).post('/api/tasks').send({
         title: '이름: 홍길동 학생 정보 조회',
-        assigned_to: 'openclaw',
+        assigned_to: 'hunter',
       });
       await request(app).post('/api/tasks').send({
         title: 'Claude task',
@@ -211,7 +211,7 @@ describe('Gateway Server', () => {
     it('should only include whitelisted fields (no assigned_to, depends_on, etc.)', async () => {
       await request(app).post('/api/tasks').send({
         title: 'Safe crawl task',
-        assigned_to: 'openclaw',
+        assigned_to: 'hunter',
         requires_personal_info: false,
       });
 
@@ -232,12 +232,12 @@ describe('Gateway Server', () => {
     it('should filter out tasks requiring personal info', async () => {
       await request(app).post('/api/tasks').send({
         title: 'Safe task',
-        assigned_to: 'openclaw',
+        assigned_to: 'hunter',
         requires_personal_info: false,
       });
       await request(app).post('/api/tasks').send({
         title: 'PII task',
-        assigned_to: 'openclaw',
+        assigned_to: 'hunter',
         requires_personal_info: true,
       });
 

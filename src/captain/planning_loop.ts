@@ -171,10 +171,11 @@ export const create_planning_loop = (deps: PlanningLoopDeps) => {
         }
       }
 
-      // Create task
+      // Create task — pass action from schedule config for explicit routing
       deps.store.create({
         title: entry.title,
         description,
+        action: entry.action,
         assigned_to: entry.agent,
         mode: (entry.mode as 'awake' | 'sleep' | 'recurring') ?? 'awake',
         risk_level: (entry.risk_level as 'low' | 'mid' | 'high' | 'critical') ?? 'low',
