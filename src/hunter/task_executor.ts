@@ -11,7 +11,7 @@ import type { BrowserManager } from './browser.js';
 // === OpenClaw CLI execution ===
 // Invokes the OpenClaw agent framework to handle abstract/vague tasks.
 // OpenClaw uses ChatGPT Pro (OAuth) as its LLM backend.
-// CLI: `openclaw -p "prompt"` for one-shot execution.
+// CLI: `openclaw agent -m "prompt" --json` for one-shot execution.
 // See docs/openclaw.md for setup and architecture details.
 
 type OpenClawResult = {
@@ -24,7 +24,8 @@ const OPENCLAW_COMMAND = process.env.OPENCLAW_COMMAND ?? 'openclaw';
 
 const exec_openclaw = (prompt: string, timeout_ms: number): Promise<OpenClawResult> => {
   return new Promise((resolve) => {
-    const proc = spawn(OPENCLAW_COMMAND, ['-p', prompt], {
+    const openclaw_agent = process.env.OPENCLAW_AGENT ?? 'main';
+    const proc = spawn(OPENCLAW_COMMAND, ['agent', '--agent', openclaw_agent, '-m', prompt, '--json'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeout_ms,
       env: { ...process.env, NO_COLOR: '1' },
