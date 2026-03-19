@@ -1,0 +1,47 @@
+<!-- FAS Captain auto-start on login
+     Runs start_all.sh to bring up all FAS services.
+
+     Install:
+       cp scripts/setup/com.fas.start-all.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.fas.start-all.plist
+
+     Uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.fas.start-all.plist
+       rm ~/Library/LaunchAgents/com.fas.start-all.plist
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fas.start-all</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>/Users/user/FAS-operations/scripts/start_all.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/user/Library/Logs/fas-start-all.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/user/Library/Logs/fas-start-all.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/user</string>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>
