@@ -22,6 +22,7 @@ import { create_morning_briefing, type MorningBriefing } from './morning_briefin
 import { create_task_executor, type TaskExecutor } from './task_executor.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
 import type { GeminiConfig } from '../gemini/types.js';
+import { get_sessions_for_device } from '../shared/agents_config.js';
 import type { Server } from 'node:http';
 
 // === Constants ===
@@ -41,12 +42,12 @@ const DOCTRINE_MEMORY_DIR = process.env.DOCTRINE_MEMORY_DIR
 const DOCTRINE_FEEDBACK_PATH = process.env.DOCTRINE_FEEDBACK_PATH
   ?? '/Users/user/Library/Mobile Documents/com~apple~CloudDocs/claude-config/green-zone/shared/memory/feedback_lessons.md';
 
-// Only watch sessions that actually exist — watching non-existent sessions
-// triggers crash alerts every 2s, flooding Telegram via Slack fallback.
-// fas-captain watches itself (pointless), fas-gemini-a/fas-gateway not running yet.
-const WATCHED_SESSIONS = [
-  'fas-claude',
-];
+// Dynamically load watched sessions from config/agents.yml (single source of truth).
+// Only watch captain-device sessions. The captain daemon's own session (fas-captain)
+// is excluded since watching itself is pointless.
+const CAPTAIN_SELF_SESSION = 'fas-captain';
+const WATCHED_SESSIONS = get_sessions_for_device('captain')
+  .filter((s) => s !== CAPTAIN_SELF_SESSION);
 
 // Planning schedule — hours to run morning (07:30) and night (22:50)
 const MORNING_HOUR = 7;

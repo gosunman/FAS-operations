@@ -320,11 +320,9 @@ export const create_routed_watcher = (
 const is_main = import.meta.url === `file://${process.argv[1]}`;
 
 if (is_main) {
-  const WATCHED_SESSIONS = [
-    'fas-claude',
-    'fas-gemini-a',
-    'fas-gateway',
-  ];
+  // Load sessions from agents.yml — single source of truth
+  const { get_sessions_for_device } = await import('../shared/agents_config.js');
+  const WATCHED_SESSIONS = get_sessions_for_device('captain');
 
   console.log(`[Watcher] Starting output watcher for sessions: ${WATCHED_SESSIONS.join(', ')}`);
 

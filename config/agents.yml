@@ -7,7 +7,7 @@ agents:
     device: captain
     account: A                        # owner's account
     autonomy: medium                  # follows defined workflows
-    tmux_session: fas-claude
+    tmux_session: cc-fas
     execution_mode: interactive       # oneshot | interactive
     capabilities:
       - code_generation
