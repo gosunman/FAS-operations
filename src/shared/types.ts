@@ -24,7 +24,8 @@ export type NotificationEventType =
   | 'milestone'
   | 'done'
   | 'blocked'
-  | 'error';
+  | 'error'
+  | 'discovery'; // Exciting findings worth interrupting the owner for
 
 export type DeviceName = 'captain' | 'hunter';
 

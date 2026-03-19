@@ -47,7 +47,7 @@ describe('Notification Router', () => {
   // === Routing matrix tests ===
 
   describe('briefing event', () => {
-    it('should route to telegram + slack', async () => {
+    it('should route to slack only (not telegram — minimize watch alerts)', async () => {
       const event: NotificationEvent = {
         type: 'briefing',
         message: 'Good morning',
@@ -56,12 +56,9 @@ describe('Notification Router', () => {
 
       const result = await router.route(event);
 
-      expect(result.telegram).toBe(true);
+      expect(result.telegram).toBe(false);
       expect(result.slack).toBe(true);
-      expect(mock_telegram.send).toHaveBeenCalledWith(
-        'Good morning',
-        'briefing',
-      );
+      expect(mock_telegram.send).not.toHaveBeenCalled();
       expect(mock_slack.route).toHaveBeenCalledWith(event);
     });
   });
@@ -103,7 +100,7 @@ describe('Notification Router', () => {
   });
 
   describe('alert event', () => {
-    it('should route to telegram (as alert) + slack', async () => {
+    it('should route to slack only (not telegram — minimize watch alerts)', async () => {
       const event: NotificationEvent = {
         type: 'alert',
         message: 'Agent crashed!',
@@ -113,17 +110,14 @@ describe('Notification Router', () => {
 
       const result = await router.route(event);
 
-      expect(result.telegram).toBe(true);
+      expect(result.telegram).toBe(false);
       expect(result.slack).toBe(true);
-      expect(mock_telegram.send).toHaveBeenCalledWith(
-        'Agent crashed!',
-        'alert',
-      );
+      expect(mock_telegram.send).not.toHaveBeenCalled();
     });
   });
 
   describe('blocked event', () => {
-    it('should route to telegram + slack', async () => {
+    it('should route to slack only (not telegram — minimize watch alerts)', async () => {
       const event: NotificationEvent = {
         type: 'blocked',
         message: 'API key missing',
@@ -132,12 +126,9 @@ describe('Notification Router', () => {
 
       const result = await router.route(event);
 
-      expect(result.telegram).toBe(true);
+      expect(result.telegram).toBe(false);
       expect(result.slack).toBe(true);
-      expect(mock_telegram.send).toHaveBeenCalledWith(
-        'API key missing',
-        'alert',
-      );
+      expect(mock_telegram.send).not.toHaveBeenCalled();
     });
   });
 
@@ -201,8 +192,9 @@ describe('Notification Router', () => {
         notion: null,
       });
 
+      // Use approval_high — the only event that still goes to Telegram
       const event: NotificationEvent = {
-        type: 'alert',
+        type: 'approval_high',
         message: 'Test',
         device: 'captain',
       };
@@ -276,10 +268,10 @@ describe('Notification Router', () => {
         notion: null,
       });
 
-      // alert is dual-route (telegram + slack)
+      // approval_high is dual-route (telegram + slack)
       const event: NotificationEvent = {
-        type: 'alert',
-        message: 'System overload',
+        type: 'approval_high',
+        message: 'Approve deploy?',
         device: 'captain',
       };
 
@@ -288,7 +280,7 @@ describe('Notification Router', () => {
       // Should have two calls: initial telegram send + slack fallback via telegram
       const telegram_calls = (mock_telegram.send as ReturnType<typeof vi.fn>).mock.calls;
       expect(telegram_calls.length).toBe(2);
-      expect(telegram_calls[1][0]).toBe('[Slack Fallback] System overload');
+      expect(telegram_calls[1][0]).toBe('[Slack Fallback] Approve deploy?');
     });
   });
 
@@ -297,7 +289,7 @@ describe('Notification Router', () => {
   describe('get_rules()', () => {
     it('should return rules for known event types', () => {
       const rules = router.get_rules('alert');
-      expect(rules).toEqual({ telegram: true, slack: true, notion: false });
+      expect(rules).toEqual({ telegram: false, slack: true, notion: false });
     });
 
     it('should return null for unknown event type', () => {

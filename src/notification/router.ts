@@ -14,18 +14,22 @@ type RoutingRule = {
   notion: boolean;
 };
 
+// Telegram: approval_high + discovery ONLY (워치 알림 최소화)
+// Slack #fas-general: briefing, crawl summary — 알림 끄고 열어보기용
+// Slack #alerts: alert, blocked, error — 알림 켜기 (진짜 문제만)
 const ROUTING_MATRIX: Record<NotificationEventType, RoutingRule> = {
-  briefing:      { telegram: true,  slack: true,  notion: true  },
+  briefing:      { telegram: false, slack: true,  notion: true  },
   agent_log:     { telegram: false, slack: true,  notion: false },
   approval_mid:  { telegram: false, slack: true,  notion: false },
   approval_high: { telegram: true,  slack: true,  notion: false },
   crawl_result:  { telegram: false, slack: true,  notion: true  },
-  alert:         { telegram: true,  slack: true,  notion: false },
+  alert:         { telegram: false, slack: true,  notion: false },
   academy:       { telegram: false, slack: true,  notion: false },
   milestone:     { telegram: false, slack: true,  notion: false },
   done:          { telegram: false, slack: true,  notion: false },
-  blocked:       { telegram: true,  slack: true,  notion: false },
+  blocked:       { telegram: false, slack: true,  notion: false },
   error:         { telegram: false, slack: true,  notion: false },
+  discovery:     { telegram: true,  slack: true,  notion: true  },
 };
 
 // === Router ===

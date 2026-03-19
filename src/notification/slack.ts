@@ -31,6 +31,7 @@ const CHANNEL_ROUTING: Record<NotificationEventType, SlackChannel | ((event: Not
   done: '#captain-logs',
   blocked: '#alerts',
   error: '#alerts',
+  discovery: '#fas-general',
 };
 
 // === Slack Client ===
