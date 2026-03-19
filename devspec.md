@@ -74,9 +74,9 @@
 ## 주요 모듈
 
 ### Gateway (`src/gateway/`)
-- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check. 헌터 pending 태스크 필터는 `assigned_to: 'hunter'`로 조회 (기존 `'openclaw'`에서 변경). **자동 알림**: 헌터 태스크 완료 시 `notification_router`를 통해 `crawl_result` 이벤트를 자동 발송 (Notion 원문 + Slack 요약 링크). OpenClaw JSON 응답의 `payloads[].text`를 자동 추출.
-- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block). `action` 필드 지원 — `config/schedules.yml`의 `action` 값이 태스크 생성 시 저장되어 헌터 API를 통해 `resolve_action()`에서 사용됨.
-- **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원.
+- **server.ts**: Express 서버 (포트 3100), Task CRUD + Hunter API + Health check. 헌터 pending 태스크 필터는 `assigned_to: 'hunter'`로 조회 (기존 `'openclaw'`에서 변경). **자동 알림**: 헌터 태스크 완료 시 `notification_router`를 통해 `crawl_result` 이벤트를 자동 발송 (Notion 원문 + Slack 요약 링크). OpenClaw JSON 응답의 `payloads[].text`를 자동 추출. **PII 2단계 처리**: critical PII → quarantine, warning PII → auto-sanitize 후 정상 통과.
+- **task_store.ts**: SQLite 태스크 저장소 (create/read/update/complete/block). `action` 필드 지원 — `config/schedules.yml`의 `action` 값이 태스크 생성 시 저장되어 헌터 API를 통해 `resolve_action()`에서 사용됨. `get_stale_in_progress(timeout_ms)` — 30분+ 체류 in_progress 태스크 감지.
+- **sanitizer.ts**: 개인정보 제거 (10개 패턴: 한국 이름, 전화번호, 이메일, 주민번호, 주소, 계좌, 금융정보, 신용카드, 내부 IP, 내부 URL). 화이트리스트 방식으로 헌터에 안전한 필드만 전달. 역방향 PII 검사 지원. **2단계 severity**: `critical`(주민번호, 전화, 이름, 카드) → quarantine, `warning`(주소, 계좌, 이메일 등) → auto-sanitize. `bank_account` 패턴 마지막 그룹 4자리+ (날짜 오탐 방지), `address` 패턴 동/로/길 필수 (일반 지역명 오탐 방지).
 - **rate_limiter.ts**: 슬라이딩 윈도우 Rate Limiter (헌터 API 요청 속도 제한)
 
 ### Notification (`src/notification/`)
@@ -97,7 +97,7 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험. 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출.
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands, Stale Task Cleanup를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 실제 존재하는 tmux 세션만 지정 (현재: `fas-claude`). 존재하지 않는 세션 감시 시 crash 알림 폭주 위험. 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출. **Gemini discovery 활성화**: `gemini_config` 전달로 나이트 플래닝에서 동적 태스크 발견 기능 가동. **Stale cleanup**: 5분 간격으로 in_progress 30분+ 태스크를 blocked 전환 + alert 알림.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append). `main.ts`의 나이트 플래닝 훅에서 자동 호출되어 당일 완료 태스크의 교훈을 `DOCTRINE_FEEDBACK_PATH`에 기록.
 - **persona_injector.ts**: 동적 페르소나 주입기. Doctrine 메모리 디렉토리(`DOCTRINE_MEMORY_DIR`)에서 사용자 컨텍스트를 읽어 PII를 제거한 배경 정보를 헌터 태스크 description에 주입. 헌터가 맥락 없이 작업하는 것을 방지.

@@ -199,6 +199,8 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 - 디바이스 리소스 24시간 최대 활용 (남으면 추가 태스크 배정)
 - AI 토큰 사용량 최대 활용 (한도 임박 시 플랜 업그레이드 제안)
 - **동적 기회 발견**: 크롤링/리서치 결과를 Gemini로 분석하여 추가 행동 아이템 자동 생성 (야간 SLEEP 모드)
+- **Stale task cleanup**: in_progress 30분+ 태스크를 자동 blocked 전환 (5분 간격 체크)
+- **PII 2단계 severity**: critical PII(주민번호, 전화번호, 이름) → quarantine / warning PII(주소, 계좌, 이메일) → auto-sanitize 후 통과
 
 ## 프로젝트 구조
 

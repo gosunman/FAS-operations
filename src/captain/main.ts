@@ -21,6 +21,7 @@ import { create_telegram_commands, type TelegramCommands } from './telegram_comm
 import { create_morning_briefing, type MorningBriefing } from './morning_briefing.js';
 import { create_task_executor, type TaskExecutor } from './task_executor.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
+import type { GeminiConfig } from '../gemini/types.js';
 import type { Server } from 'node:http';
 
 // === Constants ===
@@ -53,6 +54,8 @@ const MORNING_MINUTE = 30;
 const NIGHT_HOUR = 22;
 const NIGHT_MINUTE = 50;
 const SCHEDULE_CHECK_INTERVAL_MS = 60_000; // check every minute
+const STALE_CHECK_INTERVAL_MS = 5 * 60_000; // check every 5 minutes
+const STALE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
 
 // === Build notification router from env vars ===
 
@@ -130,12 +133,18 @@ const main = async () => {
   const persona_injector = create_persona_injector(DOCTRINE_MEMORY_DIR);
   console.log(`[Captain] Persona injector initialized (${DOCTRINE_MEMORY_DIR})`);
 
-  // 6. Planning loop
+  // 6. Planning loop (with Gemini config for dynamic task discovery)
+  const gemini_config: GeminiConfig = {
+    account: 'a',
+    gemini_command: process.env.GEMINI_COMMAND ?? 'gemini',
+  };
+
   const planning = create_planning_loop({
     store,
     router,
     schedules_path: SCHEDULES_PATH,
     persona_injector,
+    gemini_config,
   });
 
   // Run morning planning on startup (creates due tasks)
@@ -279,7 +288,30 @@ const main = async () => {
   if (schedule_timer.unref) schedule_timer.unref();
   console.log(`[Captain] Daily scheduler started (morning ${MORNING_HOUR}:${String(MORNING_MINUTE).padStart(2, '0')}, night ${NIGHT_HOUR}:${String(NIGHT_MINUTE).padStart(2, '0')})`);
 
-  // 13. Status summary
+  // 13. Stale in_progress task cleanup — timeout tasks stuck for 30+ minutes
+  const stale_timer = setInterval(() => {
+    try {
+      const stale_tasks = store.get_stale_in_progress(STALE_TIMEOUT_MS);
+      for (const task of stale_tasks) {
+        store.block_task(task.id, 'Timed out: no result received within 30 minutes');
+        console.warn(`[Captain] Stale task timed out: "${task.title}" (${task.id})`);
+      }
+      if (stale_tasks.length > 0) {
+        router.route({
+          type: 'alert',
+          message: `[STALE] ${stale_tasks.length} task(s) timed out after 30 minutes: ${stale_tasks.map((t) => t.title).join(', ')}`,
+          device: 'captain',
+        }).catch(() => {}); // fire-and-forget
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Captain] Stale task cleanup error: ${msg}`);
+    }
+  }, STALE_CHECK_INTERVAL_MS);
+  if (stale_timer.unref) stale_timer.unref();
+  console.log(`[Captain] Stale task cleanup started (${STALE_CHECK_INTERVAL_MS / 60_000}min interval, ${STALE_TIMEOUT_MS / 60_000}min timeout)`);
+
+  // 14. Status summary
   const stats = store.get_stats();
   console.log('======================================');
   console.log('[Captain] All services started');
@@ -287,10 +319,11 @@ const main = async () => {
   console.log(`[Captain] Mode: ${dev_mode ? 'DEV' : 'PRODUCTION'}`);
   console.log('======================================');
 
-  // 14. Graceful shutdown
+  // 15. Graceful shutdown
   const shutdown = () => {
     console.log('[Captain] Shutting down...');
     clearInterval(schedule_timer);
+    clearInterval(stale_timer);
     task_executor.stop();
     telegram_commands?.stop();
     resource_monitor.stop();

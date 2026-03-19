@@ -196,6 +196,18 @@ export const create_task_store = (config: TaskStoreConfig) => {
     return rows.map(row_to_task);
   };
 
+  // Get in_progress tasks that have been running longer than timeout_ms
+  const get_stale_in_progress = (timeout_ms: number): Task[] => {
+    const in_progress = get_by_status('in_progress');
+    const cutoff = Date.now() - timeout_ms;
+
+    return in_progress.filter((task) => {
+      // Use created_at as the start time (task entered in_progress around this time)
+      const started_at = new Date(task.created_at).getTime();
+      return started_at < cutoff;
+    });
+  };
+
   // Run a function inside a SQLite transaction (atomic, auto-rollback on error)
   const run_in_transaction = <T>(fn: () => T): T => {
     return db.transaction(fn)();
@@ -216,6 +228,7 @@ export const create_task_store = (config: TaskStoreConfig) => {
     quarantine_task,
     get_stats,
     get_all,
+    get_stale_in_progress,
     run_in_transaction,
     close,
     _db: db, // for testing

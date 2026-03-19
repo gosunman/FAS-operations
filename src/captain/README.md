@@ -6,7 +6,7 @@
 
 | 파일 | 역할 |
 |------|------|
-| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor, Telegram Commands 등 전체 기동. 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
+| `main.ts` | 통합 진입점 — Gateway, Watcher, Planning Loop, Hunter Monitor, Telegram Commands, Stale Task Cleanup 등 전체 기동. Gemini discovery 활성화(gemini_config 전달). 감시 대상 tmux 세션은 실제 존재하는 것만 등록 (현재: `fas-claude`) |
 | `planning_loop.ts` | 모닝/나이트 자율 스케줄링 (schedules.yml 기반 태스크 생성) |
 | `feedback_extractor.ts` | 완료된 태스크에서 교훈 추출 (Gemini CLI → Doctrine feedback 파일에 append) |
 | `persona_injector.ts` | PII-free 사용자 컨텍스트 주입 — Doctrine memory 파일에서 안전한 프로필 정보(직업, 학력, 기술 스택 등)를 추출하여 헌터 태스크 description에 prepend. 24h TTL 캐시, PII 정규식 필터링 |
@@ -45,15 +45,24 @@ const loop = create_planning_loop({ store, router, schedules_path: 'config/sched
 await loop.run_morning();  // 모닝 브리핑 + 태스크 주입
 await loop.run_night();    // 나이트 서머리
 
-// 동적 발견 포함
+// 동적 발견 포함 (main.ts에서 기본 활성화)
 const loop_with_discovery = create_planning_loop({
   store, router,
   schedules_path: 'config/schedules.yml',
-  gemini_config: { account: 'a' },
+  gemini_config: { account: 'a', gemini_command: 'gemini' },
+  persona_injector,
 });
 await loop_with_discovery.run_night();     // 나이트 서머리 + 기회 발견
 await loop_with_discovery.run_discover();  // 수동 발견 실행
 ```
+
+## Stale Task Cleanup
+
+`main.ts`에서 5분 간격으로 in_progress 태스크를 스캔하여, 30분 이상 결과 미수신 시 자동 blocked 처리.
+
+- `task_store.get_stale_in_progress(timeout_ms)` — 타임아웃 초과 태스크 조회
+- blocked 전환 시 `[STALE]` alert를 Slack으로 전송
+- 헌터 크래시, Gemini 에이전트 미실행 등으로 인한 영구 in_progress 방지
 
 ## morning_briefing.ts
 

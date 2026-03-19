@@ -37,8 +37,7 @@ schedules:
     agent: hunter
     risk_level: low
     requires_personal_info: false
-    action: web_crawl
-    url: "https://www.teamblind.com/kr/topics/naver"
+    action: chatgpt_task
     description: "블라인드 네이버 채널 인기글 감지 (댓글 50+, 좋아요 100+, 자극적 키워드)"
 
   blind_nvc_monitor:
@@ -62,10 +61,10 @@ schedules:
     type: daily
     time: "01:00"
     mode: sleep
-    agent: gemini_a
+    agent: hunter
     risk_level: low
     requires_personal_info: false
-    action: research
+    action: chatgpt_task
     description: "Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, X 일일 트렌드. 키워드: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM"
 
   bigtech_jobs:
@@ -106,10 +105,10 @@ schedules:
     day: monday
     time: "04:00"
     mode: sleep
-    agent: gemini_a
+    agent: hunter
     risk_level: low
     requires_personal_info: false
-    action: research
+    action: chatgpt_task
     description: "조지아텍 OMSCS, 서울대 GSEP 지원 일정/준비물/마감일 추적"
 
   # === System workflows (no agent — triggered by cron/launchd) ===

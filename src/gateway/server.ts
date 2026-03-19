@@ -33,7 +33,7 @@
 
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
-import { sanitize_task, contains_pii, sanitize_text, detect_pii_types } from './sanitizer.js';
+import { sanitize_task, contains_pii, contains_critical_pii, sanitize_text, detect_pii_types, detect_pii_with_severity } from './sanitizer.js';
 import { create_local_queue, type LocalQueue } from '../watchdog/local_queue.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import { create_cross_approval, type CrossApproval } from './cross_approval.js';
@@ -441,56 +441,71 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     }
 
     // --- PII quarantine check ---
+    // Two-tier severity: critical PII → quarantine, warning PII → auto-sanitize and pass through
 
-    const raw_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
+    let safe_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
 
-    if (contains_pii(raw_output)) {
-      // Quarantine: do NOT save raw PII. Store sanitized preview for human review.
-      const detected = detect_pii_types(raw_output);
-      const sanitized_preview = sanitize_text(raw_output);
+    if (contains_pii(safe_output)) {
+      const detections = detect_pii_with_severity(safe_output);
+      const detected_names = detections.map((d) => d.name);
+      const has_critical = detections.some((d) => d.severity === 'critical');
 
+      if (has_critical) {
+        // Critical PII: quarantine for human review (identity-revealing data)
+        const sanitized_preview = sanitize_text(safe_output);
+
+        console.warn(
+          `[SECURITY] Hunter task ${req.params.id} output contains critical PII ` +
+          `(${detected_names.join(', ')}) — quarantined for human review`
+        );
+
+        store.quarantine_task(req.params.id, sanitized_preview, detected_names);
+
+        // Return 202 Accepted — result received but quarantined, not approved
+        res.status(202).json({
+          ok: false,
+          quarantined: true,
+          reason: 'Critical PII detected in output — quarantined for human review',
+          detected_types: detected_names,
+        });
+        return;
+      }
+
+      // Warning-only PII: auto-sanitize and allow through with a log warning
+      const warning_types = detections.filter((d) => d.severity === 'warning').map((d) => d.name);
       console.warn(
-        `[SECURITY] Hunter task ${req.params.id} output contains PII ` +
-        `(${detected.join(', ')}) — quarantined for human review`
+        `[SECURITY] Hunter task ${req.params.id} output contains warning-level PII ` +
+        `(${warning_types.join(', ')}) — auto-sanitized and passed through`
       );
-
-      store.quarantine_task(req.params.id, sanitized_preview, detected);
-
-      // Return 202 Accepted — result received but quarantined, not approved
-      res.status(202).json({
-        ok: false,
-        quarantined: true,
-        reason: 'PII detected in output — quarantined for human review',
-        detected_types: detected,
-      });
-      return;
+      // Replace with sanitized version for downstream processing
+      safe_output = sanitize_text(safe_output);
     }
 
     // --- Normal processing (no PII detected) ---
 
     if (result_status === 'success') {
       store.complete_task(req.params.id, {
-        summary: raw_output,
+        summary: safe_output,
         files_created: files ?? [],
       });
 
       // Fire-and-forget Notion backup for hunter results
       const completed_task = store.get_by_id(req.params.id);
       if (notion_backup && completed_task) {
-        notion_backup.backup_task_result(completed_task.id, completed_task.title, raw_output).catch(() => {});
+        notion_backup.backup_task_result(completed_task.id, completed_task.title, safe_output).catch(() => {});
       }
 
       // Fire-and-forget notification: crawl_result → Notion (full) + Slack (summary + link)
       if (options.notification_router && completed_task) {
         // Extract text payload from OpenClaw JSON result
-        let notify_text = raw_output;
+        let notify_text = safe_output;
         try {
-          const parsed = JSON.parse(raw_output);
+          const parsed = JSON.parse(safe_output);
           const payloads = parsed?.result?.payloads ?? parsed?.payloads ?? [];
           if (payloads.length > 0) {
             notify_text = payloads.map((p: { text: string }) => p.text).join('\n\n');
           }
-        } catch { /* not JSON, use raw_output as-is */ }
+        } catch { /* not JSON, use safe_output as-is */ }
 
         const event: NotificationEvent = {
           type: 'crawl_result',
@@ -503,7 +518,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         });
       }
     } else {
-      store.block_task(req.params.id, raw_output);
+      store.block_task(req.params.id, safe_output);
     }
 
     res.json({ ok: true });

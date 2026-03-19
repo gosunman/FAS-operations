@@ -250,6 +250,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 4-3. 블라인드 네이버 인기글 모니터링 (매일)
 
+- [x] 스케줄 등록: `chatgpt_task`로 변경 (web_crawl 직접 접근 → 안티봇 차단 → OpenClaw 검색엔진 우회로 전환)
 - [ ] 블라인드 네이버 채널 모니터링 (RSS/검색엔진 우회 — 직접 크롤링은 안티봇에 차단됨)
 - [ ] 인기글 감지 기준: 댓글 50+ OR 좋아요 100+ OR 자극적 키워드 매칭
 - [ ] 감지 시 → 요약 + 원문 링크 → Slack 보고
@@ -257,6 +258,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 4-4. AI 트렌드 리서치 (SLEEP 모드, 매일)
 
+- [x] 스케줄 등록: `hunter` (chatgpt_task)로 재할당 (gemini_a 실행기 미구현 → 당장 hunter로 처리)
 - [ ] 소스: Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, Twitter/X
 - [ ] 일일 트렌드 리포트 생성
 - [ ] 관심 키워드 필터: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM
@@ -271,6 +273,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ### 4-6. 대학원 지원 일정 알림
 
+- [x] 스케줄 등록: `hunter` (chatgpt_task)로 재할당 (gemini_a → hunter)
 - [ ] **조지아텍 OMSCS**: 지원 일정, 준비물, 마감일 추적
 - [ ] **서울대 GSEP**: 지원 일정, 준비물, 마감일 추적
 - [ ] 마감 D-30, D-14, D-7, D-3 단계별 알림 (Telegram)

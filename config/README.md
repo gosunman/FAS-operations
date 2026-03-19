@@ -23,13 +23,15 @@ FAS 시스템의 정적 설정 파일 — YAML 기반으로 스케줄, 에이전
 # weekly       — 주 1회 실행
 
 - title: "블라인드 네이버 인기글 모니터링"
-  action: chatgpt_task
+  action: chatgpt_task     # OpenClaw 검색엔진 우회 (web_crawl 직접 접근은 안티봇 차단)
   assigned_to: hunter
   schedule: daily
-  mode: sleep           # SLEEP 모드에서만 실행
+  mode: sleep
   priority: medium
   risk_level: low
 ```
+
+**에이전트 할당 현황:** 모든 Phase 4 태스크는 `hunter`에 할당. `gemini_a`용 독립 실행기가 미구현이므로, `ai_trends`와 `grad_school_deadlines`도 `hunter` (chatgpt_task)로 재할당됨.
 
 ## risk_rules.yml
 
