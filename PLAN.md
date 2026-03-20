@@ -271,8 +271,11 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] 크롤링 대상 확장:
   - **정부**: 창업진흥원, 중소벤처기업부, 서울산업진흥원 (SBA)
   - **민간**: Google for Startups (startup.google.com), D.CAMP (dcamp.kr)
-- [ ] 마감일 알림 → Telegram 연동
-- [ ] 보고서 → Notion 페이지 생성 → Slack 전달
+- [x] 마감일 알림 → Telegram 연동 — `src/hunter/grant_notifier.ts` (2026-03-21)
+  - [x] `format_grant_report_for_notion`: priority별 그룹핑 마크다운
+  - [x] `format_deadline_alerts_for_telegram`: D-1/D-3 긴급 알림
+  - [x] `create_grant_notification_handler`: crawl_result→Notion+Slack, alert→Telegram
+- [ ] 보고서 → Notion 페이지 생성 → Slack 전달 (handler 구현 완료, 실제 연동은 배포 후)
 
 ### 4-2. 로또 청약 정보 수집 (3일 주기)
 
@@ -327,10 +330,16 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ## Phase 5: 학원 업무 자동화
 
-### 5-1. 공통과학 자체 교재 제작 (EIDOS SCIENCE)
+### 5-1. 공통과학 자체 교재 제작 (EIDOS SCIENCE) — 생성기 구현 완료 ✅
 
-- [ ] 기존 교재 구조 분석 (하이탑 레벨 기준)
-- [ ] 단원별 콘텐츠 생성: 개념 설명 + 예제 + 연습문제
+- [x] 교재 콘텐츠 생성 모듈 — `src/academy/textbook_generator.ts` (2026-03-21)
+  - [x] `generate_chapter_content`: 템플릿 기반 챕터 생성 (개념+예제+연습)
+  - [x] `format_chapter_for_print`: 인쇄용 텍스트 포맷
+  - [x] `generate_chapter_pdf`: A4 PDF 생성
+  - [x] `validate_chapter`: 구조/완결성 검증
+  - [x] 물리 운동의 법칙 템플릿 (뉴턴 3법칙, FBD, 마찰력 등)
+  - [x] `register_template()`로 과목/챕터 확장 가능
+- [ ] 추가 과목 템플릿 (chemistry, biology, earth_science)
 - [ ] 교재 디자인: 검정/골드/화이트 (EIDOS SCIENCE 브랜드)
 - [ ] 주인님 검수 → 최종 PDF 생성
 
@@ -459,7 +468,10 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 에이전트별 로그: `logs/{agent}/{date}.log`
   - [x] 승인 감사 로그: `logs/approvals/{date}.json` (JSONL)
   - [x] 30일 자동 정리 (log rotation)
-- [ ] Slack 채널별 자동 로그 전송
+- [x] Slack/Telegram 알림 브리지 — `src/watchdog/alert_integration.ts` (2026-03-21)
+  - [x] `create_log_alert_bridge`: error→Slack, critical→Telegram 자동 라우팅
+  - [x] `create_crash_alert_bridge`: 크래시→Slack, 격리→Telegram 알림
+  - [x] `create_daily_log_summary`: 모닝 브리핑용 일일 로그 요약
 
 ### 7-2. 리소스 모니터링
 
