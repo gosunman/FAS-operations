@@ -139,6 +139,12 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - `MID` → Gemini CLI spawn → JSON 응답 파싱 → 승인/거부
   - `HIGH` → Telegram으로 인간에게 전송 → 응답 대기
   - 10분 타임아웃 / JSON 파싱 실패 → 자동 거부 (secure by default)
+- [x] **5단계 보안 검수 모듈** — `src/gateway/security_validator.ts` (2026-03-22)
+  - [x] 프롬프트 인젝션 검사 (5패턴)
+  - [x] 악성코드/RCE 검사 (7패턴)
+  - [x] 역방향 정보 수집 검사 (7패턴)
+  - [x] 데이터 무결성 검사 (3패턴)
+  - [x] server.ts 헌터 결과 엔드포인트 통합
 - [ ] 교차 검증 로직 (n8n 워크플로우 통합):
   - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
   - 불일치 시 → NotebookLM(헌터)에게 검증 요청
@@ -164,6 +170,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 헌터: OpenClaw 웹 자동화로 실행
   - 캡틴/섀도우: Gemini API 또는 웹 자동화 코드로 실행
   - 검증 실패 시 → `blocked` 상태 + 사유 기록
+- [x] **Thunderbolt Bridge pf 방화벽** — 40Gbps JACCL 분산 추론용 (2026-03-22)
+  - [x] 캡틴/헌터 pf 규칙 파일 (`fas-thunderbolt.captain.conf`, `fas-thunderbolt.hunter.conf`)
+  - [x] 멱등 설치 스크립트 (`setup_pf_firewall.sh`)
+  - [x] 케이블 연결 검증 스크립트 (`verify_cable_connection.sh`)
+  - [x] start_all.sh Phase 0 방화벽 검증 통합
+  - [x] verify_hunter.sh [6/6] pf 상태 검증 추가
+  - [ ] 실제 Thunderbolt 케이블 연결 + 검증 *(인간 작업)*
 - [ ] Cross-AI 팩트체크 (Claude ↔ Gemini)
 - [ ] Deep Research 활용 (구글 계정 2개, 동시 3건 제한):
   - 새 도메인 진입 시 초기 자료 수집
@@ -349,6 +362,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 개선 사항 자동 리포트 생성 (Notion)
   - 주기적 재측정 → 변화 추적
   - 향후 유료 컨설팅 서비스로 확장 가능
+
+### 6-0b. B2B 인텐트 크롤링
+
+- [x] **B2B 인텐트 크롤링 파이프라인** — Crawl4AI + OpenClaw + Clay.com (2026-03-22)
+  - [x] `src/pipeline/b2b_intent_pipeline.ts` 구현
+  - [x] schedules.yml에 b2b_intent_crawl 등록 (04:30, hunter)
+  - [ ] Crawl4AI Docker 실행 + Clay.com webhook URL 설정 *(인간 작업)*
 
 ### 6-1. 캐시플로우 프로젝트 발굴
 

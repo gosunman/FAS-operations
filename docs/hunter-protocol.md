@@ -212,6 +212,8 @@ async function run_deep_research(task: HunterTask): Promise<HunterResult> {
 | Playwright | ❌ | 미설치 |
 | FAS Operations 코드 배포 | ❌ | deploy 스크립트로 최소 파일만 전송 (git clone 금지) |
 
+> **⚠️ Lv.3 초기화 주의**: Lv.3 초기화 완료 후 Thunderbolt 케이블을 꽂기 전 반드시 `setup_pf_firewall.sh`를 헌터에서 수동 실행할 것.
+
 ### Claude Code 사용 불가 사유 및 임시 대체 방안
 
 **사유**: Anthropic 계정 신규 가입 시 전화번호 인증이 필수로 요구된다. 헌터 격리 원칙상 주인님의 개인 전화번호를 헌터 전용 계정(계정 B)에 연결할 수 없으므로, 헌터 머신에서 Claude Code를 독립 계정으로 운용하는 것이 현재 불가능하다.
@@ -373,3 +375,18 @@ bash scripts/deploy/verify_hunter.sh [captain-api-url] [hunter-api-key]
 | Playwright 에러 | Chromium 미설치 | `npx playwright install chromium` |
 | LOGIN_REQUIRED | Google 세션 만료 | VNC로 헌터 접속 → Chrome 수동 로그인 |
 | Watchdog 300s 대기 | 3회 연속 크래시 | 로그 확인: `logs/crashes_hunter.log` |
+
+---
+
+### Thunderbolt Bridge 보안 정책 (2026-03-22 추가)
+
+- **목적**: 120B 분산 추론을 위한 40Gbps 물리적 직접 연결 (JACCL pipeline-ring)
+- **원칙**:
+  1. Thunderbolt Bridge는 **분산 추론 전용 채널**. Task API/SSH/파일 전송은 Tailscale 경유 유지.
+  2. 양쪽 머신에 macOS pf 방화벽 적용하여 단방향 통제 구현 (캡틴→헌터만 연결 개시).
+  3. 허용 포트: JACCL 데이터(51000-51007) + 코디네이터(51100)만. ICMP ping 허용.
+  4. pf 규칙은 launchd로 부팅 시 자동 적용. 규칙 미적용 상태에서 케이블 연결 금지.
+  5. start_all.sh Phase 0에서 pf 활성 상태 검증. 비활성 시 전체 기동 거부.
+  6. 헌터 Lv.3 초기화 시 `scripts/setup/setup_pf_firewall.sh`를 헌터에서 재실행 필수.
+- **검증**: `scripts/security/verify_cable_connection.sh`로 케이블 연결 전/후 자동 검증.
+- **관련 파일**: `scripts/setup/fas-thunderbolt.captain.conf`, `scripts/setup/fas-thunderbolt.hunter.conf`, `scripts/setup/setup_pf_firewall.sh`
