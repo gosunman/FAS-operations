@@ -145,10 +145,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 역방향 정보 수집 검사 (7패턴)
   - [x] 데이터 무결성 검사 (3패턴)
   - [x] server.ts 헌터 결과 엔드포인트 통합
-- [ ] 교차 검증 로직 (n8n 워크플로우 통합):
-  - Claude 작업물 → Gemini가 리뷰 (또는 그 반대)
-  - 불일치 시 → NotebookLM(헌터)에게 검증 요청
-  - 최종 불일치 시 → 무조건 인간 승인
+- [x] Cross-AI 팩트체크 파이프라인 — `src/gateway/factcheck.ts` (2026-03-21)
+  - [x] `build_factcheck_prompt`: Gemini용 검증 프롬프트 (strict_mode 지원)
+  - [x] `parse_factcheck_response`: JSON 파싱 + malformed 방어 (disagree fallback)
+  - [x] `should_escalate`: disagree OR confidence<0.5 → 인간 승인
+  - [x] `create_factchecker`: 전체 파이프라인 팩토리
+- [ ] NotebookLM 3차 검증 연동 (불일치 시)
+- [ ] 최종 불일치 시 → 무조건 인간 승인 (Telegram)
 
 ### 2-2. 에이전트 모니터링 ✅
 
@@ -277,10 +280,14 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `create_grant_notification_handler`: crawl_result→Notion+Slack, alert→Telegram
 - [ ] 보고서 → Notion 페이지 생성 → Slack 전달 (handler 구현 완료, 실제 연동은 배포 후)
 
-### 4-2. 로또 청약 정보 수집 (3일 주기)
+### 4-2. 로또 청약 정보 수집 (3일 주기) — 파서 구현 완료 ✅
 
-- [ ] 청약홈 (applyhome.co.kr) 모니터링
-- [ ] 신규 공고 → 분석 보고서 자동 생성
+- [x] 청약홈 구조화 파서 — `src/hunter/housing_lottery.ts` (2026-03-21)
+  - [x] `parse_housing_announcements`: HTML 테이블 파싱
+  - [x] `detect_new_housing`: seen_housing.json 기반 신규 감지
+  - [x] `match_housing_to_profile`: 강남 기준 통근시간+면적으로 residence/investment/skip
+  - [x] `generate_housing_report`: 마감 알림(D-1/D-3/D-7) 포함 리포트
+- [ ] 신규 공고 → 분석 보고서 자동 생성 (입주자모집공고 PDF 분석)
   - 위치, 가격, 경쟁률 예상, 자격 충족 여부
 - [ ] 보고서 → Notion + Telegram 전송 → 인간 승인 → 직접 청약
 
