@@ -22,6 +22,11 @@
 //
 //   POST   /api/approval/request   — Request cross-approval for an action
 //
+//   POST   /api/n8n/planning/morning       — Trigger morning planning loop (n8n Cron)
+//   POST   /api/n8n/planning/night         — Trigger night planning loop (n8n Cron)
+//   POST   /api/n8n/task-result-webhook    — Route task result notification
+//   GET    /api/n8n/metrics                — System metrics for n8n dashboard
+//
 //   GET    /api/health             — Health check
 //   GET    /api/stats              — Task statistics
 //
@@ -46,6 +51,8 @@ import type { NotificationRouter } from '../notification/router.js';
 import { create_logger } from './logger.js';
 import type { ActivityLogger } from '../watchdog/activity_logger.js';
 import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
+import { create_n8n_routes, type N8nWebhookDeps } from './n8n_webhooks.js';
+import type { PlanningLoop } from '../captain/planning_loop.js';
 
 // Shared logger instance for the gateway module
 const log = create_logger({ prefix: 'Gateway' });
@@ -79,6 +86,7 @@ export type AppOptions = {
   notion_backup?: NotionBackupConfig | null;    // Notion backup for task results (fire-and-forget)
   notification_router?: NotificationRouter | null; // Notification router for crawl_result events
   activity_logger?: ActivityLogger | null;         // Activity logger for audit trail
+  planning_loop?: PlanningLoop | null;             // Planning loop for n8n webhook integration
 };
 
 // Notion backup configuration — saves completed task results to Notion as a durable backup
@@ -212,6 +220,19 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
     sleep_end_hour: 7,
     sleep_end_minute: 30,
   });
+
+  // === Mount n8n webhook routes at /api/n8n ===
+  // Requires planning_loop + notification_router; skip mount if planning_loop is unavailable
+  if (options.planning_loop && options.notification_router) {
+    const n8n_deps: N8nWebhookDeps = {
+      planning_loop: options.planning_loop,
+      router: options.notification_router,
+      store,
+      mode_manager,
+    };
+    const n8n_routes = create_n8n_routes(n8n_deps);
+    app.use('/api/n8n', n8n_routes);
+  }
 
   // Cross-approval — Gemini CLI for MID risk actions
   const cross_approval = options.cross_approval_config

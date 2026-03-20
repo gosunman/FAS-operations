@@ -758,4 +758,62 @@ describe('Gateway Server', () => {
       expect(res.body.error).toBe('VALIDATION_ERROR');
     });
   });
+
+  // === n8n Webhook Routes ===
+
+  describe('n8n webhook routes at /api/n8n', () => {
+    it('should mount n8n routes when planning_loop and notification_router are provided', async () => {
+      const n8n_store = create_task_store({ db_path: ':memory:' });
+      const mock_planning_loop = {
+        run_morning: async () => ({ created: [], skipped: [] }),
+        run_night: async () => ({ summary: 'test', discovery: [] }),
+      };
+      const mock_notification_router = {
+        route: async () => {},
+      };
+      const n8n_app = create_app(n8n_store, {
+        dev_mode: true,
+        planning_loop: mock_planning_loop as any,
+        notification_router: mock_notification_router as any,
+      });
+
+      // GET /api/n8n/metrics should be accessible
+      const res = await request(n8n_app).get('/api/n8n/metrics');
+      expect(res.status).toBe(200);
+      expect(res.body.tasks).toBeDefined();
+      expect(res.body.mode).toBeDefined();
+      expect(res.body.timestamp).toBeDefined();
+
+      n8n_store.close();
+    });
+
+    it('should NOT mount n8n routes when planning_loop is missing', async () => {
+      // Default app has no planning_loop — /api/n8n should 404
+      const res = await request(app).get('/api/n8n/metrics');
+      expect(res.status).toBe(404);
+    });
+
+    it('should trigger morning planning via POST /api/n8n/planning/morning', async () => {
+      const n8n_store = create_task_store({ db_path: ':memory:' });
+      const mock_planning_loop = {
+        run_morning: async () => ({ created: ['task-1'], skipped: ['task-2'] }),
+        run_night: async () => ({ summary: 'test', discovery: [] }),
+      };
+      const mock_notification_router = {
+        route: async () => {},
+      };
+      const n8n_app = create_app(n8n_store, {
+        dev_mode: true,
+        planning_loop: mock_planning_loop as any,
+        notification_router: mock_notification_router as any,
+      });
+
+      const res = await request(n8n_app).post('/api/n8n/planning/morning');
+      expect(res.status).toBe(200);
+      expect(res.body.created_count).toBe(1);
+      expect(res.body.skipped_count).toBe(1);
+
+      n8n_store.close();
+    });
+  });
 });
