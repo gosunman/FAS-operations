@@ -182,7 +182,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] start_all.sh Phase 0 방화벽 검증 통합
   - [x] verify_hunter.sh [6/6] pf 상태 검증 추가
   - [ ] 실제 Thunderbolt 케이블 연결 + 검증 *(인간 작업)*
-- [ ] Cross-AI 팩트체크 (Claude ↔ Gemini)
+- [x] Cross-AI 팩트체크 (Claude ↔ Gemini) — `src/gateway/factcheck.ts`에서 구현 완료 (2-1 참조)
 - [ ] Deep Research 활용 (구글 계정 2개, 동시 3건 제한):
   - 새 도메인 진입 시 초기 자료 수집
   - 결과를 `research/` 디렉토리에 구조화 저장
@@ -652,3 +652,59 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | AI 서비스 장애 (Claude/Gemini 다운) | 가용성 | 다른 AI로 자동 폴백                   |
 | 디바이스 리소스 부족                | 성능   | 모니터링 + 주인님에게 구매 제안       |
 | AI 토큰 사용량 한도 초과            | 생산성 | 모니터링 + 플랜 업그레이드 제안       |
+
+---
+
+## 잔여 작업 상세 (2026-03-21 기준)
+
+> 이 세션에서 587→1006 테스트, 17개 신규 모듈을 구현했다.
+> 아래는 남은 74개 미완료 항목을 **실행 가능성 기준**으로 분류한 것이다.
+
+### 🔴 인간 작업 (주인님 물리적 개입 필수)
+
+| 작업 | Phase | 비고 |
+|------|-------|------|
+| 헌터 머신 초기 세팅 (`setup_hunter.sh` 실행) | 0-5, 1-3 | 헌터에 SSH 접속 후 스크립트 실행 |
+| Gemini CLI 계정 인증 실행 | 1-2 | `setup_gemini_cli.sh` |
+| Thunderbolt 케이블 연결 + 검증 | 2-3 | 물리 작업 → `verify_cable_connection.sh`로 검증 |
+| Crawl4AI Docker + Clay.com webhook 설정 | 6-0b | 헌터에서 Docker 실행 + URL 설정 |
+| Notion DB 생성 + API Key 설정 | 7-3b | Notion 웹에서 수동 |
+
+### 🟡 주인님 판단 필요 (코딩은 가능하나 방향 확정 필요)
+
+| 작업 | Phase | 판단 사항 |
+|------|-------|-----------|
+| SMS 발송 API 연동 (알리고/Google Messages) | 5-3 | API 서비스 선택 + 키 발급 + 요금 승인 |
+| 추가 과목 템플릿 (화학/생물/지구과학) | 5-1 | 어떤 단원부터? 어떤 과목 우선? |
+| 교재 디자인 브랜딩 | 5-1 | 디자인 시안 검토/승인 |
+| 웹 보일러플레이트 (create-fas-app) | 6-0 | 기술 스택 최종 확정 (Next.js? NestJS?) |
+| SEO/GEO 컨설팅 자동화 | 6-0 | 사업 우선순위, 타겟 고객 확정 |
+| B2B SaaS 전환 | 6-6 | 결제 서비스 선택 (Stripe/Toss), 사업 타이밍 |
+| 캐시플로우 프로젝트 발굴 | 6-1 | 주인님의 투입 시간 한도 확정 |
+| 빅테크 취업 공고 조건 상세화 | 4-5 | 원격만? 한국만? 연봉 기준? |
+| API 키 관리 방식 | 7-4 | macOS Keychain vs 1Password CLI |
+
+### 🟢 AI 자율 실행 가능 (지시 시 바로 착수)
+
+| 작업 | Phase | 예상 시간 | 설명 |
+|------|-------|-----------|------|
+| 크래시 → Telegram 알림 실제 연동 | 7-3 | 30분 | alert_integration.ts의 crash bridge를 main.ts에 연결 |
+| 네트워크 단절 → 로컬 큐 복구 | 7-3 | 1시간 | local_queue.ts 활용, 복구 시 자동 replay |
+| 크롤러 대상 확장 (SBA, D.CAMP 등) | 4-1 | 1시간 | startup_grants.ts 패턴 복제 |
+| NotebookLM 3차 검증 연동 | 2-1 | 1시간 | factcheck에서 disagree 시 NotebookLM 호출 |
+| Lighthouse SEO/성능 측정 | 4-8 | 1시간 | puppeteer + lighthouse 모듈 |
+| 디바이스 리소스 모니터링 확장 | 7-2 | 1시간 | resource_monitor → Telegram 알림 |
+| AI 토큰 사용량 추적 실 연동 | 7-2 | 1시간 | n8n token_tracker + 실제 API 연결 |
+| 청약홈 → Notion/Telegram 알림 | 4-2 | 30분 | grant_notifier 패턴 복제 |
+| Deep Research 결과 구조화 저장 | 2-3 | 1시간 | `research/` 디렉토리 + 인덱싱 |
+
+### ⚪ 장기 과제 (Phase 6 사업화 — 별도 프로젝트급)
+
+- 6-1: 마이크로 프로젝트 발굴 자동화
+- 6-2: 아이디어 → 사업화 파이프라인 (시장분석→기획서)
+- 6-3: 무중단 구현 프로세스
+- 6-4: 마케팅 자동화 (SEO 블로그, SNS, 이메일)
+- 6-5: 학원 IP 수익화 (크몽 업로드)
+- 6-6: B2B SaaS 전환 (결제→리포트 자동화)
+
+→ 이들은 Phase 0~5 안정화 + 헌터 실운영 확인 후 순차 착수 권장
