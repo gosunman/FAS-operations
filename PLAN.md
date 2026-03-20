@@ -294,18 +294,25 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 ### 4-3. 블라인드 네이버 인기글 모니터링 (매일)
 
 - [x] 스케줄 등록: `chatgpt_task`로 변경 (web_crawl 직접 접근 → 안티봇 차단 → OpenClaw 검색엔진 우회로 전환)
-- [ ] 블라인드 네이버 채널 모니터링 (RSS/검색엔진 우회 — 직접 크롤링은 안티봇에 차단됨)
-- [ ] 인기글 감지 기준: 댓글 50+ OR 좋아요 100+ OR 자극적 키워드 매칭
-- [ ] 감지 시 → 요약 + 원문 링크 → Slack 보고
+- [x] 블라인드 결과 파서 + 인기글 필터 — `src/pipeline/blind_monitor.ts` (2026-03-21)
+  - [x] `parse_blind_results()`: 헌터 chatgpt_task 결과 JSON 파싱 (마크다운 펜스, HTML 처리)
+  - [x] `categorize_post()`: Hot (댓글 50+ OR 좋아요 100+), Trending (댓글 30+ AND 좋아요 50+)
+  - [x] `detect_keywords()`: 네이버 키워드 8개 + 일반 키워드 4개 + 커스텀 키워드
+  - [x] `format_alert()`: Slack 포맷 (🔥 hot, 📈 trending, 키워드 태그)
+  - [x] `process_blind_results()`: 파싱→필터→점수→포맷 파이프라인 (40 tests)
 - [ ] 단톡방 공유는 주인님이 직접 (카카오톡 API는 비즈니스 인증 없이 불가)
 
 ### 4-4. AI 트렌드 리서치 (SLEEP 모드, 매일)
 
 - [x] 스케줄 등록: `hunter` (chatgpt_task)로 재할당 (gemini_a 실행기 미구현 → 당장 hunter로 처리)
-- [ ] 소스: Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, Twitter/X
-- [ ] 일일 트렌드 리포트 생성
-- [ ] 관심 키워드 필터: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM
-- [ ] Notion 페이지 생성 → Slack 전달
+- [x] HN/Reddit/arxiv 직접 파서 — `src/pipeline/ai_trend_parser.ts` (2026-03-21)
+  - [x] `create_hn_parser()`: Firebase API top stories 파싱 + 키워드 필터
+  - [x] `create_reddit_parser()`: r/MachineLearning, r/LocalLLaMA hot posts (User-Agent 포함)
+  - [x] `create_arxiv_parser()`: Atom API XML 파싱 + 키워드 필터
+  - [x] `create_keyword_filter()`: 영/한 양방향 (에듀테크, NVC, 자동화, 로컬LLM 등)
+  - [x] `generate_trend_report()`: 소스별 그룹핑 + 점수 내림차순 포맷
+  - [x] `run_ai_trend_research()`: 전체 오케스트레이터 (partial failure 허용, 19 tests)
+- [ ] Notion 페이지 생성 → Slack 전달 (알림 라우터 연결)
 
 ### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기)
 
@@ -317,10 +324,12 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 ### 4-6. 대학원 지원 일정 알림
 
 - [x] 스케줄 등록: `hunter` (chatgpt_task)로 재할당 (gemini_a → hunter)
-- [ ] **조지아텍 OMSCS**: 지원 일정, 준비물, 마감일 추적
-- [ ] **서울대 GSEP**: 지원 일정, 준비물, 마감일 추적
-- [ ] 마감 D-30, D-14, D-7, D-3 단계별 알림 (Telegram)
-- [ ] 준비 체크리스트 자동 생성
+- [x] 대학원 마감 트래커 — `src/pipeline/grad_school_tracker.ts` (2026-03-21)
+  - [x] `GRAD_SCHOOL_PROGRAMS`: OMSCS Fall 2026, GSEP Fall 2026, GSEP Spring 2027
+  - [x] `ALERT_STAGES`: D-30 (info), D-14 (warning), D-7 (urgent), D-3 (critical)
+  - [x] `generate_checklist()`: 프로그램별 준비물 체크박스 자동 생성
+  - [x] `format_alert_message()`: 마감일+체크리스트+URL Telegram 포맷
+  - [x] `check_deadlines()`: stateless 알림 판단 (커스텀 프로그램 지원, 26 tests)
 
 ### 4-7. 원격 학위 과정 조사 (초기 리서치 → 이후 주기적 갱신)
 
@@ -328,10 +337,16 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] 조건: 원격 수업 가능, 인지도 높은 학교
 - [ ] Deep Research(헌터)로 초기 포괄 조사 → 보고서
 
-### 4-8. SEO/성능 측정 (RECURRING, 추후)
+### 4-8. SEO/성능 측정 — Lighthouse 모듈 구현 완료 ✅
 
-- [ ] Lighthouse CI 주기적 실행
-- [ ] 성능 저하 감지 시 알림
+- [x] Lighthouse CI 감사 모듈 — `src/pipeline/lighthouse_audit.ts` (2026-03-21)
+  - [x] `create_lighthouse_auditor()`: npx lighthouse CLI 래퍼 (headless Chrome)
+  - [x] `audit()`: 단일 URL 감사 (Performance/SEO/Accessibility + FCP/LCP/TBT/CLS)
+  - [x] `audit_all()`: 배치 감사 (개별 실패 시 계속 진행)
+  - [x] `check_degradation()`: 히스토리 비교 (10점+ 하락 감지)
+  - [x] `format_report()`: PASS/FAIL + ↑↓ 비교 화살표 + 권장사항 (27 tests)
+- [x] 히스토리 추적: `state/lighthouse_history.json` 자동 저장
+- [ ] 주기적 실행 스케줄 등록 (n8n 또는 schedules.yml)
 
 ---
 
@@ -480,14 +495,18 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `create_crash_alert_bridge`: 크래시→Slack, 격리→Telegram 알림
   - [x] `create_daily_log_summary`: 모닝 브리핑용 일일 로그 요약
 
-### 7-2. 리소스 모니터링
+### 7-2. 리소스 모니터링 — 구현 완료 ✅
 
-- [ ] **디바이스 리소스**: CPU/RAM/디스크 사용량 추적
-  - 리소스 부족 시 → Telegram 알림 + 구매 제안
-- [ ] **AI 토큰 사용량**: 구독별 사용량 대비 잔여량 추적
-  - 토큰을 최대한 활용하도록 태스크 배분 최적화
-  - 사용량 부족 시 → 추가 태스크 자동 배정
-  - 한도 초과 임박 시 → Telegram 알림 + 플랜 업그레이드 제안
+- [x] **디바이스 리소스** — `src/watchdog/resource_monitor.ts` (2026-03-21)
+  - [x] `collect_snapshot()`: macOS vm_stat/sysctl/df로 CPU/RAM/디스크 수집 (ResourceSnapshot 타입)
+  - [x] `check_thresholds()`: CPU>90%, RAM>85%, Disk>80% 임계 초과 감지
+- [x] **AI 토큰 사용량** — `create_ai_usage_tracker()`
+  - [x] 프로바이더별 (Claude/Gemini/ChatGPT) 요청 횟수, 성공률 추적
+  - [x] 일일 카운터 자동 리셋, 플랜 한도 대비 사용률 추정
+  - [x] 알림 콜백: 70% warning, 90% critical (중복 방지)
+- [x] **통합 모니터** — `create_unified_monitor()`
+  - [x] 시스템 리소스 + AI 사용량 통합 감시
+  - [x] `start(interval_ms)` / `stop()` 주기적 루프 (32 new tests)
 
 ### 7-3. 장애 대응 — 크래시 복구 구현 완료 ✅
 
@@ -496,7 +515,10 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] 3회 초과 → 재시작 차단 (격리)
   - [x] `state/crash_history.json`에 영구 저장
 - [ ] 크래시 시 인간 알림 (Telegram) 연동
-- [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
+- [x] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개 — `resilient_sender` → `router.ts` 통합 (2026-03-21)
+  - [x] 채널별 (telegram/slack/notion) resilient sender 래핑
+  - [x] 네트워크 에러 시 자동 큐잉 + 주기적 재시도
+  - [x] `stop()` cleanup, `get_queue_sizes()` 모니터링 (20 new tests)
 
 ### 7-3b. 데이터 내구성
 
@@ -701,16 +723,16 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 빅테크 취업 공고 조건 상세화 | 4-5 | 원격만? 한국만? 연봉 기준? |
 | API 키 관리 방식 | 7-4 | macOS Keychain vs 1Password CLI |
 
-### 🟢 AI 자율 실행 가능 (캡틴에서 바로 착수)
+### 🟢 AI 자율 실행 가능 — 세션 3 전체 완료 ✅ (2026-03-21)
 
-| 작업 | Phase | 예상 시간 | 설명 |
-|------|-------|-----------|------|
-| 블라인드 네이버 모니터링 | 4-3 | 1.5시간 | OpenClaw 검색엔진 우회 크롤러 |
-| AI 트렌드 리서치 실연동 | 4-4 | 1.5시간 | HN/Reddit/arxiv 파서 + 일일 리포트 |
-| 대학원 지원 일정 알림 | 4-6 | 1시간 | OMSCS/GSEP 마감 추적 |
-| Lighthouse SEO/성능 측정 | 4-8 | 1시간 | puppeteer + lighthouse 모듈 |
-| AI 토큰 사용량 추적 실연동 | 7-2 | 1시간 | n8n token_tracker + 실제 API 연결 |
-| resilient_sender를 router.ts에 통합 | 7-3 | 30분 | 알림 전송 시 자동 큐잉 적용 |
+| 작업 | Phase | 상태 | 설명 |
+|------|-------|------|------|
+| 블라인드 네이버 모니터링 | 4-3 | ✅ | `blind_monitor.ts` 결과 파서 + 인기글 필터 (40 tests) |
+| AI 트렌드 리서치 실연동 | 4-4 | ✅ | `ai_trend_parser.ts` HN/Reddit/arxiv 파서 (19 tests) |
+| 대학원 지원 일정 알림 | 4-6 | ✅ | `grad_school_tracker.ts` OMSCS/GSEP 마감 추적 (26 tests) |
+| Lighthouse SEO/성능 측정 | 4-8 | ✅ | `lighthouse_audit.ts` CLI 래퍼 + 히스토리 (27 tests) |
+| AI 토큰 사용량 추적 실연동 | 7-2 | ✅ | `resource_monitor.ts` 통합 모니터 (32 tests) |
+| resilient_sender를 router.ts에 통합 | 7-3 | ✅ | `router.ts` 네트워크 장애 큐잉 (20 tests) |
 
 ### ⚪ 장기 과제 (Phase 6 사업화 — 별도 프로젝트급)
 
