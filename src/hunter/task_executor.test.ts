@@ -34,6 +34,7 @@ const create_mock_page = (overrides: Record<string, unknown> = {}) => ({
   url: vi.fn().mockReturnValue('https://example.com'),
   waitForTimeout: vi.fn().mockResolvedValue(undefined),
   close: vi.fn().mockResolvedValue(undefined),
+  content: vi.fn().mockResolvedValue('<html><body></body></html>'),
   locator: vi.fn().mockReturnValue(create_mock_locator()),
   context: vi.fn().mockReturnValue({
     close: vi.fn().mockResolvedValue(undefined),

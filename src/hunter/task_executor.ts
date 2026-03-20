@@ -7,6 +7,7 @@ import type { Page } from 'playwright';
 import type { Task, HunterActionType, HunterTaskResult } from '../shared/types.js';
 import type { Logger } from './logger.js';
 import type { BrowserManager } from './browser.js';
+import { is_kstartup_url, parse_grant_announcements, detect_new_grants, match_grant_to_profile, calculate_deadline_alerts, generate_grant_report, DEFAULT_PROFILE } from './startup_grants.js';
 
 // === OpenClaw CLI execution ===
 // Invokes the OpenClaw agent framework to handle abstract/vague tasks.
@@ -182,6 +183,27 @@ export const create_task_executor = (
 
       const title = await page.title();
       const body_text = await page.textContent('body') ?? '';
+
+      // K-Startup structured parsing: if URL matches k-startup.go.kr,
+      // parse the HTML into structured grant data instead of raw text.
+      if (is_kstartup_url(url)) {
+        logger.info(`web_crawl: detected K-Startup URL, using structured parser`);
+        const page_html = await page.content();
+        const grants = parse_grant_announcements(page_html);
+        const new_grants = detect_new_grants(grants, './output/seen_grants.json');
+        const matches = grants.map((g) => match_grant_to_profile(g, DEFAULT_PROFILE));
+        const alerts = calculate_deadline_alerts(grants, new Date());
+        const report = generate_grant_report(matches, alerts);
+
+        logger.info(`web_crawl: K-Startup parsed ${grants.length} grants, ${new_grants.length} new`);
+
+        return {
+          status: 'success',
+          output: `Title: ${title}\nURL: ${url}\n\n[K-Startup Structured Report]\n${report.summary}\n\nNew grants: ${new_grants.length}\n${JSON.stringify(report, null, 2)}`,
+          files: [],
+        };
+      }
+
       const trimmed = body_text.trim().slice(0, MAX_CONTENT_LENGTH);
 
       logger.info(`web_crawl: extracted ${trimmed.length} chars from ${url}`);
