@@ -72,3 +72,40 @@ check_updates "hunter" "Hunter" || true
 
 echo ""
 echo "[$TIMESTAMP] Update check complete" | tee -a "$LOG_FILE"
+
+# === pf Firewall Integrity Check ===
+# macOS updates can reset /etc/pf.conf, removing our fas-thunderbolt anchor
+if [ -f /etc/pf.anchors/fas-thunderbolt ]; then
+  # Anchor file exists — check if pf.conf still references it
+  if ! grep -q "fas-thunderbolt" /etc/pf.conf 2>/dev/null; then
+    echo "[CRITICAL] fas-thunderbolt anchor file exists but pf.conf reference is MISSING!"
+    echo "           macOS update may have reset pf.conf."
+    echo "           Run: bash ~/FAS-operations/scripts/setup/setup_pf_firewall.sh"
+    # Send Telegram alert if TELEGRAM_BOT_TOKEN is available
+    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+      curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d text="🚨 *[FIREWALL ALERT]* macOS 업데이트로 pf.conf가 초기화됨. fas-thunderbolt 앵커 누락 감지. \`setup_pf_firewall.sh\` 재실행 필요!" \
+        > /dev/null 2>&1
+      echo "[ALERT] Telegram notification sent"
+    fi
+  fi
+
+  # Check if pf is actually enabled
+  if ! sudo pfctl -s info 2>&1 | grep -q "Status: Enabled"; then
+    echo "[CRITICAL] pf firewall is DISABLED! Thunderbolt Bridge is unprotected."
+    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+      curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d text="🚨 *[FIREWALL ALERT]* pf 방화벽 비활성 상태! Thunderbolt Bridge 무방비. 즉시 \`sudo pfctl -e\` 실행 필요!" \
+        > /dev/null 2>&1
+      echo "[ALERT] Telegram notification sent"
+    fi
+  else
+    echo "[OK] pf firewall is enabled and fas-thunderbolt anchor is intact."
+  fi
+else
+  echo "[INFO] No Thunderbolt Bridge configured (no pf anchor file)."
+fi
