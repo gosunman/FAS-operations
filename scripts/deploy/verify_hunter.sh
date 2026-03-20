@@ -68,7 +68,7 @@ echo "API Key: ${API_KEY:+configured}${API_KEY:-NOT SET}"
 echo ""
 
 # ===== 1. Captain API Connectivity =====
-echo "--- [1/5] Captain API connectivity ---"
+echo "--- [1/6] Captain API connectivity ---"
 
 HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$CAPTAIN_API/api/health" 2>/dev/null || echo "000")
 
@@ -85,7 +85,7 @@ fi
 echo ""
 
 # ===== 2. Heartbeat Endpoint =====
-echo "--- [2/5] Heartbeat endpoint ---"
+echo "--- [2/6] Heartbeat endpoint ---"
 
 if [ -n "$API_KEY" ]; then
   HB_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 \
@@ -118,7 +118,7 @@ fi
 echo ""
 
 # ===== 3. Task Flow (create → poll → submit) =====
-echo "--- [3/5] Task flow: web_crawl cycle ---"
+echo "--- [3/6] Task flow: web_crawl cycle ---"
 
 if [ -n "$API_KEY" ]; then
   # Create a test task assigned to openclaw
@@ -187,7 +187,7 @@ fi
 echo ""
 
 # ===== 4. PII Scan =====
-echo "--- [4/5] PII scan ---"
+echo "--- [4/6] PII scan ---"
 
 PII_SCRIPT="$PROJECT_ROOT/scripts/security/scan_hunter_pii.sh"
 if [ -f "$PII_SCRIPT" ]; then
@@ -213,7 +213,7 @@ fi
 echo ""
 
 # ===== 5. Runtime Environment =====
-echo "--- [5/5] Runtime environment ---"
+echo "--- [5/6] Runtime environment ---"
 
 # Check Node.js
 if command -v node &>/dev/null; then
@@ -249,6 +249,42 @@ if command -v tailscale &>/dev/null; then
   fi
 else
   log_fail "Tailscale not installed"
+fi
+echo ""
+
+# ===== 6. pf Firewall Status =====
+echo "--- [6/6] pf firewall status (hunter) ---"
+
+# Detect hunter Tailscale IP from CAPTAIN_API (replace captain IP with hunter IP pattern)
+HUNTER_TS_IP="${HUNTER_TAILSCALE_IP:-100.64.0.2}"
+
+# Try to SSH to hunter and check pfctl status
+set +e
+PF_REMOTE=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$HUNTER_TS_IP" \
+  "sudo pfctl -s info 2>&1 | head -1; echo '---'; sudo pfctl -a fas-thunderbolt -sr 2>/dev/null | head -5" \
+  2>/dev/null)
+SSH_EXIT=$?
+set -e
+
+if [ "$SSH_EXIT" -eq 0 ] && [ -n "$PF_REMOTE" ]; then
+  PF_ENABLED=$(echo "$PF_REMOTE" | head -1)
+  if echo "$PF_ENABLED" | grep -qi "enabled"; then
+    log_pass "Hunter pf firewall is enabled"
+
+    ANCHOR_RULES=$(echo "$PF_REMOTE" | sed '1,/---/d')
+    if [ -n "$ANCHOR_RULES" ]; then
+      RULE_COUNT=$(echo "$ANCHOR_RULES" | wc -l | tr -d ' ')
+      log_pass "Hunter fas-thunderbolt anchor active ($RULE_COUNT rules)"
+    else
+      log_warn "Hunter fas-thunderbolt anchor has no rules"
+    fi
+  else
+    log_fail "Hunter pf firewall is NOT enabled ($PF_ENABLED)"
+    log_info "Fix on hunter: sudo bash ~/FAS-operations/scripts/setup/setup_pf_firewall.sh"
+  fi
+else
+  log_warn "Cannot SSH to hunter at $HUNTER_TS_IP to check pf status (exit: $SSH_EXIT)"
+  log_info "Ensure SSH access is available via Tailscale and key-based auth is configured"
 fi
 echo ""
 

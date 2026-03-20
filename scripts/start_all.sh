@@ -29,6 +29,39 @@ echo " FAS Captain — Starting All Services"
 echo "=========================================="
 echo ""
 
+# =============================================================
+# Phase 0: Security & Firewall
+# =============================================================
+echo "[0/5] Security & Firewall (Thunderbolt Bridge pf)..."
+if grep -q 'anchor "fas-thunderbolt"' /etc/pf.conf 2>/dev/null; then
+  PF_STATUS=$(sudo pfctl -s info 2>&1 | head -1 || echo "unknown")
+  if echo "$PF_STATUS" | grep -qi "enabled"; then
+    # Verify anchor is loaded
+    ANCHOR_RULES=$(sudo pfctl -a fas-thunderbolt -sr 2>/dev/null || echo "")
+    if [ -n "$ANCHOR_RULES" ]; then
+      echo "[FAS] pf firewall enabled, fas-thunderbolt anchor active."
+    else
+      echo "[FAS] WARNING: pf enabled but fas-thunderbolt anchor has no rules."
+      echo "[FAS] Run: sudo bash $SCRIPT_DIR/setup/setup_pf_firewall.sh"
+    fi
+  else
+    echo ""
+    echo "=========================================="
+    echo " SECURITY VIOLATION: pf firewall is DISABLED"
+    echo " fas-thunderbolt anchor is configured but pf is not running."
+    echo " Refusing to start services without firewall protection."
+    echo ""
+    echo " Fix: sudo pfctl -e && sudo pfctl -f /etc/pf.conf"
+    echo " Or:  sudo bash $SCRIPT_DIR/setup/setup_pf_firewall.sh"
+    echo "=========================================="
+    exit 1
+  fi
+else
+  echo "[FAS] fas-thunderbolt not in /etc/pf.conf — Thunderbolt firewall not configured (skipping)."
+  echo "[FAS] To configure: sudo bash $SCRIPT_DIR/setup/setup_pf_firewall.sh"
+fi
+echo ""
+
 # Helper: create tmux session if it doesn't exist
 create_session() {
   local session_name="$1"
