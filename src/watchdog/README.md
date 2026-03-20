@@ -36,9 +36,28 @@
 | `warning` | 2분~5분 | 로그 경고 |
 | `alert` | > 5분 | Telegram 알림 |
 
-## Resource Monitor
+## Resource Monitor + AI Usage Tracker
 
-2분 간격으로 시스템 리소스를 체크하여 임계값 초과 시 알림.
+### 시스템 리소스 모니터 (`create_resource_monitor`)
+2분 간격으로 macOS 시스템 리소스를 체크하여 임계값 초과 시 알림.
+- CPU: `top -l 1 -n 0` 파싱
+- RAM: `vm_stat` + `sysctl -n hw.memsize` 파싱
+- Disk: `df -g /` 파싱
+- 임계값: CPU > 90%, RAM > 85%, Disk > 80%
+
+### AI 사용량 추적기 (`create_ai_usage_tracker`)
+프로바이더별 (Claude/Gemini/ChatGPT) 토큰/요청 사용량 추적.
+- `report_success(provider)` / `report_failure(provider, reason)` — 성공/실패 기록
+- 일일 카운터 자동 리셋
+- 플랜 한도 대비 사용률(%) 추정
+- 알림 콜백: 70% warning, 90% critical (중복 방지)
+
+### 통합 모니터 (`create_unified_monitor`)
+시스템 리소스 + AI 사용량을 하나의 인터페이스로 통합.
+- `collect_snapshot()` — ResourceSnapshot 반환
+- `check_thresholds()` — 시스템 + AI 임계값 위반 목록
+- `get_ai_usage_summary()` — 프로바이더별 상세 통계
+- `start(interval_ms)` / `stop()` — 주기적 모니터링 루프
 
 ## Activity Logger
 

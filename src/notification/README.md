@@ -42,3 +42,25 @@
 - Telegram 실패 시 → Slack `#alerts`로 폴백
 - Slack 실패 시 → dual-route 이벤트만 Telegram 폴백 (slack-only 이벤트는 로그만)
 - Notion 실패 시 → fire-and-forget (알림 전송 차단하지 않음)
+
+## Resilient Sender 통합 (Phase 7-3)
+
+`router.ts`에 `queue_dir` 옵션을 전달하면 네트워크 장애 시 자동 큐잉이 활성화된다.
+
+```typescript
+const router = create_notification_router(
+  { telegram, slack, notion, queue_dir: './state/notification_queue' },
+  { retry_interval_ms: 60_000, max_retry_count: 10 },
+);
+
+// Graceful shutdown 시 retry loop 정리
+router.stop();
+
+// Queue 상태 모니터링
+router.get_queue_sizes(); // { telegram: 0, slack: 2, notion: 0 }
+```
+
+- 채널별 독립 큐 (`queue_dir/telegram/`, `slack/`, `notion/`)
+- 네트워크 에러만 큐잉 (앱 에러는 즉시 throw)
+- Notion은 URL 추출을 위해 직접 전송 시도 후 실패 시 resilient 큐잉
+- `queue_dir` 미설정 시 기존 동작과 100% 호환

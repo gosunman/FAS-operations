@@ -84,8 +84,15 @@
 ### Notification (`src/notification/`)
 - **telegram.ts**: Telegram Bot 클라이언트 (메시지 전송, 승인 인라인 키보드)
 - **slack.ts**: Slack 클라이언트 (채널 라우팅: agent_log → #captain-logs, crawl_result → #fas-general, alert → #alerts 등)
-- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). **Telegram: approval_high + discovery only** — 워치 알림 최소화 정책. `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지).
+- **router.ts**: 통합 라우터 (이벤트 타입별 Telegram/Slack/Notion 라우팅 매트릭스). **Telegram: approval_high + discovery only** — 워치 알림 최소화 정책. `crawl_result` 이벤트는 **Notion에 먼저 전송** → 페이지 URL을 받아 → **Slack에 200자 요약 + Notion 원문 링크**로 전달. `briefing`도 Notion에 전송. **폴백 정책**: Telegram 실패 → Slack 폴백, Slack 실패(dual-route) → Telegram 폴백. Slack-only 이벤트(`milestone`, `done`, `error` 등) 실패 시에는 로그만 남기고 Telegram 폴백하지 않음 (비크리티컬 이벤트의 Telegram 폭주 방지). **Resilient Sender 통합** (Phase 7-3): `queue_dir` 옵션 전달 시 채널별 (`telegram/slack/notion`) 독립 큐 생성, 네트워크 에러 자동 큐잉 + 주기적 재시도. `stop()` cleanup, `get_queue_sizes()` 모니터링.
 - **notion.ts**: Notion 클라이언트. **Name (title) 속성만 사용** — Type, Timestamp, Device 등의 커스텀 속성에 의존하지 않아 모든 Notion DB에서 동작. 메시지는 2000자 단위로 분할하여 블록 생성. `send_with_result()`는 페이지 URL을 반환하여 Slack 등 다른 채널에서 링크 가능.
+
+### Pipeline (`src/pipeline/`)
+- **ai_trend_parser.ts**: HN/Reddit/arxiv 직접 파서. `create_hn_parser()`, `create_reddit_parser()`, `create_arxiv_parser()` 팩토리 + `create_keyword_filter()` (영/한 양방향). `run_ai_trend_research(config)` 오케스트레이터 — partial failure 허용, 소스별 독립 동작.
+- **blind_monitor.ts**: 블라인드 네이버 인기글 결과 파서. 헌터 chatgpt_task 출력(JSON/마크다운) 파싱 → Hot(댓글50+/좋아요100+) / Trending(댓글30+&좋아요50+) 분류 → 키워드 감지(12개 기본+커스텀) → Slack 포맷. `process_blind_results(raw_output)` 메인 파이프라인.
+- **grad_school_tracker.ts**: OMSCS/GSEP 대학원 마감 추적기. `check_deadlines(today?)` — D-30/14/7/3 단계별 알림 판단 (stateless). 프로그램별 체크리스트 자동 생성.
+- **lighthouse_audit.ts**: Lighthouse CLI(`npx lighthouse`) 래퍼. `create_lighthouse_auditor(config)` → `audit()`, `audit_all()`, `check_degradation()`, `format_report()`. `state/lighthouse_history.json`에 히스토리 저장, 10점+ 하락 감지.
+- **b2b_intent_pipeline.ts**: Crawl4AI → OpenClaw 인텐트 추출 → Clay.com 전송.
 
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
@@ -112,6 +119,7 @@
 ### Watchdog (`src/watchdog/`)
 - **output_watcher.ts**: tmux 세션 출력 감시 (2초 주기 폴링, 패턴 매칭 → 알림). 감지 패턴: `[APPROVAL_NEEDED]`, `[BLOCKED]`, `[MILESTONE]`, `[DONE]`, `[ERROR]`, `[LOGIN_REQUIRED]`, `[GEMINI_BLOCKED]`. NotificationRouter 연동 완료 — 패턴 감지 시 자동으로 Telegram/Slack 라우팅. `create_routed_watcher()`, `create_watcher_router()` 팩토리 함수 export. Standalone 모드에서도 `config/agents.yml`에서 세션 목록을 동적 로딩. **Crash rate limiting**: tmux 세션 unreachable 시 최초 threshold(3회) 도달 시 1회 알림, 이후 ~5분 간격으로만 재알림 (Telegram 폭주 방지).
 - **hunter_monitor.ts**: 헌터 heartbeat 모니터. Gateway `/api/agents/health` 주기적 폴링으로 헌터 생존 감시. 2분 경과 → Slack WARNING, 5분 경과 → Telegram ALERT, 복구 시 → RECOVERY 알림. State transition 기반 — 동일 상태 유지 시 재알림하지 않음. `start_hunter_monitor(config)`, `stop_hunter_monitor()` export.
+- **resource_monitor.ts**: 시스템 리소스 + AI 사용량 통합 모니터. (1) `create_resource_monitor()` — macOS vm_stat/sysctl/df로 CPU/RAM/디스크 수집, 임계값 체크(CPU>90%, RAM>85%, Disk>80%). (2) `create_ai_usage_tracker()` — 프로바이더별(Claude/Gemini/ChatGPT) 요청 횟수/성공률 추적, 일일 자동 리셋, 알림 콜백(70% warning, 90% critical). (3) `create_unified_monitor()` — 시스템+AI 통합 인터페이스(`collect_snapshot()`, `check_thresholds()`, `get_ai_usage_summary()`, `start()`/`stop()`).
 
 ### Mode Switching (`scripts/`)
 - **mode_switch.sh**: SLEEP/AWAKE 모드 전환 스크립트. Gateway API 호출 + 로그 기록. `pnpm mode:sleep`, `pnpm mode:awake`로 실행.

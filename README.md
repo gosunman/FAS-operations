@@ -210,9 +210,10 @@ FAS-operations/
 │   ├── gateway/          # Task API 서버 (Express, SQLite) + 교차 승인
 │   ├── captain/          # 자율 활동 엔진 (Planning Loop, Feedback Extractor, Dynamic Discovery, Persona Injector, Telegram Commands)
 │   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
-│   ├── notification/     # Telegram Bot + Slack 알림 모듈
-│   ├── watchdog/         # 출력 감시 데몬 + 헌터 heartbeat 모니터
-│   └── shared/           # 공유 타입 정의 + agents.yml 로더
+│   ├── pipeline/         # 데이터 파이프라인 (AI 트렌드, 블라인드, 대학원 추적, Lighthouse, B2B)
+│   ├── notification/     # Telegram Bot + Slack + Notion + Resilient Sender 자동 큐잉
+│   ├── watchdog/         # 출력 감시 + 헌터 모니터 + 리소스/AI사용량 통합 모니터
+│   └── shared/           # 공유 타입, agents.yml 로더, local_queue, resilient_sender
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
 │   ├── deploy/           # 헌터 배포 (소스코드 격리) + 배포 검증
@@ -336,12 +337,12 @@ launchctl load ~/Library/LaunchAgents/com.fas.awake.plist
 |--------|------|------|------|------|
 | 창업지원사업 신규 공고 수집 | 3일 | hunter | 02:00 | `web_crawl` |
 | 청약홈 로또 청약 심층 필터링 | 3일 | hunter | 02:30 | `chatgpt_task` |
-| 블라인드 네이버 인기글 | 매일 | hunter | 03:00 | `web_crawl` |
+| 블라인드 네이버 인기글 | 매일 | hunter | 03:00 | `chatgpt_task` |
 | 블라인드 NVC 수요 검증 모니터링 | 매일 | hunter | 03:15 | `chatgpt_task` |
-| AI 트렌드 리서치 | 매일 | gemini_a | 01:00 | `research` |
+| AI 트렌드 리서치 | 매일 | hunter | 01:00 | `chatgpt_task` (+ 캡틴 직접 파서) |
 | 글로벌 빅테크 원격 커리어 스캐닝 | 3일 | hunter | 03:30 | `chatgpt_task` |
 | 에듀테크 경쟁사 딥 리서치 | 주간 (수) | hunter | 02:00 | `chatgpt_task` |
-| 대학원 지원 일정 | 주간 (월) | gemini_a | 04:00 | `research` |
+| 대학원 지원 일정 | 주간 (월) | hunter | 04:00 | `chatgpt_task` (+ 캡틴 마감 트래커) |
 
 > 상세 구축 순서는 [PLAN.md](./PLAN.md), 기술 명세는 [SPEC.md](./SPEC.md) 참조
 
