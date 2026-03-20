@@ -1,0 +1,147 @@
+{
+  "name": "FAS Task Result Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-result",
+        "responseMode": "lastNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: Task Result",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and validate task result fields\nconst body = $input.first().json.body || $input.first().json;\n\nconst task_id = body.task_id || '';\nconst result_type = body.result_type || 'done';\nconst title = body.title || 'Unknown task';\nconst summary = body.summary || '';\n\n// Determine routing channel\nlet channel = '#fas-general';\nlet severity = 'low';\nlet emoji = '\u2705';\n\nswitch (result_type) {\n  case 'crawl':\n    channel = '#crawl-results';\n    emoji = '\ud83d\udd0d';\n    break;\n  case 'error':\n    channel = '#alerts';\n    severity = 'high';\n    emoji = '\u274c';\n    break;\n  case 'discovery':\n    channel = '#ideas';\n    severity = 'mid';\n    emoji = '\ud83d\udca1';\n    break;\n  case 'blocked':\n    channel = '#alerts';\n    severity = 'mid';\n    emoji = '\ud83d\udeab';\n    break;\n  case 'done':\n    channel = '#fas-general';\n    emoji = '\u2705';\n    break;\n}\n\nreturn [{\n  json: {\n    task_id,\n    result_type,\n    title,\n    summary,\n    channel,\n    severity,\n    emoji,\n    formatted_message: `${emoji} *[${result_type.toUpperCase()}]* ${title}\\n${summary.slice(0, 500)}${summary.length > 500 ? '...' : ''}`\n  }\n}];"
+      },
+      "id": "parse-result",
+      "name": "Parse & Route",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "value": "crawl", "output": 0 },
+            { "value": "error", "output": 1 },
+            { "value": "discovery", "output": 2 }
+          ]
+        },
+        "fallbackOutput": 3,
+        "dataType": "string",
+        "value1": "={{ $json.result_type }}"
+      },
+      "id": "switch-type",
+      "name": "Switch Result Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/n8n/task-result-webhook",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "task_id", "value": "={{ $json.task_id }}" },
+            { "name": "result_type", "value": "crawl" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "summary", "value": "={{ $json.summary }}" }
+          ]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "route-crawl",
+      "name": "Route: Crawl Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 150],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/n8n/task-result-webhook",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "task_id", "value": "={{ $json.task_id }}" },
+            { "name": "result_type", "value": "error" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "summary", "value": "={{ $json.summary }}" }
+          ]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "route-error",
+      "name": "Route: Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/n8n/task-result-webhook",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "task_id", "value": "={{ $json.task_id }}" },
+            { "name": "result_type", "value": "discovery" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "summary", "value": "={{ $json.summary }}" }
+          ]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "route-discovery",
+      "name": "Route: Discovery → Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 450],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/n8n/task-result-webhook",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "task_id", "value": "={{ $json.task_id }}" },
+            { "name": "result_type", "value": "done" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "summary", "value": "={{ $json.summary }}" }
+          ]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "route-default",
+      "name": "Route: Default Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 600],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook: Task Result": { "main": [[{ "node": "Parse & Route", "type": "main", "index": 0 }]] },
+    "Parse & Route": { "main": [[{ "node": "Switch Result Type", "type": "main", "index": 0 }]] },
+    "Switch Result Type": {
+      "main": [
+        [{ "node": "Route: Crawl Result", "type": "main", "index": 0 }],
+        [{ "node": "Route: Error Alert", "type": "main", "index": 0 }],
+        [{ "node": "Route: Discovery → Telegram", "type": "main", "index": 0 }],
+        [{ "node": "Route: Default Done", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [{ "name": "fas-core" }]
+}

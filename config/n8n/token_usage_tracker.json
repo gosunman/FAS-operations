@@ -4,14 +4,33 @@
     {
       "parameters": {
         "rule": {
-          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
         }
       },
-      "id": "schedule-trigger",
-      "name": "Every Hour",
+      "id": "cron-daily",
+      "name": "Daily at 06:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
       "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GATEWAY_URL || 'http://host.docker.internal:3100' }}/api/n8n/metrics",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetch-metrics",
+      "name": "Fetch Gateway Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300],
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -21,18 +40,18 @@
       "name": "Collect Token Usage",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [460, 300],
+      "position": [460, 500],
       "continueOnFail": true
     },
     {
       "parameters": {
-        "functionCode": "// Parse usage data and check thresholds\nconst raw = $input.first().json.stdout || '{}';\nlet usage;\ntry {\n  usage = JSON.parse(raw);\n} catch {\n  usage = { date: new Date().toISOString().slice(0, 10), claude_requests: 0, gemini_requests: 0 };\n}\n\n// Daily limits (configurable via env)\nconst CLAUDE_DAILY_LIMIT = parseInt($env.CLAUDE_DAILY_LIMIT || '1000');\nconst GEMINI_DAILY_LIMIT = parseInt($env.GEMINI_DAILY_LIMIT || '500');\n\nconst claude_pct = (usage.claude_requests / CLAUDE_DAILY_LIMIT) * 100;\nconst gemini_pct = (usage.gemini_requests / GEMINI_DAILY_LIMIT) * 100;\n\nconst alerts = [];\nif (claude_pct > 80) alerts.push(`Claude: ${usage.claude_requests}/${CLAUDE_DAILY_LIMIT} (${claude_pct.toFixed(0)}%)`);\nif (gemini_pct > 80) alerts.push(`Gemini: ${usage.gemini_requests}/${GEMINI_DAILY_LIMIT} (${gemini_pct.toFixed(0)}%)`);\n\nreturn [{\n  json: {\n    ...usage,\n    claude_pct: claude_pct.toFixed(1),\n    gemini_pct: gemini_pct.toFixed(1),\n    has_warning: alerts.length > 0,\n    warning_message: alerts.length > 0 ? `⚠️ Token Usage Warning:\\n${alerts.join('\\n')}` : ''\n  }\n}];"
+        "functionCode": "// Combine metrics from Gateway API and local logs\nconst metrics = $node['Fetch Gateway Metrics'].json || {};\nconst logRaw = $node['Collect Token Usage'].json.stdout || '{}';\nlet logUsage;\ntry {\n  logUsage = JSON.parse(logRaw);\n} catch {\n  logUsage = { claude_requests: 0, gemini_requests: 0 };\n}\n\n// Task stats from Gateway\nconst tasks = metrics.tasks || { pending: 0, in_progress: 0, done: 0, blocked: 0 };\nconst mode = metrics.mode || { current_mode: 'unknown' };\n\n// Token usage thresholds\nconst CLAUDE_DAILY_LIMIT = parseInt($env.CLAUDE_DAILY_LIMIT || '1000');\nconst GEMINI_DAILY_LIMIT = parseInt($env.GEMINI_DAILY_LIMIT || '500');\n\nconst claude_pct = (logUsage.claude_requests / CLAUDE_DAILY_LIMIT) * 100;\nconst gemini_pct = (logUsage.gemini_requests / GEMINI_DAILY_LIMIT) * 100;\n\n// Generate alerts based on thresholds\nconst alerts = [];\nconst suggestions = [];\n\n// Over 80% usage alert\nif (claude_pct > 80) alerts.push(`Claude: ${logUsage.claude_requests}/${CLAUDE_DAILY_LIMIT} (${claude_pct.toFixed(0)}%)`);\nif (gemini_pct > 80) alerts.push(`Gemini: ${logUsage.gemini_requests}/${GEMINI_DAILY_LIMIT} (${gemini_pct.toFixed(0)}%)`);\n\n// Under 30% usage — suggest more tasks\nif (claude_pct < 30 && tasks.pending === 0) {\n  suggestions.push('Claude usage < 30% and no pending tasks. Consider scheduling more work.');\n}\nif (gemini_pct < 30 && tasks.pending === 0) {\n  suggestions.push('Gemini usage < 30% and no pending tasks. Resources are underutilized.');\n}\n\nconst has_alert = alerts.length > 0;\nconst has_suggestion = suggestions.length > 0;\n\nlet message = `\ud83d\udcca *[Daily Usage Report]*\\n`;\nmessage += `Mode: ${mode.current_mode}\\n`;\nmessage += `Tasks — Done: ${tasks.done} | Pending: ${tasks.pending} | Blocked: ${tasks.blocked}\\n`;\nmessage += `Claude: ${logUsage.claude_requests}/${CLAUDE_DAILY_LIMIT} (${claude_pct.toFixed(0)}%)\\n`;\nmessage += `Gemini: ${logUsage.gemini_requests}/${GEMINI_DAILY_LIMIT} (${gemini_pct.toFixed(0)}%)`;\n\nif (has_alert) message += `\\n\\n\u26a0\ufe0f *High Usage:* ${alerts.join(', ')}`;\nif (has_suggestion) message += `\\n\\n\ud83d\udca1 *Suggestion:* ${suggestions.join('. ')}`;\n\nreturn [{\n  json: {\n    message,\n    has_alert,\n    has_suggestion,\n    claude_pct: claude_pct.toFixed(1),\n    gemini_pct: gemini_pct.toFixed(1),\n    tasks,\n    mode: mode.current_mode\n  }\n}];"
       },
-      "id": "analyze-usage",
-      "name": "Analyze Usage",
+      "id": "analyze-combined",
+      "name": "Analyze Usage + Metrics",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [680, 300]
+      "position": [720, 400]
     },
     {
       "parameters": {
@@ -42,24 +61,24 @@
       "name": "Log Usage",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [900, 200]
+      "position": [960, 300]
     },
     {
       "parameters": {
         "conditions": {
           "boolean": [
             {
-              "value1": "={{ $json.has_warning }}",
+              "value1": "={{ $json.has_alert }}",
               "value2": true
             }
           ]
         }
       },
-      "id": "if-warning",
-      "name": "Over Threshold?",
+      "id": "if-alert",
+      "name": "High Usage?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [900, 400]
+      "position": [960, 450]
     },
     {
       "parameters": {
@@ -67,15 +86,15 @@
         "method": "POST",
         "bodyParametersUi": {
           "parameter": [
-            { "name": "text", "value": "={{ $json.warning_message }}" }
+            { "name": "text", "value": "={{ $json.message }}" }
           ]
         }
       },
-      "id": "slack-warn",
-      "name": "Slack Warning",
+      "id": "slack-report",
+      "name": "Slack: Daily Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 350]
+      "position": [960, 600]
     },
     {
       "parameters": {
@@ -84,24 +103,80 @@
         "bodyParametersUi": {
           "parameter": [
             { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
-            { "name": "text", "value": "={{ $json.warning_message }}" }
+            { "name": "text", "value": "={{ $json.message }}" },
+            { "name": "parse_mode", "value": "Markdown" }
           ]
         }
       },
-      "id": "telegram-warn",
-      "name": "Telegram Warning",
+      "id": "telegram-alert",
+      "name": "Telegram: High Usage Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 500]
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_suggestion }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-underused",
+      "name": "Underutilized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1200, 550]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "text", "value": "=\ud83d\udca1 *[Resource Underutilized]*\nClaude: {{ $json.claude_pct }}% | Gemini: {{ $json.gemini_pct }}%\nConsider scheduling additional tasks to maximize resource usage." }
+          ]
+        }
+      },
+      "id": "slack-suggest",
+      "name": "Slack: Suggest More Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1440, 500]
     }
   ],
   "connections": {
-    "Every Hour": { "main": [[{ "node": "Collect Token Usage", "type": "main", "index": 0 }]] },
-    "Collect Token Usage": { "main": [[{ "node": "Analyze Usage", "type": "main", "index": 0 }]] },
-    "Analyze Usage": { "main": [[{ "node": "Log Usage", "type": "main", "index": 0 }, { "node": "Over Threshold?", "type": "main", "index": 0 }]] },
-    "Over Threshold?": {
+    "Daily at 06:00": {
       "main": [
-        [{ "node": "Slack Warning", "type": "main", "index": 0 }, { "node": "Telegram Warning", "type": "main", "index": 0 }],
+        [
+          { "node": "Fetch Gateway Metrics", "type": "main", "index": 0 },
+          { "node": "Collect Token Usage", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Gateway Metrics": { "main": [[{ "node": "Analyze Usage + Metrics", "type": "main", "index": 0 }]] },
+    "Collect Token Usage": { "main": [[{ "node": "Analyze Usage + Metrics", "type": "main", "index": 0 }]] },
+    "Analyze Usage + Metrics": {
+      "main": [
+        [
+          { "node": "Log Usage", "type": "main", "index": 0 },
+          { "node": "High Usage?", "type": "main", "index": 0 },
+          { "node": "Slack: Daily Report", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "High Usage?": {
+      "main": [
+        [{ "node": "Telegram: High Usage Alert", "type": "main", "index": 0 }],
+        [{ "node": "Underutilized?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Underutilized?": {
+      "main": [
+        [{ "node": "Slack: Suggest More Tasks", "type": "main", "index": 0 }],
         []
       ]
     }
