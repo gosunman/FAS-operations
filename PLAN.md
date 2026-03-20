@@ -334,12 +334,16 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] 교재 디자인: 검정/골드/화이트 (EIDOS SCIENCE 브랜드)
 - [ ] 주인님 검수 → 최종 PDF 생성
 
-### 5-2. 학생 데이터 관리
+### 5-2. 학생 데이터 관리 — 구현 완료 ✅
 
-- [ ] 학생별 프로필: 학년, 반, 성적 이력, 특이사항
-- [ ] 시험 결과 자동 기록 & 성적 추이 분석
-- [ ] 학생별 강약점 리포트 자동 생성
-- [ ] (TODO: 상세 데이터 항목 확정)
+- [x] 학생별 프로필 CRUD — `src/academy/student_store.ts` (2026-03-21)
+  - [x] 파일 기반 JSON 저장 (MongoDB 교체 가능한 인터페이스)
+  - [x] 학생 생성/조회/수정/삭제 + 필터링 (학년/반 유형)
+- [x] 시험 결과 자동 기록 & 성적 추이 분석
+  - [x] `record_score`, `get_score_history` (과목별 필터)
+  - [x] `analyze_trends`: 선형회귀 기반 추세 분석 (improving/declining/stable)
+- [x] 학생별 강약점 리포트 자동 생성
+  - [x] `generate_student_report`: 과목별 강점/약점 + 추천사항
 
 ### 5-3. 수업 후 학부모 문자 자동 생성 — 초안 생성 구현 완료 ✅
 
@@ -358,7 +362,10 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `format_test_sheet`: EIDOS SCIENCE 인쇄용 포맷
   - [x] `format_answer_key`: 정답 그리드 + 해설
   - [x] `validate_test`: 구조 무결성 검증
-- [ ] PDF 포맷 출력
+- [x] PDF 포맷 출력 — `src/academy/pdf_generator.ts` (2026-03-21)
+  - [x] PDFKit 기반 A4 레이아웃, EIDOS SCIENCE 브랜딩
+  - [x] 한국어 NotoSansKR 폰트 지원
+  - [x] 시험지 + 정답지 + combined 생성
 
 ---
 
@@ -446,10 +453,12 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 ## Phase 7: 안정화 + 모니터링 고도화
 
-### 7-1. 로깅 & 감사
+### 7-1. 로깅 & 감사 — 구현 완료 ✅
 
-- [ ] 모든 에이전트 활동 로그: `logs/{agent}/{date}.log`
-- [ ] 승인 이력: `logs/approvals/{date}.json`
+- [x] 파일 기반 활동 로그 — `src/watchdog/file_logger.ts` (2026-03-21)
+  - [x] 에이전트별 로그: `logs/{agent}/{date}.log`
+  - [x] 승인 감사 로그: `logs/approvals/{date}.json` (JSONL)
+  - [x] 30일 자동 정리 (log rotation)
 - [ ] Slack 채널별 자동 로그 전송
 
 ### 7-2. 리소스 모니터링
@@ -461,10 +470,13 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 사용량 부족 시 → 추가 태스크 자동 배정
   - 한도 초과 임박 시 → Telegram 알림 + 플랜 업그레이드 제안
 
-### 7-3. 장애 대응
+### 7-3. 장애 대응 — 크래시 복구 구현 완료 ✅
 
-- [ ] 에이전트 크래시 → 자동 재시작 (3회까지)
-- [ ] 3회 실패 → 인간 알림 + 해당 에이전트 격리
+- [x] 에이전트 크래시 모니터 — `src/watchdog/crash_recovery.ts` (2026-03-21)
+  - [x] 크래시 기록 + 자동 재시작 (3회까지)
+  - [x] 3회 초과 → 재시작 차단 (격리)
+  - [x] `state/crash_history.json`에 영구 저장
+- [ ] 크래시 시 인간 알림 (Telegram) 연동
 - [ ] 네트워크 단절 → 로컬 큐에 쌓아두고 복구 후 재개
 
 ### 7-3b. 데이터 내구성
@@ -478,12 +490,16 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] 백업 무결성 검증 — `scripts/verify_backup_integrity.ts` (2026-03-21)
   - [x] integrity_check, task count 비교, CLI 실행 가능
 
-### 7-4. 보안
+### 7-4. 보안 — API 화이트리스트 + PII 모니터 구현 완료 ✅
 
 - [ ] API 키 관리: macOS Keychain 또는 1Password CLI
-- [ ] 헌터 격리 유지 확인 (개인정보 유입 모니터링)
-- [ ] 민감 정보 접근 로그 기록
-- [ ] 외부 API 호출 화이트리스트
+- [x] 헌터 격리 유지 확인 — `src/gateway/pii_monitor.ts` (2026-03-21)
+  - [x] 기존 sanitizer.ts PII 패턴 재활용
+  - [x] 헌터 바운드 데이터 PII 탐지 + 콜백 감사 로깅
+- [x] 민감 정보 접근 로그 기록 — pii_monitor + file_logger 연동
+- [x] 외부 API 호출 화이트리스트 — `src/gateway/api_whitelist.ts` (2026-03-21)
+  - [x] 도메인/경로 기반 허용 목록 (Telegram/Slack/Notion/K-Startup 등)
+  - [x] 승인 요구 여부 + 리스크 레벨 포함
 
 ---
 
