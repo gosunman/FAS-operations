@@ -111,6 +111,17 @@ schedules:
     action: chatgpt_task
     description: "조지아텍 OMSCS, 서울대 GSEP 지원 일정/준비물/마감일 추적"
 
+  b2b_intent_crawl:
+    title: "글로벌 B2B 타겟 인텐트 크롤링 및 Clay 적재"
+    type: daily
+    time: "04:30"
+    mode: sleep
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: b2b_intent_crawl
+    description: "타겟 도메인 크롤링 후 OpenClaw로 인텐트 추출 및 Clay.com 자동 전송"
+
   # === System workflows (no agent — triggered by cron/launchd) ===
 
   morning_briefing:
