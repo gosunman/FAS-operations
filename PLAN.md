@@ -159,9 +159,11 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - 캡틴 main.ts에 통합, graceful shutdown 포함
 - [x] 활동 로거 — `src/watchdog/activity_logger.ts`
 - [x] 리소스 모니터 — `src/watchdog/resource_monitor.ts`
-- [ ] n8n 워크플로우 통합 (Phase 2 후반):
-  - [ ] 마스터 오케스트레이션 워크플로우
-  - [ ] AI 토큰 사용량 추적 워크플로우
+- [x] n8n 워크플로우 통합 (Phase 2 후반): (2026-03-21)
+  - [x] 마스터 오케스트레이션 워크플로우 — `config/n8n/master_orchestration.json` (Cron 기반 모드 전환 + planning loop)
+  - [x] AI 토큰 사용량 추적 워크플로우 — `config/n8n/token_usage_tracker.json` (Daily 06:00)
+  - [x] 태스크 결과 라우팅 — `config/n8n/task_result_router.json` (신규)
+  - [x] n8n webhook 연동 — `src/gateway/n8n_webhooks.ts` (4개 엔드포인트)
 
 ### 2-3. 할루시네이션 방지 파이프라인
 
@@ -248,19 +250,28 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 - [x] launchd 크론 트리거: 23:00 → SLEEP (`com.fas.sleep.plist`), 07:30 → AWAKE (`com.fas.awake.plist`)
 - [x] `scripts/mode_switch.sh` — Gateway API 호출로 모드 전환 + 로깅
-- [ ] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프
+- [x] 모드 전환 시 현재 작업 저장 + 컨텍스트 핸드오프 — `src/captain/context_handoff.ts` (2026-03-21)
+  - [x] HandoffStore: 파일 기반 JSON 스냅샷 저장/복원 (30개 retention)
+  - [x] build_snapshot: TaskStore → HandoffSnapshot 생성
+  - [x] format_briefing: SLEEP↔AWAKE 전환 브리핑 포맷
 
 ---
 
 ## Phase 4: 반복 태스크 자동화
 
-### 4-1. 창업지원사업 정보 수집 (3일 주기)
+### 4-1. 창업지원사업 정보 수집 (3일 주기) — 파서 구현 완료 ✅
 
-- [ ] 크롤링 대상:
-  - **정부**: K-Startup (k-startup.go.kr), 창업진흥원, 중소벤처기업부, 서울산업진흥원 (SBA)
-  - **민간**: Google for Startups (startup.google.com), D.CAMP (dcamp.kr), 기타 규모 있는 민간 프로그램
-- [ ] 신규 공고 감지 → 자격 자동 매칭 (주인님 프로필 기반)
-- [ ] 마감일 D-7, D-3, D-1 알림 (Telegram 긴급)
+- [x] K-Startup 구조화 파서 — `src/hunter/startup_grants.ts` (2026-03-21)
+  - [x] `parse_grant_announcements`: HTML 테이블 파싱
+  - [x] `detect_new_grants`: seen_grants.json 기반 신규 감지
+  - [x] `match_grant_to_profile`: 자격 자동 매칭 (high/medium/low/skip)
+  - [x] `calculate_deadline_alerts`: D-7/D-3/D-1 마감 알림
+  - [x] `generate_grant_report`: 구조화 리포트
+  - [x] `handle_web_crawl` 통합: k-startup URL 자동 분기
+- [ ] 크롤링 대상 확장:
+  - **정부**: 창업진흥원, 중소벤처기업부, 서울산업진흥원 (SBA)
+  - **민간**: Google for Startups (startup.google.com), D.CAMP (dcamp.kr)
+- [ ] 마감일 알림 → Telegram 연동
 - [ ] 보고서 → Notion 페이지 생성 → Slack 전달
 
 ### 4-2. 로또 청약 정보 수집 (3일 주기)
@@ -330,18 +341,23 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [ ] 학생별 강약점 리포트 자동 생성
 - [ ] (TODO: 상세 데이터 항목 확정)
 
-### 5-3. 수업 후 학부모 문자 자동 생성
+### 5-3. 수업 후 학부모 문자 자동 생성 — 초안 생성 구현 완료 ✅
 
-- [ ] AI가 기존 학생 데이터(성적 추이, 출결, 지난 메모) 기반으로 **선제적 초안 자동 생성**
-- [ ] 주인님은 수업 후 키워드만 추가 입력 → 초안 보강 → 승인(Yes/No)만
-- [ ] 톤: 정중하고 전문가적이면서 학생을 애정하는 느낌
-- [ ] 발송: 문자 발송 API (알리고 등) 또는 Google Messages 웹
+- [x] 템플릿 기반 초안 자동 생성 — `src/academy/parent_message.ts` (2026-03-21)
+  - [x] `generate_parent_message`: 학생 컨텍스트 + 키워드 → 200-500자 메시지
+  - [x] `apply_tone_rules`: formal/caring/enthusiastic 톤 변환
+  - [x] `validate_message`: 글자수/섹션/부적절 표현 검증
+  - [x] 반 유형별(일반/오금고/의대) 맞춤 문구
+- [ ] 발송: 문자 발송 API (알리고 등) 또는 Google Messages 웹 연동
 
-### 5-4. 주간 테스트 생성 자동화
+### 5-4. 주간 테스트 생성 자동화 — 생성기 구현 완료 ✅
 
-- [ ] 과목/단원 지정 → 객관식 위주 시험지 자동 생성
-- [ ] 난이도 조절: 일반반 / 오금고반 / 의대반
-- [ ] 정답지 + 해설 자동 생성
+- [x] 객관식 시험지 생성 — `src/academy/test_generator.ts` (2026-03-21)
+  - [x] `create_question_bank`: 물리/역학 28문항 (난이도별)
+  - [x] `generate_test`: 난이도 필터링 + 셔플 + 메타데이터
+  - [x] `format_test_sheet`: EIDOS SCIENCE 인쇄용 포맷
+  - [x] `format_answer_key`: 정답 그리드 + 해설
+  - [x] `validate_test`: 구조 무결성 검증
 - [ ] PDF 포맷 출력
 
 ---
@@ -455,8 +471,12 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 
 - [x] 태스크 결과 Notion 백업 파이프라인 구현 — `server.ts`에서 fire-and-forget
 - [ ] Notion DB 생성 + API Key 설정 (인간 작업)
-- [ ] SQLite 정기 백업 (cron → iCloud or 외부 스토리지)
-- [ ] 백업 무결성 검증 스크립트 (Notion에 저장된 수 vs SQLite 완료 수 비교)
+- [x] SQLite 정기 백업 — `scripts/backup_sqlite.sh` + `com.fas.sqlite-backup.plist` (2026-03-21)
+  - [x] WAL-safe sqlite3 .backup → iCloud + 외장 6TB
+  - [x] 30일 retention, 자동 정리
+  - [x] launchd daily 04:00 트리거
+- [x] 백업 무결성 검증 — `scripts/verify_backup_integrity.ts` (2026-03-21)
+  - [x] integrity_check, task count 비교, CLI 실행 가능
 
 ### 7-4. 보안
 
