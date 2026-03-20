@@ -1,27 +1,47 @@
 # n8n Workflow Configuration
 
-FAS n8n 워크플로우 JSON 백업 디렉토리.
+FAS n8n workflow JSON backup directory.
 
 ## Workflows
 
-| File | Purpose | Trigger |
-|------|---------|---------|
-| `master_orchestration.json` | Task 생성 → 에이전트 배정 → 알림 | Webhook (POST /webhook/new-task) |
-| `health_check.json` | Gateway + Hunter 헬스체크 | 5분마다 |
-| `resource_monitor.json` | CPU/RAM/Disk 모니터링 | 10분마다 |
-| `token_usage_tracker.json` | Claude/Gemini 토큰 사용량 추적 | 1시간마다 |
-| `mentor_recruitment_monitor.json` | 멘토 공고 크롤링 → 키워드 감지 → 텔레그램 알림 | 매일 09:00 KST |
+| File | Purpose | Trigger | Gateway Endpoints |
+|------|---------|---------|-------------------|
+| `master_orchestration.json` | Cron-based mode transition + planning loop invocation | Cron: 07:30 (morning), 23:00 (night) | `POST /api/mode`, `POST /api/n8n/planning/morning`, `POST /api/n8n/planning/night` |
+| `health_check.json` | Gateway health monitoring with failure tracking and recovery alerts | Every 5 minutes | `GET /api/health` |
+| `task_result_router.json` | Routes task results to appropriate notification channels | Webhook (POST /webhook/task-result) | `POST /api/n8n/task-result-webhook` |
+| `token_usage_tracker.json` | Daily usage report + high usage alerts + underutilization suggestions | Daily at 06:00 KST | `GET /api/n8n/metrics` |
+| `resource_monitor.json` | CPU/RAM/Disk monitoring | Every 10 minutes | - |
+| `mentor_recruitment_monitor.json` | Mentor program crawling + keyword detection + Telegram alert | Daily at 09:00 KST | - |
 
-## Import 방법
+## Architecture
 
-1. n8n UI 접속: `http://localhost:5678`
-2. 좌측 메뉴 → Workflows → Import from File
-3. JSON 파일 선택
-4. 환경변수 설정 (Settings → Environment Variables)
+```
+n8n Cron (07:30) ─→ POST /api/mode {awake} ─→ POST /api/n8n/planning/morning ─→ Slack briefing
+n8n Cron (23:00) ─→ POST /api/mode {sleep} ─→ POST /api/n8n/planning/night   ─→ Slack summary
+n8n Cron (5min)  ─→ GET /api/health ─→ if fail >= 3 ─→ Telegram critical alert
+n8n Webhook      ─→ POST /api/n8n/task-result-webhook ─→ crawl→Slack, error→Slack#alerts, discovery→Telegram
+n8n Cron (06:00) ─→ GET /api/n8n/metrics ─→ usage > 80% → Telegram, usage < 30% → Slack suggest
+```
 
-## 환경변수
+## Gateway Webhook Endpoints (n8n Integration)
 
-docker-compose.yml의 `.env`에서 주입:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/n8n/planning/morning` | POST | Trigger morning planning loop — creates tasks from schedules.yml |
+| `/api/n8n/planning/night` | POST | Trigger night planning — daily summary + Gemini discovery |
+| `/api/n8n/task-result-webhook` | POST | Receive task result notification, route to appropriate channel |
+| `/api/n8n/metrics` | GET | System metrics: task counts, mode state, timestamp |
+
+## Import
+
+1. Access n8n UI: `http://localhost:5678`
+2. Left menu -> Workflows -> Import from File
+3. Select JSON file
+4. Configure environment variables (Settings -> Environment Variables)
+
+## Environment Variables
+
+Injected from `.env` via docker-compose.yml:
 
 | Variable | Description |
 |----------|-------------|
@@ -34,6 +54,6 @@ docker-compose.yml의 `.env`에서 주입:
 
 ## Credentials
 
-| Name | Type | ID | 비고 |
+| Name | Type | ID | Note |
 |------|------|----|------|
-| Telegram Bot | telegramApi | 57R5OYW9j6khyUXW | FAS 봇 토큰, Mentor Monitor에서 사용 |
+| Telegram Bot | telegramApi | 57R5OYW9j6khyUXW | FAS bot token, used by Mentor Monitor |

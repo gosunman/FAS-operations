@@ -47,7 +47,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Track consecutive failures in static data\nconst staticData = $getWorkflowStaticData('global');\nstaticData.failCount = (staticData.failCount || 0) + 1;\nstaticData.lastFailure = new Date().toISOString();\n\nconst failCount = staticData.failCount;\nconst isCritical = failCount >= 3;\n\nreturn [{\n  json: {\n    failCount,\n    isCritical,\n    lastFailure: staticData.lastFailure,\n    message: isCritical\n      ? `🔴 CRITICAL: Gateway health check failed ${failCount} times in a row!`\n      : `⚠️ Gateway health check failed (attempt ${failCount}/3)`\n  }\n}];"
+        "functionCode": "// Track consecutive failures in static data\nconst staticData = $getWorkflowStaticData('global');\nstaticData.failCount = (staticData.failCount || 0) + 1;\nstaticData.lastFailure = new Date().toISOString();\n\nconst failCount = staticData.failCount;\nconst isCritical = failCount >= 3;\n\nreturn [{\n  json: {\n    failCount,\n    isCritical,\n    lastFailure: staticData.lastFailure,\n    message: isCritical\n      ? `\ud83d\udd34 CRITICAL: Gateway down for ${failCount * 5} minutes! (${failCount} consecutive failures)`\n      : `\u26a0\ufe0f Gateway health check failed (attempt ${failCount}/3)`\n  }\n}];"
       },
       "id": "track-failures",
       "name": "Track Failures",
@@ -57,7 +57,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Reset failure counter on success\nconst staticData = $getWorkflowStaticData('global');\nstaticData.failCount = 0;\nreturn [{ json: { status: 'healthy', resetAt: new Date().toISOString() } }];"
+        "functionCode": "// Reset failure counter on success\nconst staticData = $getWorkflowStaticData('global');\nconst previousFailCount = staticData.failCount || 0;\nstaticData.failCount = 0;\nreturn [{ json: { status: 'healthy', resetAt: new Date().toISOString(), previousFailCount } }];"
       },
       "id": "reset-counter",
       "name": "Reset Counter",
@@ -95,7 +95,7 @@
         }
       },
       "id": "telegram-alert",
-      "name": "Telegram Alert",
+      "name": "Telegram: Critical Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [1340, 350]
@@ -111,10 +111,53 @@
         }
       },
       "id": "slack-warn",
-      "name": "Slack Warning",
+      "name": "Slack: Warning",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log recovery if we had previous failures\nconst previousFailCount = $json.previousFailCount || 0;\nif (previousFailCount > 0) {\n  return [{ json: { shouldNotify: true, message: `\u2705 Gateway recovered after ${previousFailCount} failures` } }];\n}\nreturn [{ json: { shouldNotify: false } }];"
+      },
+      "id": "check-recovery",
+      "name": "Check Recovery",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldNotify }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-recovery",
+      "name": "Notify Recovery?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            { "name": "text", "value": "={{ $json.message }}" }
+          ]
+        }
+      },
+      "id": "slack-recovery",
+      "name": "Slack: Recovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 150]
     }
   ],
   "connections": {
@@ -129,8 +172,16 @@
     "Track Failures": { "main": [[{ "node": "Is Critical?", "type": "main", "index": 0 }]] },
     "Is Critical?": {
       "main": [
-        [{ "node": "Telegram Alert", "type": "main", "index": 0 }],
-        [{ "node": "Slack Warning", "type": "main", "index": 0 }]
+        [{ "node": "Telegram: Critical Alert", "type": "main", "index": 0 }],
+        [{ "node": "Slack: Warning", "type": "main", "index": 0 }]
+      ]
+    },
+    "Reset Counter": { "main": [[{ "node": "Check Recovery", "type": "main", "index": 0 }]] },
+    "Check Recovery": { "main": [[{ "node": "Notify Recovery?", "type": "main", "index": 0 }]] },
+    "Notify Recovery?": {
+      "main": [
+        [{ "node": "Slack: Recovery", "type": "main", "index": 0 }],
+        []
       ]
     }
   },
