@@ -37,6 +37,7 @@ import { sanitize_task, contains_pii, contains_critical_pii, sanitize_text, dete
 import { create_local_queue, type LocalQueue } from '../watchdog/local_queue.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import { create_cross_approval, type CrossApproval } from './cross_approval.js';
+import { create_security_validator } from './security_validator.js';
 import { create_mode_manager, type ModeManager, type ModeManagerConfig } from './mode_manager.js';
 import type { Request, Response, NextFunction } from 'express';
 import { FASError } from '../shared/types.js';
@@ -225,6 +226,9 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
 
   const max_output_length = options.max_output_length ?? DEFAULT_MAX_OUTPUT_LENGTH;
   const max_files_count = options.max_files_count ?? DEFAULT_MAX_FILES_COUNT;
+
+  // Security validator — 5-step inspection protocol (Steps 1,2,4,5)
+  const security_validator = create_security_validator();
 
   // === Hunter API key authentication middleware ===
   // Defense in Depth: even with Tailscale network auth, require app-level key
@@ -467,7 +471,45 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       }
     }
 
-    // --- PII quarantine check ---
+    // --- Security validation (5-step protocol: Steps 1,2,4,5) ---
+    // Must run BEFORE PII check — quarantine malicious payloads regardless of PII content
+    const combined_text = [output, ...(files ?? [])].filter(Boolean).join(' ');
+    const security_result = security_validator.validate_hunter_output(combined_text);
+
+    if (!security_result.is_safe) {
+      const violation_summary = security_result.violations
+        .map(v => `${v.type}:${v.pattern_name}`)
+        .join(', ');
+
+      log.error(
+        `[SECURITY] Hunter task ${req.params.id} output contains security violations: ${violation_summary}`
+      );
+
+      store.quarantine_task(req.params.id, `Security violations: ${violation_summary}`,
+        security_result.violations.map(v => v.pattern_name));
+
+      // Telegram alert
+      if (options.notification_router) {
+        const alert_event: NotificationEvent = {
+          type: 'alert',
+          message: `🚨 *[SECURITY QUARANTINE]* 헌터 결과물에서 악의적 패턴 감지\n*유형:* ${violation_summary}\n*Task ID:* ${req.params.id}`,
+          device: 'captain',
+          severity: 'critical',
+        };
+        options.notification_router.route(alert_event).catch(() => {});
+      }
+
+      // Return 202 — hunter sees success, but captain quarantines
+      res.status(202).json({
+        ok: false,
+        quarantined: true,
+        reason: 'Security violations detected — quarantined for human review',
+        detected_types: security_result.violations.map(v => v.type),
+      });
+      return;
+    }
+
+    // --- PII quarantine check (Step 3) ---
     // Two-tier severity: critical PII → quarantine, warning PII → auto-sanitize and pass through
 
     let safe_output = output || (result_status === 'success' ? 'Completed' : 'Failed');
