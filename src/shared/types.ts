@@ -75,7 +75,8 @@ export type FASErrorCode =
   | 'NOTIFICATION_ERROR'
   | 'TIMEOUT'
   | 'CROSS_APPROVAL_REJECTED'
-  | 'MODE_VIOLATION';
+  | 'MODE_VIOLATION'
+  | 'SECURITY_VIOLATION';
 
 export class FASError extends Error {
   readonly code: FASErrorCode;
@@ -136,7 +137,8 @@ export type HunterActionType =
   | 'deep_research'
   | 'web_crawl'
   | 'browser_task'
-  | 'chatgpt_task';
+  | 'chatgpt_task'
+  | 'b2b_intent_crawl';
 
 export type HunterTaskResult = {
   status: 'success' | 'failure';
@@ -271,6 +273,36 @@ export type ApprovalRequest = {
   created_at: string;
   resolved_at?: string;
 };
+
+// === Security Validation Types (5-Step Protocol) ===
+
+export type SecurityViolationType =
+  | 'prompt_injection'
+  | 'malware'
+  | 'reverse_gathering'
+  | 'data_integrity';
+
+export type SecurityViolation = {
+  type: SecurityViolationType;
+  pattern_name: string;
+  match: string;
+};
+
+export type SecurityValidationResult = {
+  is_safe: boolean;
+  violations: SecurityViolation[];
+};
+
+// === B2B Marketing Pipeline Types ===
+
+export type B2BIntentData = {
+  domain: string;
+  extracted_intent: string;
+  ai_cold_email_draft: string;
+  crawled_timestamp: string;
+};
+
+// === Gateway Types ===
 
 export type HealthCheckResponse = {
   status: 'ok' | 'degraded' | 'down';
