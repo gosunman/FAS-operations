@@ -655,20 +655,37 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 
 ---
 
-## 잔여 작업 상세 (2026-03-21 기준)
+## 잔여 작업 상세 (2026-03-21 22:00 기준)
 
-> 이 세션에서 587→1006 테스트, 17개 신규 모듈을 구현했다.
-> 아래는 남은 74개 미완료 항목을 **실행 가능성 기준**으로 분류한 것이다.
+> 세션 1: 587→1006 테스트, 17개 신규 모듈 구현
+> 세션 2 (섀도우): 1006→1182 테스트, 8개 추가 모듈 + 헌터 초기 세팅 + 스크립트 버그 수정
+> 총 60개 테스트 파일, 1182개 테스트 통과. 캡틴/섀도우 모두 검증 완료.
+
+### ✅ 세션 2에서 완료한 것 (2026-03-21)
+
+- [x] 헌터 머신 초기 세팅 — 코드 배포, pnpm, Playwright, .env, Gemini CLI v0.34.0 + 계정 B 로그인
+- [x] verify_hunter.sh 실행 — 9 PASS / 0 FAIL
+- [x] Notion DB + API Key — 이미 캡틴에 설정 완료 확인
+- [x] LLM 문맥 PII 필터링 (`sanitizer.ts` Phase 2) — Gemini CLI 기반
+- [x] 청약홈 Notion/Telegram 알림 (`housing_notifier.ts`)
+- [x] NotebookLM 3차 검증 (`notebooklm_verify.ts` + factcheck 확장)
+- [x] 크롤러 확장 SBA/D.CAMP/MSS (`grant_parsers.ts`)
+- [x] 크래시 → Telegram 알림 실연동 (`main.ts` wiring)
+- [x] 리소스 모니터 → Telegram 알림 (`resource_monitor.ts` 확장)
+- [x] Deep Research 결과 구조화 저장 (`research_store.ts`)
+- [x] 네트워크 단절 → 로컬 큐 복구 (`local_queue.ts` + `resilient_sender.ts`)
+- [x] scan_hunter_pii.sh 버그 수정 (OWNER_PATTERNS unbound)
+- [x] verify_hunter.sh 헌터 IP 자동감지
 
 ### 🔴 인간 작업 (주인님 물리적 개입 필수)
 
 | 작업 | Phase | 비고 |
 |------|-------|------|
-| 헌터 머신 초기 세팅 (`setup_hunter.sh` 실행) | 0-5, 1-3 | 헌터에 SSH 접속 후 스크립트 실행 |
-| Gemini CLI 계정 인증 실행 | 1-2 | `setup_gemini_cli.sh` |
-| Thunderbolt 케이블 연결 + 검증 | 2-3 | 물리 작업 → `verify_cable_connection.sh`로 검증 |
+| ~~헌터 머신 초기 세팅~~ | ~~0-5~~ | ✅ 완료 |
+| ~~Gemini CLI 계정 인증~~ | ~~1-2~~ | ✅ 완료 |
+| ~~Notion DB + API Key~~ | ~~7-3b~~ | ✅ 이미 설정됨 |
+| Thunderbolt 케이블 연결 + 검증 | 2-3 | 주인님 준비되면. `verify_cable_connection.sh`로 검증 |
 | Crawl4AI Docker + Clay.com webhook 설정 | 6-0b | 헌터에서 Docker 실행 + URL 설정 |
-| Notion DB 생성 + API Key 설정 | 7-3b | Notion 웹에서 수동 |
 
 ### 🟡 주인님 판단 필요 (코딩은 가능하나 방향 확정 필요)
 
@@ -684,19 +701,16 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | 빅테크 취업 공고 조건 상세화 | 4-5 | 원격만? 한국만? 연봉 기준? |
 | API 키 관리 방식 | 7-4 | macOS Keychain vs 1Password CLI |
 
-### 🟢 AI 자율 실행 가능 (지시 시 바로 착수)
+### 🟢 AI 자율 실행 가능 (캡틴에서 바로 착수)
 
 | 작업 | Phase | 예상 시간 | 설명 |
 |------|-------|-----------|------|
-| 크래시 → Telegram 알림 실제 연동 | 7-3 | 30분 | alert_integration.ts의 crash bridge를 main.ts에 연결 |
-| 네트워크 단절 → 로컬 큐 복구 | 7-3 | 1시간 | local_queue.ts 활용, 복구 시 자동 replay |
-| 크롤러 대상 확장 (SBA, D.CAMP 등) | 4-1 | 1시간 | startup_grants.ts 패턴 복제 |
-| NotebookLM 3차 검증 연동 | 2-1 | 1시간 | factcheck에서 disagree 시 NotebookLM 호출 |
+| 블라인드 네이버 모니터링 | 4-3 | 1.5시간 | OpenClaw 검색엔진 우회 크롤러 |
+| AI 트렌드 리서치 실연동 | 4-4 | 1.5시간 | HN/Reddit/arxiv 파서 + 일일 리포트 |
+| 대학원 지원 일정 알림 | 4-6 | 1시간 | OMSCS/GSEP 마감 추적 |
 | Lighthouse SEO/성능 측정 | 4-8 | 1시간 | puppeteer + lighthouse 모듈 |
-| 디바이스 리소스 모니터링 확장 | 7-2 | 1시간 | resource_monitor → Telegram 알림 |
-| AI 토큰 사용량 추적 실 연동 | 7-2 | 1시간 | n8n token_tracker + 실제 API 연결 |
-| 청약홈 → Notion/Telegram 알림 | 4-2 | 30분 | grant_notifier 패턴 복제 |
-| Deep Research 결과 구조화 저장 | 2-3 | 1시간 | `research/` 디렉토리 + 인덱싱 |
+| AI 토큰 사용량 추적 실연동 | 7-2 | 1시간 | n8n token_tracker + 실제 API 연결 |
+| resilient_sender를 router.ts에 통합 | 7-3 | 30분 | 알림 전송 시 자동 큐잉 적용 |
 
 ### ⚪ 장기 과제 (Phase 6 사업화 — 별도 프로젝트급)
 
