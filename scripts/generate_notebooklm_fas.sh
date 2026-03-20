@@ -131,8 +131,19 @@ main() {
     -not -name '.DS_Store' \
     -not -path '*/.git/*' \
     -not -path '*/archive/*' \
+    -not -path '*/browser_state/*' \
+    -not -path '*/browser_profile/*' \
+    -not -path '*/node_modules/*' \
+    -not -path '*/__pycache__/*' \
+    -not -path '*/cache/*' \
+    -not -path '*/.venv/*' \
+    -not -path '*/venv/*' \
+    -not -path '*/site-packages/*' \
+    -not -path '*/data/auth_info*' \
     -not -name '*conflict*' \
     -not -name '*(1)*' \
+    -not -name 'package-lock.json' \
+    -not -name 'pnpm-lock.yaml' \
     -print0 2>/dev/null | sort -z)
 
   log "  Doctrine: ${#doctrine_files[@]} files"
