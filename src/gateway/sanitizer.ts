@@ -180,3 +180,136 @@ export const detect_pii_with_severity = (text: string): PiiDetection[] => {
     })
     .map((pattern) => ({ name: pattern.name, severity: pattern.severity }));
 };
+
+// ============================================================
+// Stage 2: LLM-based contextual PII filtering (Phase 2)
+// ============================================================
+// Regex can't catch contextual PII like "서울대 91년생 물리 석사 출신".
+// This stage uses Gemini CLI to detect and mask such patterns.
+// Design principles:
+//   - Graceful fallback: if Gemini is unavailable, return text as-is
+//   - No shell injection: uses execFile (not exec) with args array
+//   - Timeout protection: AbortController with configurable timeout
+//   - Chaining: sanitize_full() = regex first, then LLM second
+
+import { execFile } from 'node:child_process';
+
+// === Constants for contextual sanitization ===
+
+const CONTEXTUAL_TIMEOUT_MS = 30_000; // 30 seconds — LLM calls shouldn't take longer
+const GEMINI_COMMAND = 'gemini';
+
+// === Build the prompt for Gemini contextual PII detection ===
+// The prompt instructs Gemini to return ONLY the sanitized text, nothing else.
+// This makes parsing trivial — the entire stdout IS the result.
+
+const build_contextual_pii_prompt = (text: string): string => {
+  return [
+    'You are a PII (Personal Identifiable Information) sanitizer.',
+    'Your job is to detect and mask contextual PII that regex cannot catch.',
+    '',
+    'Contextual PII includes:',
+    '- Specific university/school names combined with degree info (e.g., "서울대 물리학과 석사")',
+    '- Birth year or age indicators (e.g., "91년생", "30대")',
+    '- Workplace descriptions specific enough to identify someone (e.g., "강남 N사 개발자")',
+    '- Combinations of traits that narrow down identity (school + major + birth year)',
+    '- Neighborhood-level location + profession combos',
+    '',
+    'Masking format: Replace each PII fragment with a Korean tag in square brackets:',
+    '- University/school → [학력정보 제거됨]',
+    '- Age/birth year → [나이정보 제거됨]',
+    '- Workplace → [직장정보 제거됨]',
+    '- Location (when identifying) → [지역정보 제거됨]',
+    '- Other identifying context → [개인정보 제거됨]',
+    '',
+    'Rules:',
+    '1. Return ONLY the sanitized text. No explanations, no JSON, no markdown.',
+    '2. If no contextual PII is found, return the text exactly as-is.',
+    '3. Preserve all non-PII text, punctuation, and formatting exactly.',
+    '4. Do NOT mask general/public information (e.g., "한국", "개발자", "IT 업계").',
+    '5. Already-masked tokens like [이름 제거됨] should be left untouched.',
+    '',
+    'Text to sanitize:',
+    text,
+  ].join('\n');
+};
+
+// === Strip ANSI escape codes from CLI output ===
+
+const strip_ansi = (text: string): string => {
+  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+};
+
+// === Call Gemini CLI via execFile (no shell injection) ===
+// Returns sanitized text on success, or null on any failure.
+
+const call_gemini_for_pii = (text: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const prompt = build_contextual_pii_prompt(text);
+
+    // Use execFile with args array — safe from shell injection
+    // Gemini CLI accepts prompt as positional argument
+    execFile(
+      GEMINI_COMMAND,
+      [prompt],
+      {
+        timeout: CONTEXTUAL_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024, // 1MB — generous for text sanitization
+        encoding: 'utf-8',
+      },
+      (error, stdout, _stderr) => {
+        if (error) {
+          // Any error (timeout, crash, not found) → return null for fallback
+          resolve(null);
+          return;
+        }
+
+        const cleaned = strip_ansi(stdout).trim();
+
+        // Empty output is unreliable — treat as failure
+        if (!cleaned) {
+          resolve(null);
+          return;
+        }
+
+        resolve(cleaned);
+      },
+    );
+  });
+};
+
+// === Public API: Contextual PII sanitization via LLM ===
+// Falls back gracefully to returning original text on any failure.
+
+export const sanitize_contextual_pii = async (text: string): Promise<string> => {
+  // Skip empty/whitespace-only text — no point calling LLM
+  if (!text.trim()) {
+    return text;
+  }
+
+  const result = await call_gemini_for_pii(text);
+
+  // null means Gemini failed — fall back to original text
+  // This ensures the pipeline never crashes due to LLM unavailability
+  return result ?? text;
+};
+
+// === Public API: Full sanitization pipeline (regex + LLM) ===
+// Chains Stage 1 (regex, fast/deterministic) then Stage 2 (LLM, contextual).
+// If Stage 2 fails, Stage 1 result is still applied — partial protection > none.
+
+export const sanitize_full = async (text: string): Promise<string> => {
+  // Stage 1: Regex-based sanitization (always runs, never fails)
+  const regex_sanitized = sanitize_text(text);
+
+  // Skip LLM for empty text
+  if (!regex_sanitized.trim()) {
+    return regex_sanitized;
+  }
+
+  // Stage 2: LLM-based contextual sanitization
+  // Input is already regex-sanitized, so LLM only needs to handle contextual PII
+  const fully_sanitized = await sanitize_contextual_pii(regex_sanitized);
+
+  return fully_sanitized;
+};

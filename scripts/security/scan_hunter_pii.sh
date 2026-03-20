@@ -36,12 +36,25 @@ NC='\033[0m'
 OWNER_PATTERNS=()
 MASK_FILE=".notebooklm-mask"
 
-if [ -f "$MASK_FILE" ]; then
-  while IFS='|' read -r pattern _replacement; do
-    [[ "$pattern" =~ ^#.*$ ]] && continue
-    [[ -z "$pattern" ]] && continue
-    OWNER_PATTERNS+=("$pattern")
-  done < "$MASK_FILE"
+# Also check project root and script directory for mask file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+for candidate in "$MASK_FILE" "$PROJECT_ROOT/.notebooklm-mask"; do
+  if [ -f "$candidate" ]; then
+    while IFS='|' read -r pattern _replacement; do
+      [[ "$pattern" =~ ^#.*$ ]] && continue
+      [[ -z "$pattern" ]] && continue
+      OWNER_PATTERNS+=("$pattern")
+    done < "$candidate"
+    break
+  fi
+done
+
+# If no mask file found (e.g., on hunter where it's intentionally absent),
+# skip owner-pattern checks gracefully instead of failing
+if [ ${#OWNER_PATTERNS[@]} -eq 0 ]; then
+  echo -e "${YELLOW}[INFO]${NC} No .notebooklm-mask found — skipping owner-specific PII patterns (generic patterns still active)"
 fi
 
 # Generic PII regex patterns (from sanitizer.ts)
@@ -130,7 +143,7 @@ for dir in "${BROWSER_DIRS[@]}"; do
     # Check for Google account info in Preferences files
     prefs=$(find "$dir" -name "Preferences" -maxdepth 3 2>/dev/null || true)
     for pref in $prefs; do
-      if [ -f "$pref" ]; then
+      if [ -f "$pref" ] && [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
         # Look for owner email patterns
         for pattern in "${OWNER_PATTERNS[@]}"; do
           if grep -qi "$pattern" "$pref" 2>/dev/null; then
@@ -160,16 +173,18 @@ HISTORY_FILES=(
 
 for hist in "${HISTORY_FILES[@]}"; do
   if [ -f "$hist" ]; then
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      matches=$(grep -ci "$pattern" "$hist" 2>/dev/null || echo "0")
-      if [ "$matches" -gt 0 ]; then
-        log_finding "WARNING" "Shell History" "'$pattern' appears $matches times in $hist"
-      fi
-    done
+    if [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
+      for pattern in "${OWNER_PATTERNS[@]}"; do
+        matches=$(grep -ci "$pattern" "$hist" 2>/dev/null || echo "0")
+        if [ "$matches" -gt 0 ]; then
+          log_finding "WARNING" "Shell History" "'$pattern' appears $matches times in $hist"
+        fi
+      done
+    fi
 
     # Check for generic PII
     for pattern in "${GENERIC_PATTERNS[@]}"; do
-      matches=$(grep -cE "$pattern" "$hist" 2>/dev/null || echo "0")
+      matches=$(grep -cE "$pattern" "$hist" 2>/dev/null | tr -d '[:space:]' || echo "0")
       if [ "$matches" -gt 0 ]; then
         log_finding "WARNING" "Shell History" "PII pattern match ($matches) in $hist"
       fi
@@ -199,11 +214,13 @@ for env_file in "${ENV_FILES[@]}"; do
     done
 
     # Check for owner PII patterns
-    for pattern in "${OWNER_PATTERNS[@]}"; do
-      if grep -qi "$pattern" "$env_file" 2>/dev/null; then
-        log_finding "CRITICAL" "Environment" "Owner PII '$pattern' found in $env_file"
-      fi
-    done
+    if [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
+      for pattern in "${OWNER_PATTERNS[@]}"; do
+        if grep -qi "$pattern" "$env_file" 2>/dev/null; then
+          log_finding "CRITICAL" "Environment" "Owner PII '$pattern' found in $env_file"
+        fi
+      done
+    fi
   fi
 done
 
@@ -211,11 +228,13 @@ done
 GIT_EMAIL=$(git config --global user.email 2>/dev/null || echo "")
 GIT_NAME=$(git config --global user.name 2>/dev/null || echo "")
 
-for pattern in "${OWNER_PATTERNS[@]}"; do
-  if echo "$GIT_EMAIL $GIT_NAME" | grep -qi "$pattern" 2>/dev/null; then
-    log_finding "WARNING" "Git Config" "Owner pattern '$pattern' in git config (email=$GIT_EMAIL, name=$GIT_NAME)"
-  fi
-done
+if [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
+  for pattern in "${OWNER_PATTERNS[@]}"; do
+    if echo "$GIT_EMAIL $GIT_NAME" | grep -qi "$pattern" 2>/dev/null; then
+      log_finding "WARNING" "Git Config" "Owner pattern '$pattern' in git config (email=$GIT_EMAIL, name=$GIT_NAME)"
+    fi
+  done
+fi
 echo ""
 
 # ===== 5. SSH / Auth Files =====
@@ -228,7 +247,7 @@ if [ -d "$HOME/.ssh" ]; then
   fi
 
   # Check SSH config for owner info
-  if [ -f "$HOME/.ssh/config" ]; then
+  if [ -f "$HOME/.ssh/config" ] && [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
     for pattern in "${OWNER_PATTERNS[@]}"; do
       if grep -qi "$pattern" "$HOME/.ssh/config" 2>/dev/null; then
         log_finding "WARNING" "SSH Config" "Owner pattern '$pattern' in SSH config"
@@ -239,7 +258,7 @@ fi
 
 # Check macOS Keychain for FAS-related items
 if command -v security &>/dev/null; then
-  fas_keys=$(security dump-keychain 2>/dev/null | grep -ci "fas\|anthropic\|claude" || echo "0")
+  fas_keys=$(security dump-keychain 2>/dev/null | grep -ci "fas\|anthropic\|claude" | tr -d '[:space:]' || echo "0")
   if [ "$fas_keys" -gt 0 ]; then
     log_finding "WARNING" "Keychain" "$fas_keys FAS/Anthropic/Claude entries found in keychain"
   fi
@@ -282,7 +301,7 @@ SCAN_DIRS=(
 )
 
 for dir in "${SCAN_DIRS[@]}"; do
-  if [ -d "$dir" ]; then
+  if [ -d "$dir" ] && [ ${#OWNER_PATTERNS[@]} -gt 0 ]; then
     for pattern in "${OWNER_PATTERNS[@]}"; do
       matches=$(grep -rli "$pattern" "$dir" --include="*.{txt,md,json,yml,yaml,env,ts,js,sh,log}" 2>/dev/null | head -5 || true)
       if [ -n "$matches" ]; then

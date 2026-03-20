@@ -22,6 +22,8 @@ import { create_telegram_commands, type TelegramCommands } from './telegram_comm
 import { create_morning_briefing, type MorningBriefing } from './morning_briefing.js';
 import { create_task_executor, type TaskExecutor } from './task_executor.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
+import { create_crash_monitor } from '../watchdog/crash_recovery.js';
+import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
 import type { GeminiConfig } from '../gemini/types.js';
 import { execSync } from 'node:child_process';
 import { get_sessions_for_device } from '../shared/agents_config.js';
@@ -35,6 +37,7 @@ const SCHEDULES_PATH = resolve(process.cwd(), 'config/schedules.yml');
 const DB_PATH = resolve(process.cwd(), 'state/tasks.sqlite');
 
 const ACTIVITY_DB_PATH = resolve(process.cwd(), 'state/activity.sqlite');
+const CRASH_STATE_PATH = resolve(process.cwd(), 'state/crash_history.json');
 
 // Doctrine memory directory — source of user context for persona injection
 const DOCTRINE_MEMORY_DIR = process.env.DOCTRINE_MEMORY_DIR
@@ -122,6 +125,19 @@ const main = async () => {
   // 2. Notification router + Notion client (shared between router and morning briefing)
   const { router, notion } = build_notification_stack(activity_hooks);
   console.log('[Captain] Notification router initialized');
+
+  // 2b. Crash recovery monitor — wrapped with alert bridge for Telegram notifications
+  const raw_crash_monitor = create_crash_monitor({
+    state_path: CRASH_STATE_PATH,
+    max_restarts: 3,
+    cooldown_ms: 30_000,
+  });
+  const crash_monitor = create_crash_alert_bridge({
+    monitor: raw_crash_monitor,
+    router,
+    config: { crash_telegram_on_isolation: true },
+  });
+  console.log(`[Captain] Crash monitor initialized with alert bridge (${CRASH_STATE_PATH})`);
 
   // 3. Gateway API server
   const dev_mode = process.env.FAS_DEV_MODE === 'true' && process.env.NODE_ENV !== 'production';

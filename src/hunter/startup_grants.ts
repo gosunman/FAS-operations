@@ -95,7 +95,7 @@ export const is_kstartup_url = (url: string): boolean => {
 
 // Minimal HTML tag stripper — extracts text content from an HTML string.
 // Handles <br>, <br/> as newlines and strips all other tags.
-const strip_html = (html: string): string => {
+export const strip_html = (html: string): string => {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
@@ -110,7 +110,7 @@ const strip_html = (html: string): string => {
 
 // Extract a deadline date string from a period text like "2026.03.01 ~ 2026.04.15"
 // Returns the end date in ISO format, or null if unparseable.
-const extract_deadline = (period_text: string): string | null => {
+export const extract_deadline = (period_text: string): string | null => {
   // Match patterns: YYYY.MM.DD, YYYY-MM-DD, YYYY/MM/DD
   const date_matches = period_text.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/g);
   if (!date_matches || date_matches.length === 0) return null;
@@ -202,7 +202,7 @@ export const parse_grant_announcements = (
 };
 
 // Simple string hash for generating IDs from titles
-const simple_hash = (str: string): string => {
+export const simple_hash = (str: string): string => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);

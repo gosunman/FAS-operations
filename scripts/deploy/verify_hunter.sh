@@ -256,7 +256,12 @@ echo ""
 echo "--- [6/6] pf firewall status (hunter) ---"
 
 # Detect hunter Tailscale IP from CAPTAIN_API (replace captain IP with hunter IP pattern)
-HUNTER_TS_IP="${HUNTER_TAILSCALE_IP:-100.64.0.2}"
+# Auto-detect hunter Tailscale IP from tailscale status, fallback to env var
+HUNTER_TS_IP="${HUNTER_TAILSCALE_IP:-}"
+if [ -z "$HUNTER_TS_IP" ] && command -v tailscale &>/dev/null; then
+  HUNTER_TS_IP=$(tailscale status 2>/dev/null | grep -i hunter | awk '{print $1}' | head -1)
+fi
+HUNTER_TS_IP="${HUNTER_TS_IP:-hunter}"  # final fallback: SSH alias
 
 # Try to SSH to hunter and check pfctl status
 set +e

@@ -6,7 +6,19 @@
 //   - df -g /         → disk usage
 
 import { execSync } from 'node:child_process';
-import type { ResourceSnapshot, ResourceThresholds } from '../shared/types.js';
+import type { ResourceSnapshot, ResourceThresholds, NotificationEvent } from '../shared/types.js';
+
+// === Alert severity levels ===
+
+export type AlertSeverity = 'warning' | 'critical';
+
+export type ResourceAlert = {
+  metric: string;
+  value: number;
+  threshold: number;
+  severity: AlertSeverity;
+  sustained_count: number; // how many consecutive checks exceeded
+};
 
 // === Config type ===
 
@@ -14,6 +26,30 @@ export type ResourceMonitorConfig = {
   thresholds?: Partial<ResourceThresholds>;
   check_interval_ms?: number; // default: 60_000
   on_alert: (metric: string, value: number, threshold: number) => void | Promise<void>;
+};
+
+// === Telegram alert thresholds (separate from basic thresholds) ===
+
+export type TelegramAlertThresholds = {
+  cpu_percent: number;         // default: 90  — CPU > 90% sustained
+  cpu_sustained_count: number; // default: 3   — must exceed for N consecutive checks
+  memory_percent: number;      // default: 85  — RAM > 85% → immediate warning
+  disk_percent: number;        // default: 90  — Disk > 90% → immediate critical
+  cooldown_ms: number;         // default: 300_000 (5 min) — suppress duplicate alerts
+};
+
+export type TelegramAlertConfig = {
+  thresholds?: Partial<TelegramAlertThresholds>;
+  send_notification: (event: NotificationEvent) => Promise<unknown>;
+  device_name?: 'captain' | 'hunter'; // default: 'captain'
+};
+
+const DEFAULT_TELEGRAM_THRESHOLDS: TelegramAlertThresholds = {
+  cpu_percent: 90,
+  cpu_sustained_count: 3,
+  memory_percent: 85,
+  disk_percent: 90,
+  cooldown_ms: 300_000, // 5 minutes
 };
 
 // === Default thresholds ===
@@ -193,4 +229,149 @@ export const create_resource_monitor = (config: ResourceMonitorConfig): Resource
   };
 
   return { take_snapshot, check, start, stop };
+};
+
+// === Telegram Alert Handler Factory ===
+// Creates an on_alert callback that sends threshold violations to Telegram
+// with sustained CPU checking, cooldown, and severity classification.
+
+export type TelegramAlertHandler = {
+  on_alert: (metric: string, value: number, threshold: number) => Promise<void>;
+  get_cpu_breach_count: () => number;
+  get_last_alert_times: () => Record<string, number>;
+  reset: () => void;
+};
+
+export const create_telegram_alert_handler = (
+  config: TelegramAlertConfig,
+): TelegramAlertHandler => {
+  const thresholds: TelegramAlertThresholds = {
+    ...DEFAULT_TELEGRAM_THRESHOLDS,
+    ...config.thresholds,
+  };
+  const device = config.device_name ?? 'captain';
+
+  // State: consecutive CPU breach count
+  let cpu_breach_count = 0;
+
+  // State: last alert timestamp per metric (for cooldown)
+  const last_alert_times: Record<string, number> = {};
+
+  // Check if cooldown period has elapsed for a metric
+  const is_on_cooldown = (metric: string, now: number): boolean => {
+    const last = last_alert_times[metric];
+    if (!last) return false;
+    return (now - last) < thresholds.cooldown_ms;
+  };
+
+  // Format the alert message for Telegram
+  const format_alert_message = (
+    metric: string,
+    value: number,
+    threshold: number,
+    severity: AlertSeverity,
+  ): string => {
+    const emoji = severity === 'critical' ? '🔴' : '🟡';
+    const level = severity === 'critical' ? 'CRITICAL' : 'WARNING';
+    const metric_label = metric === 'cpu' ? 'CPU'
+      : metric === 'memory' ? 'RAM'
+      : metric === 'disk' ? 'Disk'
+      : metric.toUpperCase();
+
+    return [
+      `${emoji} *[${level}] Resource Alert — ${device}*`,
+      '',
+      `*${metric_label}:* ${value.toFixed(1)}% (threshold: ${threshold}%)`,
+      metric === 'cpu' ? `*Sustained:* ${cpu_breach_count} consecutive checks` : '',
+      '',
+      `_${new Date().toISOString()}_`,
+    ].filter(Boolean).join('\n');
+  };
+
+  // Main alert handler
+  const on_alert = async (
+    metric: string,
+    value: number,
+    _threshold: number, // original monitor threshold — we use our own
+  ): Promise<void> => {
+    const now = Date.now();
+
+    // === CPU: sustained check (must exceed N consecutive times) ===
+    if (metric === 'cpu') {
+      if (value > thresholds.cpu_percent) {
+        cpu_breach_count++;
+      } else {
+        cpu_breach_count = 0;
+        return; // below telegram threshold, reset and skip
+      }
+
+      // Only alert after sustained_count consecutive breaches
+      if (cpu_breach_count < thresholds.cpu_sustained_count) {
+        return;
+      }
+
+      // Cooldown check
+      if (is_on_cooldown('cpu', now)) return;
+      last_alert_times['cpu'] = now;
+
+      const message = format_alert_message('cpu', value, thresholds.cpu_percent, 'warning');
+      const event: NotificationEvent = {
+        type: 'alert',
+        message,
+        device,
+        severity: 'high',
+        metadata: { metric: 'cpu', value, threshold: thresholds.cpu_percent, sustained: cpu_breach_count },
+      };
+      await config.send_notification(event);
+      return;
+    }
+
+    // === Memory: immediate warning ===
+    if (metric === 'memory') {
+      if (value <= thresholds.memory_percent) return;
+      if (is_on_cooldown('memory', now)) return;
+      last_alert_times['memory'] = now;
+
+      const message = format_alert_message('memory', value, thresholds.memory_percent, 'warning');
+      const event: NotificationEvent = {
+        type: 'alert',
+        message,
+        device,
+        severity: 'high',
+        metadata: { metric: 'memory', value, threshold: thresholds.memory_percent },
+      };
+      await config.send_notification(event);
+      return;
+    }
+
+    // === Disk: immediate critical ===
+    if (metric === 'disk') {
+      if (value <= thresholds.disk_percent) return;
+      if (is_on_cooldown('disk', now)) return;
+      last_alert_times['disk'] = now;
+
+      const message = format_alert_message('disk', value, thresholds.disk_percent, 'critical');
+      const event: NotificationEvent = {
+        type: 'alert',
+        message,
+        device,
+        severity: 'critical',
+        metadata: { metric: 'disk', value, threshold: thresholds.disk_percent },
+      };
+      await config.send_notification(event);
+      return;
+    }
+  };
+
+  // Accessors for testing
+  const get_cpu_breach_count = () => cpu_breach_count;
+  const get_last_alert_times = () => ({ ...last_alert_times });
+  const reset = () => {
+    cpu_breach_count = 0;
+    for (const key of Object.keys(last_alert_times)) {
+      delete last_alert_times[key];
+    }
+  };
+
+  return { on_alert, get_cpu_breach_count, get_last_alert_times, reset };
 };

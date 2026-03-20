@@ -7,8 +7,11 @@ import {
   build_factcheck_prompt,
   parse_factcheck_response,
   should_escalate,
+  try_notebooklm_tiebreak,
+  type NotebookLmVerifier,
 } from './factcheck.js';
 import type { GeminiConfig } from '../gemini/types.js';
+import type { VerificationResult } from './notebooklm_verify.js';
 
 // === Mock spawn_gemini ===
 vi.mock('../gemini/cli_wrapper.js', () => ({
@@ -324,5 +327,211 @@ describe('create_factchecker', () => {
 
     const called_prompt = mock_spawn.mock.calls[0][1];
     expect(called_prompt).toContain('strict');
+  });
+
+  it('should consult NotebookLM when Gemini disagrees and verifier is configured', async () => {
+    // Gemini says disagree
+    mock_spawn.mockResolvedValue({
+      content: JSON.stringify({
+        agreement: 'disagree',
+        review_summary: 'Gemini says wrong.',
+        discrepancies: ['Error found'],
+        confidence: 0.9,
+      }),
+      raw_output: '',
+      success: true,
+      duration_ms: 1000,
+    });
+
+    // NotebookLM says verified → override
+    const mock_verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => ({
+        verified: true,
+        confidence: 0.85,
+        explanation: 'NotebookLM confirms the content is correct.',
+      })),
+    };
+
+    const factchecker = create_factchecker(test_config, mock_verifier);
+    const result = await factchecker.check({
+      original_content: 'Some disputed claim.',
+      original_author: 'claude',
+    });
+
+    // NotebookLM overrides → partial, no escalation
+    expect(result.agreement).toBe('partial');
+    expect(result.should_escalate).toBe(false);
+    expect(result.review_summary).toContain('NotebookLM overrode Gemini');
+    expect(mock_verifier.request_notebooklm_verification).toHaveBeenCalledOnce();
+  });
+
+  it('should keep escalation when NotebookLM also disagrees', async () => {
+    mock_spawn.mockResolvedValue({
+      content: JSON.stringify({
+        agreement: 'disagree',
+        review_summary: 'Factually wrong.',
+        discrepancies: ['Major error'],
+        confidence: 0.95,
+      }),
+      raw_output: '',
+      success: true,
+      duration_ms: 1000,
+    });
+
+    const mock_verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => ({
+        verified: false,
+        confidence: 0.8,
+        explanation: 'NotebookLM also finds errors.',
+      })),
+    };
+
+    const factchecker = create_factchecker(test_config, mock_verifier);
+    const result = await factchecker.check({
+      original_content: 'Wrong claim.',
+      original_author: 'claude',
+    });
+
+    // Both disagree → keep escalation
+    expect(result.agreement).toBe('disagree');
+    expect(result.should_escalate).toBe(true);
+    expect(result.review_summary).toContain('concurs with Gemini');
+  });
+
+  it('should fallback gracefully when NotebookLM fails', async () => {
+    mock_spawn.mockResolvedValue({
+      content: JSON.stringify({
+        agreement: 'disagree',
+        review_summary: 'Gemini disagrees.',
+        discrepancies: ['Issue'],
+        confidence: 0.9,
+      }),
+      raw_output: '',
+      success: true,
+      duration_ms: 1000,
+    });
+
+    const mock_verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => {
+        throw new Error('Network timeout');
+      }),
+    };
+
+    const factchecker = create_factchecker(test_config, mock_verifier);
+    const result = await factchecker.check({
+      original_content: 'Some claim.',
+      original_author: 'claude',
+    });
+
+    // NotebookLM failed → keep original Gemini result with fallback note
+    expect(result.agreement).toBe('disagree');
+    expect(result.should_escalate).toBe(true);
+    expect(result.review_summary).toContain('verification failed');
+  });
+
+  it('should NOT consult NotebookLM when Gemini agrees', async () => {
+    mock_spawn.mockResolvedValue({
+      content: JSON.stringify({
+        agreement: 'agree',
+        review_summary: 'All correct.',
+        discrepancies: [],
+        confidence: 0.95,
+      }),
+      raw_output: '',
+      success: true,
+      duration_ms: 1000,
+    });
+
+    const mock_verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => ({
+        verified: true,
+        confidence: 0.9,
+        explanation: 'Should not be called.',
+      })),
+    };
+
+    const factchecker = create_factchecker(test_config, mock_verifier);
+    const result = await factchecker.check({
+      original_content: 'Correct claim.',
+      original_author: 'claude',
+    });
+
+    // Gemini agrees → no NotebookLM needed
+    expect(result.agreement).toBe('agree');
+    expect(mock_verifier.request_notebooklm_verification).not.toHaveBeenCalled();
+  });
+
+  it('should work without NotebookLM verifier (backward compatible)', async () => {
+    mock_spawn.mockResolvedValue({
+      content: JSON.stringify({
+        agreement: 'disagree',
+        review_summary: 'Wrong.',
+        discrepancies: ['Error'],
+        confidence: 0.9,
+      }),
+      raw_output: '',
+      success: true,
+      duration_ms: 1000,
+    });
+
+    // No verifier passed — original behavior
+    const factchecker = create_factchecker(test_config);
+    const result = await factchecker.check({
+      original_content: 'Disputed claim.',
+      original_author: 'claude',
+    });
+
+    expect(result.agreement).toBe('disagree');
+    expect(result.should_escalate).toBe(true);
+  });
+});
+
+// === try_notebooklm_tiebreak (unit) ===
+
+describe('try_notebooklm_tiebreak', () => {
+  const base_gemini_result = {
+    agreement: 'disagree' as const,
+    reviewer: 'gemini' as const,
+    review_summary: 'Gemini says wrong.',
+    discrepancies: ['Error found'],
+    confidence: 0.9,
+    checked_at: new Date().toISOString(),
+    should_escalate: true,
+  };
+
+  const base_request = {
+    original_content: 'Test content.',
+    original_author: 'claude' as const,
+    context: 'Some context',
+  };
+
+  it('should override to partial when NotebookLM verifies with high confidence', async () => {
+    const verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => ({
+        verified: true,
+        confidence: 0.9,
+        explanation: 'Content is correct.',
+      })),
+    };
+
+    const result = await try_notebooklm_tiebreak(base_gemini_result, base_request, verifier);
+    expect(result.agreement).toBe('partial');
+    expect(result.should_escalate).toBe(false);
+    expect(verifier.request_notebooklm_verification).toHaveBeenCalledWith('Test content.', 'Some context');
+  });
+
+  it('should keep disagree when NotebookLM has low confidence', async () => {
+    const verifier: NotebookLmVerifier = {
+      request_notebooklm_verification: vi.fn(async () => ({
+        verified: true,
+        confidence: 0.4, // below 0.6 threshold
+        explanation: 'Not sure.',
+      })),
+    };
+
+    const result = await try_notebooklm_tiebreak(base_gemini_result, base_request, verifier);
+    expect(result.agreement).toBe('disagree');
+    expect(result.should_escalate).toBe(true);
+    expect(result.review_summary).toContain('concurs with Gemini');
   });
 });

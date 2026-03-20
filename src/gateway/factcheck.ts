@@ -5,8 +5,20 @@
 
 import { spawn_gemini } from '../gemini/cli_wrapper.js';
 import type { GeminiConfig } from '../gemini/types.js';
+import type { VerificationResult } from './notebooklm_verify.js';
 
 // === Types ===
+
+// NotebookLM verifier interface — matches the shape returned by create_notebooklm_verifier
+export type NotebookLmVerifier = {
+  request_notebooklm_verification: (content: string, context?: string) => Promise<VerificationResult>;
+};
+
+// Optional config for NotebookLM 3rd-party tiebreaker verification
+export type FactcheckerConfig = {
+  gemini: GeminiConfig;
+  notebooklm_verifier?: NotebookLmVerifier;
+};
 
 export type FactcheckRequest = {
   original_content: string;
@@ -117,9 +129,13 @@ export const should_escalate = (result: FactcheckResult): boolean =>
   result.agreement === 'disagree' || result.confidence < ESCALATION_CONFIDENCE_THRESHOLD;
 
 // === Factory: create factchecker with bound Gemini config ===
+// Supports optional NotebookLM 3rd-party tiebreaker verification.
+// When Claude and Gemini disagree AND a notebooklm_verifier is configured,
+// NotebookLM is consulted before escalating to human review.
+// Backward compatible: without notebooklm_verifier, behaves exactly as before.
 
-export const create_factchecker = (gemini_config: GeminiConfig) => {
-  // Full pipeline: build prompt → call Gemini → parse response
+export const create_factchecker = (gemini_config: GeminiConfig, notebooklm_verifier?: NotebookLmVerifier) => {
+  // Full pipeline: build prompt → call Gemini → parse response → optional NotebookLM tiebreak
   const check = async (request: FactcheckRequest): Promise<FactcheckResult> => {
     const prompt = build_factcheck_prompt(
       request.original_content,
@@ -134,7 +150,14 @@ export const create_factchecker = (gemini_config: GeminiConfig) => {
       return make_error_result(now, `Gemini CLI failed: ${response.error ?? 'unknown error'}`);
     }
 
-    return parse_factcheck_response(response.content);
+    const gemini_result = parse_factcheck_response(response.content);
+
+    // If Gemini disagrees and NotebookLM verifier is available, use as tiebreaker
+    if (gemini_result.should_escalate && notebooklm_verifier) {
+      return await try_notebooklm_tiebreak(gemini_result, request, notebooklm_verifier);
+    }
+
+    return gemini_result;
   };
 
   return {
@@ -142,6 +165,47 @@ export const create_factchecker = (gemini_config: GeminiConfig) => {
     parse_response: parse_factcheck_response,
     should_escalate,
   };
+};
+
+// === NotebookLM tiebreaker: consult NotebookLM when Claude and Gemini disagree ===
+// If NotebookLM agrees with the original content → override Gemini's disagree.
+// If NotebookLM also disagrees or fails → keep original escalation.
+// This is a best-effort tiebreaker, never blocks the pipeline.
+
+export const try_notebooklm_tiebreak = async (
+  gemini_result: FactcheckResult,
+  request: FactcheckRequest,
+  verifier: NotebookLmVerifier,
+): Promise<FactcheckResult> => {
+  try {
+    const verification = await verifier.request_notebooklm_verification(
+      request.original_content,
+      request.context,
+    );
+
+    // NotebookLM verified with reasonable confidence → trust original content
+    if (verification.verified && verification.confidence >= 0.6) {
+      return {
+        ...gemini_result,
+        agreement: 'partial', // downgrade from disagree to partial
+        review_summary: `NotebookLM overrode Gemini: ${verification.explanation}. Original Gemini review: ${gemini_result.review_summary}`,
+        should_escalate: false,
+        confidence: verification.confidence,
+      };
+    }
+
+    // NotebookLM also disagrees or low confidence → keep Gemini's escalation
+    return {
+      ...gemini_result,
+      review_summary: `NotebookLM concurs with Gemini (confidence: ${verification.confidence}). ${gemini_result.review_summary}`,
+    };
+  } catch {
+    // NotebookLM failed — graceful fallback, keep original Gemini result
+    return {
+      ...gemini_result,
+      review_summary: `NotebookLM verification failed (fallback). ${gemini_result.review_summary}`,
+    };
+  }
 };
 
 // === Helper: create an error/fallback result (secure by default) ===
