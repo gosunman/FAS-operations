@@ -374,6 +374,14 @@ const main = async () => {
         if (today_done.length > 0) {
           console.log(`[Captain] Feedback extraction queued for ${today_done.length} completed tasks`);
         }
+
+        // Cleanup old research files (30-day retention)
+        try {
+          const cleanup = research_store.cleanup_old_research(30);
+          if (cleanup.deleted_count > 0) {
+            console.log(`[Captain] Research cleanup: deleted ${cleanup.deleted_count} old entries`);
+          }
+        } catch (err) { console.warn('[Captain] Research cleanup failed:', err); }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[Captain] Scheduled night planning failed: ${msg}`);
