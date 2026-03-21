@@ -26,6 +26,7 @@ export type PollLoopState = {
   consecutive_failures: number;
   total_tasks_processed: number;
   last_heartbeat_at: string | null;
+  processing_task_ids: ReadonlySet<string>;
 };
 
 const MAX_BACKOFF_MS = 300_000; // 5 minutes
@@ -33,11 +34,16 @@ const MAX_BACKOFF_MS = 300_000; // 5 minutes
 export const create_poll_loop = (deps: PollLoopDeps) => {
   const { api, executor, logger, config, notify } = deps;
 
+  // Local deduplication set — prevents the same task from being processed twice
+  // even if Captain returns it in multiple consecutive polls
+  const processing_task_ids = new Set<string>();
+
   const state: PollLoopState = {
     running: false,
     consecutive_failures: 0,
     total_tasks_processed: 0,
     last_heartbeat_at: null,
+    processing_task_ids,
   };
 
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -67,27 +73,40 @@ export const create_poll_loop = (deps: PollLoopDeps) => {
         return;
       }
 
-      // 3. Execute first task only (max_concurrent_tasks: 1)
-      const task = tasks[0];
+      // 3. Execute first non-duplicate task (max_concurrent_tasks: 1)
+      // Skip tasks already being processed (race condition prevention)
+      const task = tasks.find((t) => !processing_task_ids.has(t.id));
+      if (!task) {
+        state.consecutive_failures = 0;
+        return;
+      }
+
+      // Mark as processing IMMEDIATELY to prevent duplicate execution
+      processing_task_ids.add(task.id);
       logger.info(`Processing task: ${task.id} — "${task.title}"`);
 
-      const result = await executor.execute(task);
+      try {
+        const result = await executor.execute(task);
 
-      // 4. Submit result
-      const submitted = await api.submit_result(task.id, result);
-      if (submitted) {
-        state.total_tasks_processed += 1;
-        logger.info(`Task ${task.id} completed: ${result.status}`);
+        // 4. Submit result
+        const submitted = await api.submit_result(task.id, result);
+        if (submitted) {
+          state.total_tasks_processed += 1;
+          logger.info(`Task ${task.id} completed: ${result.status}`);
 
-        // Task completion notification is handled by Captain Gateway (crawl_result → Notion + Slack)
-        // Hunter does NOT send separate completion reports to avoid notification flooding
+          // Task completion notification is handled by Captain Gateway (crawl_result → Notion + Slack)
+          // Hunter does NOT send separate completion reports to avoid notification flooding
 
-        // Report login issues to Slack only (not Telegram — minimize watch alerts)
-        if (result.status === 'failure' && result.output?.includes('[LOGIN_REQUIRED]')) {
-          await notify?.report('[LOGIN_REQUIRED] Google session expired — manual re-login needed');
+          // Report login issues to Slack only (not Telegram — minimize watch alerts)
+          if (result.status === 'failure' && result.output?.includes('[LOGIN_REQUIRED]')) {
+            await notify?.report('[LOGIN_REQUIRED] Google session expired — manual re-login needed');
+          }
+        } else {
+          logger.warn(`Task ${task.id} result submission failed — will retry`);
         }
-      } else {
-        logger.warn(`Task ${task.id} result submission failed — will retry`);
+      } finally {
+        // Remove from processing set after completion (success or failure)
+        processing_task_ids.delete(task.id);
       }
 
       // Success — reset failure counter

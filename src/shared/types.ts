@@ -302,6 +302,46 @@ export type B2BIntentData = {
   crawled_timestamp: string;
 };
 
+// === Hunter Autonomous Mode Types ===
+
+export type HunterMode = 'captain' | 'autonomous';
+
+export type ProjectStatus =
+  | 'discovered'      // Scout found it
+  | 'researching'     // OpenClaw deep research in progress
+  | 'planned'         // Execution plan ready
+  | 'building'        // Implementation in progress
+  | 'testing'         // Testing/validation
+  | 'deployed'        // Deployed/running
+  | 'monitoring'      // Revenue monitoring
+  | 'succeeded'       // Revenue confirmed
+  | 'failed'          // Failed (reason recorded)
+  | 'needs_owner';    // Owner intervention needed
+
+export type Project = {
+  id: string;
+  title: string;
+  category: string;
+  status: ProjectStatus;
+  expected_revenue: string;
+  actual_revenue: number;
+  resources_needed: string[];
+  owner_action_needed?: string;
+  retrospective?: string;
+  openclaw_sessions: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type RevenueCategory =
+  | 'youtube_shorts_automation'
+  | 'blog_seo_auto_content'
+  | 'micro_saas'
+  | 'print_on_demand'
+  | 'info_brokerage'
+  | 'github_trending_service'
+  | 'other';
+
 // === Gateway Types ===
 
 export type HealthCheckResponse = {

@@ -19,6 +19,15 @@ export type HunterConfig = {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
   slack_webhook_url?: string;
+  // Autonomous mode config
+  autonomous_db_path: string;        // SQLite database for project pipeline
+  reports_dir: string;               // Directory for daily/weekly reports
+  scout_interval_ms: number;         // Revenue scout cycle interval (default: 6h)
+  openclaw_command: string;          // OpenClaw CLI command
+  openclaw_agent: string;            // OpenClaw agent name
+  // Mode router config
+  captain_health_check_interval_ms: number;  // How often to check Captain API (default: 30s)
+  captain_failure_threshold: number;          // Consecutive failures before autonomous mode (default: 3)
 };
 
 export const load_hunter_config = (): HunterConfig => {
@@ -47,5 +56,14 @@ export const load_hunter_config = (): HunterConfig => {
     telegram_bot_token: process.env.HUNTER_TELEGRAM_BOT_TOKEN,
     telegram_chat_id: process.env.HUNTER_TELEGRAM_CHAT_ID,
     slack_webhook_url: process.env.HUNTER_SLACK_WEBHOOK_URL,
+    // Autonomous mode config
+    autonomous_db_path: process.env.HUNTER_DB_PATH ?? './data/hunter_projects.db',
+    reports_dir: process.env.HUNTER_REPORTS_DIR ?? './reports',
+    scout_interval_ms: parseInt(process.env.HUNTER_SCOUT_INTERVAL_MS ?? '21600000', 10), // 6 hours
+    openclaw_command: process.env.OPENCLAW_COMMAND ?? 'openclaw',
+    openclaw_agent: process.env.OPENCLAW_AGENT ?? 'main',
+    // Mode router config
+    captain_health_check_interval_ms: parseInt(process.env.CAPTAIN_HEALTH_CHECK_INTERVAL_MS ?? '30000', 10),
+    captain_failure_threshold: parseInt(process.env.CAPTAIN_FAILURE_THRESHOLD ?? '3', 10),
   };
 };
