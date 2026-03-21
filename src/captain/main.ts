@@ -25,6 +25,7 @@ import { create_captain_worker, type CaptainWorker } from './captain_worker.js';
 import { create_lighthouse_auditor } from '../pipeline/lighthouse_audit.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
 import { create_crash_monitor } from '../watchdog/crash_recovery.js';
+import { create_local_script_handler } from './local_script_handler.js';
 import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
 import { create_result_router } from '../pipeline/result_router.js';
 import { create_research_store } from './research_store.js';
@@ -286,16 +287,23 @@ const main = async () => {
       }
     : undefined;
 
+  // local_script handler — executes scripts from task description field
+  const local_script_handler = create_local_script_handler({
+    allowed_dirs: [resolve(process.cwd(), 'scripts')],
+    timeout_ms: 120_000, // 2 min max per script
+  });
+
   const captain_worker = create_captain_worker({
     store,
     router,
     handlers: {
       ...(lighthouse_handler ? { lighthouse_audit: lighthouse_handler } : {}),
+      local_script: local_script_handler,
     },
     poll_interval_ms: parseInt(process.env.CAPTAIN_WORKER_POLL_MS ?? '30000', 10),
   });
   captain_worker.start();
-  console.log(`[Captain] Captain worker started (handlers: ${lighthouse_handler ? 'lighthouse_audit' : 'none'}${lighthouse_urls.length > 0 ? ` [${lighthouse_urls.length} URLs]` : ''})`);
+  console.log(`[Captain] Captain worker started (handlers: lighthouse_audit, local_script)`);
 
   // 12. Telegram command listener (inbound commands from user)
   let telegram_commands: TelegramCommands | null = null;

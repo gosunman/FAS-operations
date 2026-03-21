@@ -4,6 +4,7 @@
 // If no router is provided, falls back to console.warn (still better than empty catch)
 
 import type { NotificationRouter } from '../notification/router.js';
+import { sanitize_text } from '../gateway/sanitizer.js';
 
 export type SafeFireForgetConfig = {
   router?: NotificationRouter | null;
@@ -45,10 +46,12 @@ export const safe_fire_forget = (
     console.warn(log_msg);
 
     // Send Slack alert if router available and not rate-limited
+    // Sanitize error message to prevent PII leaking into Slack (e.g., API responses, user data in stack traces)
     if (router && !is_rate_limited(context, max_alerts_per_hour)) {
+      const safe_msg = sanitize_text(msg);
       router.route({
         type: 'alert',
-        message: `⚠️ *[Silent Failure]* ${context}\n\`${msg}\``,
+        message: `⚠️ *[Silent Failure]* ${context}\n\`${safe_msg}\``,
         device: 'captain',
         severity: 'medium',
       }).catch(() => {

@@ -217,10 +217,15 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   }>();
 
   // Mode manager — SLEEP/AWAKE state
+  // Defer SLEEP transition if HIGH/CRITICAL tasks are still in progress
   const mode_manager = create_mode_manager(options.mode_config ?? {
     sleep_start_hour: 23,
     sleep_end_hour: 7,
     sleep_end_minute: 30,
+    has_active_critical_tasks: () => {
+      const in_progress = store.get_by_status('in_progress');
+      return in_progress.some((t) => t.risk_level === 'high' || t.risk_level === 'critical');
+    },
   });
 
   // === Mount n8n webhook routes at /api/n8n ===

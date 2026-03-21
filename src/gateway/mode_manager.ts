@@ -10,6 +10,9 @@ export type ModeManagerConfig = {
   sleep_end_hour: number;       // default: 7
   sleep_end_minute: number;     // default: 30
   initial_mode?: FasMode;
+  // Optional: callback to check if HIGH/CRITICAL tasks are running.
+  // If provided, SLEEP transition is deferred when active critical work exists.
+  has_active_critical_tasks?: () => boolean;
 };
 
 // Actions blocked in SLEEP mode regardless of risk level
@@ -35,11 +38,28 @@ export const create_mode_manager = (config: ModeManagerConfig) => {
     previous_mode: FasMode;
     current_mode: FasMode;
     reason?: string;
+    deferred?: boolean;
   } => {
     const previous = state.current_mode;
     if (previous === request.target_mode) {
       return { success: true, previous_mode: previous, current_mode: previous, reason: 'Already in target mode' };
     }
+
+    // Defer SLEEP transition if HIGH/CRITICAL tasks are still running
+    // This prevents mid-deployment shutdowns when n8n triggers SLEEP at 23:00
+    if (
+      request.target_mode === 'sleep' &&
+      config.has_active_critical_tasks?.()
+    ) {
+      return {
+        success: false,
+        previous_mode: previous,
+        current_mode: previous,
+        reason: 'SLEEP deferred: HIGH/CRITICAL tasks still in progress',
+        deferred: true,
+      };
+    }
+
     state = {
       current_mode: request.target_mode,
       switched_at: new Date().toISOString(),
