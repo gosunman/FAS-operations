@@ -18,6 +18,7 @@ const make_mock_research_store = (): ResearchStore => ({
   list_research: vi.fn().mockReturnValue([]),
   get_research: vi.fn().mockReturnValue(null),
   get_index: vi.fn().mockReturnValue({ version: 1, entries: [], updated_at: '' }),
+  cleanup_old_research: vi.fn().mockReturnValue({ deleted_count: 0, deleted_dirs: [] }),
 });
 
 const make_task = (title: string, overrides?: Partial<TaskInfo>): TaskInfo => ({

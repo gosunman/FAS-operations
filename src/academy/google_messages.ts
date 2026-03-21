@@ -249,9 +249,30 @@ export const create_google_messages_sender = (config: GoogleMessagesConfig = {})
   };
 
   // Send SMS to multiple recipients with delay between sends
+  // Pre-flight: checks Google Messages session health before attempting any sends
   const send_batch = async (
     messages: Array<{ recipient: SmsRecipient; message: ParentMessage }>,
   ): Promise<SmsBatchResult> => {
+    // Pre-flight session health check — fail fast if session is unhealthy
+    if (!dry_run) {
+      const health = await check_session_health();
+      if (!health.healthy) {
+        const reason = health.reason ?? 'Unknown session health failure';
+        const failed_results: SmsSendResult[] = messages.map(({ recipient, message }) => ({
+          success: false,
+          recipient,
+          message_preview: message.full_text.slice(0, 50),
+          error: `Session unhealthy: ${reason}`,
+        }));
+        return {
+          total: messages.length,
+          sent: 0,
+          failed: messages.length,
+          results: failed_results,
+        };
+      }
+    }
+
     const results: SmsSendResult[] = [];
 
     for (let i = 0; i < messages.length; i++) {

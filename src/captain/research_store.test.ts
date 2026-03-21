@@ -353,4 +353,147 @@ describe('create_research_store', () => {
       expect(existsSync(join(temp_dir, '2026-03-21', 'r-day2.json'))).toBe(true);
     });
   });
+
+  describe('cleanup_old_research', () => {
+    it('should delete directories older than retention_days', () => {
+      const store = create_research_store(temp_dir);
+
+      // Create entries spanning different dates — "old" is 60 days ago, "recent" is today
+      const old_date = new Date();
+      old_date.setDate(old_date.getDate() - 60);
+      const old_iso = old_date.toISOString();
+
+      const recent_iso = new Date().toISOString();
+
+      store.save_research(make_result({ id: 'old-001', created_at: old_iso }));
+      store.save_research(make_result({ id: 'recent-001', created_at: recent_iso }));
+
+      const old_dir_name = old_iso.slice(0, 10);
+      const recent_dir_name = recent_iso.slice(0, 10);
+
+      // Verify both directories exist
+      expect(existsSync(join(temp_dir, old_dir_name))).toBe(true);
+      expect(existsSync(join(temp_dir, recent_dir_name))).toBe(true);
+
+      // Cleanup with 30 day retention
+      const result = store.cleanup_old_research(30);
+
+      // Old directory should be deleted
+      expect(existsSync(join(temp_dir, old_dir_name))).toBe(false);
+      // Recent directory should remain
+      expect(existsSync(join(temp_dir, recent_dir_name))).toBe(true);
+
+      expect(result.deleted_count).toBe(1);
+      expect(result.deleted_dirs).toContain(old_dir_name);
+    });
+
+    it('should update the index after cleanup', () => {
+      const store = create_research_store(temp_dir);
+
+      const old_date = new Date();
+      old_date.setDate(old_date.getDate() - 45);
+      const old_iso = old_date.toISOString();
+
+      store.save_research(make_result({ id: 'old-idx', created_at: old_iso }));
+      store.save_research(make_result({ id: 'new-idx', created_at: new Date().toISOString() }));
+
+      // Before cleanup: 2 entries
+      expect(store.get_index().entries).toHaveLength(2);
+
+      store.cleanup_old_research(30);
+
+      // After cleanup: only recent entry remains
+      const index = store.get_index();
+      expect(index.entries).toHaveLength(1);
+      expect(index.entries[0].id).toBe('new-idx');
+    });
+
+    it('should return zero when nothing to clean', () => {
+      const store = create_research_store(temp_dir);
+      store.save_research(make_result({ id: 'today', created_at: new Date().toISOString() }));
+
+      const result = store.cleanup_old_research(30);
+      expect(result.deleted_count).toBe(0);
+      expect(result.deleted_dirs).toEqual([]);
+    });
+
+    it('should use default 30 day retention when no argument provided', () => {
+      const store = create_research_store(temp_dir);
+
+      // 31 days ago — should be cleaned with default retention
+      const old_date = new Date();
+      old_date.setDate(old_date.getDate() - 31);
+
+      store.save_research(make_result({ id: 'r-31', created_at: old_date.toISOString() }));
+
+      const result = store.cleanup_old_research();
+      expect(result.deleted_count).toBe(1);
+    });
+
+    it('should not delete directories at exactly the cutoff boundary', () => {
+      const store = create_research_store(temp_dir);
+
+      // Exactly 30 days ago (today minus 30) — should NOT be deleted because
+      // the cutoff is "strictly before" (< not <=)
+      const boundary_date = new Date();
+      boundary_date.setDate(boundary_date.getDate() - 30);
+      const boundary_iso = boundary_date.toISOString();
+
+      store.save_research(make_result({ id: 'r-boundary', created_at: boundary_iso }));
+
+      const result = store.cleanup_old_research(30);
+      // The boundary date directory should remain
+      expect(result.deleted_count).toBe(0);
+      expect(existsSync(join(temp_dir, boundary_iso.slice(0, 10)))).toBe(true);
+    });
+
+    it('should handle multiple old directories in one cleanup', () => {
+      const store = create_research_store(temp_dir);
+
+      // Create entries across 3 old dates
+      for (let days_ago = 40; days_ago <= 60; days_ago += 10) {
+        const d = new Date();
+        d.setDate(d.getDate() - days_ago);
+        store.save_research(make_result({
+          id: `r-${days_ago}`,
+          created_at: d.toISOString(),
+        }));
+      }
+
+      // Plus one recent
+      store.save_research(make_result({ id: 'r-today', created_at: new Date().toISOString() }));
+
+      const result = store.cleanup_old_research(30);
+      expect(result.deleted_count).toBe(3);
+      expect(result.deleted_dirs).toHaveLength(3);
+
+      // Recent entry should remain
+      const index = store.get_index();
+      expect(index.entries).toHaveLength(1);
+      expect(index.entries[0].id).toBe('r-today');
+    });
+
+    it('should ignore non-date-named directories', () => {
+      const store = create_research_store(temp_dir);
+
+      // Create a non-date directory inside the research root
+      const misc_dir = join(temp_dir, 'misc-data');
+      const { mkdirSync } = require('node:fs') as typeof import('node:fs');
+      mkdirSync(misc_dir, { recursive: true });
+
+      store.save_research(make_result({ id: 'r-1', created_at: new Date().toISOString() }));
+
+      const result = store.cleanup_old_research(30);
+      // Should not crash or delete the non-date directory
+      expect(existsSync(misc_dir)).toBe(true);
+      expect(result.deleted_count).toBe(0);
+    });
+
+    it('should handle empty research directory gracefully', () => {
+      const store = create_research_store(temp_dir);
+      const result = store.cleanup_old_research(30);
+      expect(result.deleted_count).toBe(0);
+      expect(result.deleted_dirs).toEqual([]);
+    });
+  });
 });
