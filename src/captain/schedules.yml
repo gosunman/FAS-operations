@@ -71,6 +71,18 @@ schedules:
 
   # === Weekly schedules ===
 
+  investment_check:
+    title: "투자/지원사업 정보 수집"
+    type: weekly
+    day: monday
+    time: "03:00"
+    mode: sleep
+    agent: gemini_a
+    action: research
+    risk_level: low
+    requires_personal_info: false
+    description: "정부 지원사업, 창업 경진대회, 엔젤/VC 투자 기회 정보 수집 및 마감일 추적. 예비창업패키지, 초기창업패키지, 소셜벤처 육성사업 등."
+
   grad_school:
     title: "대학원 일정 체크"
     type: weekly
@@ -96,6 +108,18 @@ schedules:
     description: "EIDOS SCIENCE 주간 테스트 자동 생성. 물리학 역학 단원 객관식 시험지와 정답표."
 
   # === Monthly schedules ===
+
+  idea_pipeline_review:
+    title: "아이디어 파이프라인 리뷰"
+    type: monthly
+    day: 15
+    time: "05:00"
+    mode: sleep
+    agent: claude
+    action: research
+    risk_level: low
+    requires_personal_info: false
+    description: "아이디어→사업화 파이프라인 월간 리뷰. 각 아이디어 단계 점검, 점수 재평가, 다음 액션 업데이트."
 
   remote_degree_check:
     title: "원격 학위 과정 조사"
