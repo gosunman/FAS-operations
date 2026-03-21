@@ -68,7 +68,7 @@ schedules:
     description: "Hacker News, Reddit (r/MachineLearning, r/LocalLLaMA), arxiv, X 일일 트렌드. 키워드: 에듀테크, NVC, 1인창업, 자동화, 로컬LLM"
 
   bigtech_jobs:
-    title: "글로벌 빅테크 원격 커리어 스캐닝"
+    title: "글로벌 빅테크 커리어 브랜딩 스캐닝"
     type: every_3_days
     time: "03:30"
     mode: sleep
@@ -77,11 +77,14 @@ schedules:
     requires_personal_info: false
     action: chatgpt_task
     description: >-
-      Google, Meta, Apple, Amazon, Microsoft, Netflix 커리어 페이지에서
-      TypeScript 풀스택 6년차, 물리학 석사, 영어 가능 조건에 맞는
-      한국 원격(Remote) 또는 단기 계약직 포지션을 탐색.
-      JD를 읽고 역할/기술 스택/근무 형태/자격 요건을 정리하여
-      매칭 우선순위(높음/중간/낮음)와 지원 마감일을 포함한 표로 출력.
+      목적: 커리어 브랜딩(이름빨 간판 모으기). 연봉 무관, 1개월 단기 계약도 OK.
+      대상 기업: Google, Meta, Apple, Amazon, Microsoft, Netflix,
+      OpenAI, Anthropic, NVIDIA, Tesla, Stripe, Databricks, Figma, Notion, Vercel.
+      직군 무관(엔지니어링 외 PM, 디자인, 리서치, 오퍼레이션 등 모두 포함).
+      근무조건 무관(원격/온사이트/하이브리드 모두 OK).
+      각 기업 커리어 페이지에서 한국 또는 원격 가능 포지션을 탐색.
+      JD를 읽고 역할/팀/근무 형태/계약 기간/자격 요건을 정리하여
+      브랜드 가치(높음/중간/낮음)와 지원 마감일을 포함한 표로 출력.
 
   edutech_competitors:
     title: "에듀테크 경쟁사 딥 리서치"
