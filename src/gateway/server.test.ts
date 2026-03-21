@@ -37,8 +37,10 @@ describe('Gateway Server', () => {
     ({ store, app } = create_test_app());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     store.close();
+    // Flush any fire-and-forget setTimeout(0) callbacks (e.g., LLM PII checks)
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 
   // === Health check ===
@@ -401,13 +403,14 @@ describe('Gateway Server', () => {
 
     it('should reject hunter requests when no API key and no dev mode', async () => {
       const { store: strict_store, app: strict_app } = create_test_app({ dev_mode: false });
-
-      const res = await request(strict_app).get('/api/hunter/tasks/pending');
-      expect(res.status).toBe(401);
-      expect(res.body.error).toBe('AUTH_ERROR');
-      expect(res.body.message).toContain('not configured');
-
-      strict_store.close();
+      try {
+        const res = await request(strict_app).get('/api/hunter/tasks/pending');
+        expect(res.status).toBe(401);
+        expect(res.body.error).toBe('AUTH_ERROR');
+        expect(res.body.message).toContain('not configured');
+      } finally {
+        strict_store.close();
+      }
     });
 
     it('should NOT require auth for captain endpoints', async () => {
@@ -591,19 +594,21 @@ describe('Gateway Server', () => {
         rate_limit_max_requests: 2,  // Only 2 requests per minute
       });
 
-      // 1st and 2nd requests — allowed
-      const res1 = await request(rl_app).get('/api/hunter/tasks/pending');
-      expect(res1.status).toBe(200);
+      try {
+        // 1st and 2nd requests — allowed
+        const res1 = await request(rl_app).get('/api/hunter/tasks/pending');
+        expect(res1.status).toBe(200);
 
-      const res2 = await request(rl_app).post('/api/hunter/heartbeat');
-      expect(res2.status).toBe(200);
+        const res2 = await request(rl_app).post('/api/hunter/heartbeat');
+        expect(res2.status).toBe(200);
 
-      // 3rd request — rate limited
-      const res3 = await request(rl_app).get('/api/hunter/tasks/pending');
-      expect(res3.status).toBe(429);
-      expect(res3.body.error).toBe('RATE_LIMIT');
-
-      rl_store.close();
+        // 3rd request — rate limited
+        const res3 = await request(rl_app).get('/api/hunter/tasks/pending');
+        expect(res3.status).toBe(429);
+        expect(res3.body.error).toBe('RATE_LIMIT');
+      } finally {
+        rl_store.close();
+      }
     });
 
     it('should not rate limit captain endpoints', async () => {
@@ -614,17 +619,19 @@ describe('Gateway Server', () => {
         rate_limit_max_requests: 1,  // Very strict — 1 request per minute
       });
 
-      // Use up the rate limit on hunter endpoint
-      await request(rl_app).get('/api/hunter/tasks/pending');
+      try {
+        // Use up the rate limit on hunter endpoint
+        await request(rl_app).get('/api/hunter/tasks/pending');
 
-      // Captain endpoints should still work
-      const health = await request(rl_app).get('/api/health');
-      expect(health.status).toBe(200);
+        // Captain endpoints should still work
+        const health = await request(rl_app).get('/api/health');
+        expect(health.status).toBe(200);
 
-      const tasks = await request(rl_app).get('/api/tasks');
-      expect(tasks.status).toBe(200);
-
-      rl_store.close();
+        const tasks = await request(rl_app).get('/api/tasks');
+        expect(tasks.status).toBe(200);
+      } finally {
+        rl_store.close();
+      }
     });
   });
 
@@ -777,14 +784,16 @@ describe('Gateway Server', () => {
         notification_router: mock_notification_router as any,
       });
 
-      // GET /api/n8n/metrics should be accessible
-      const res = await request(n8n_app).get('/api/n8n/metrics');
-      expect(res.status).toBe(200);
-      expect(res.body.tasks).toBeDefined();
-      expect(res.body.mode).toBeDefined();
-      expect(res.body.timestamp).toBeDefined();
-
-      n8n_store.close();
+      try {
+        // GET /api/n8n/metrics should be accessible
+        const res = await request(n8n_app).get('/api/n8n/metrics');
+        expect(res.status).toBe(200);
+        expect(res.body.tasks).toBeDefined();
+        expect(res.body.mode).toBeDefined();
+        expect(res.body.timestamp).toBeDefined();
+      } finally {
+        n8n_store.close();
+      }
     });
 
     it('should NOT mount n8n routes when planning_loop is missing', async () => {
@@ -808,12 +817,14 @@ describe('Gateway Server', () => {
         notification_router: mock_notification_router as any,
       });
 
-      const res = await request(n8n_app).post('/api/n8n/planning/morning');
-      expect(res.status).toBe(200);
-      expect(res.body.created_count).toBe(1);
-      expect(res.body.skipped_count).toBe(1);
-
-      n8n_store.close();
+      try {
+        const res = await request(n8n_app).post('/api/n8n/planning/morning');
+        expect(res.status).toBe(200);
+        expect(res.body.created_count).toBe(1);
+        expect(res.body.skipped_count).toBe(1);
+      } finally {
+        n8n_store.close();
+      }
     });
   });
 });
