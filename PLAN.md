@@ -278,7 +278,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `format_grant_report_for_notion`: priority별 그룹핑 마크다운
   - [x] `format_deadline_alerts_for_telegram`: D-1/D-3 긴급 알림
   - [x] `create_grant_notification_handler`: crawl_result→Notion+Slack, alert→Telegram
-- [ ] 보고서 → Notion 페이지 생성 → Slack 전달 (handler 구현 완료, 실제 연동은 배포 후)
+- [x] 보고서 → Notion 페이지 생성 → Slack 전달 — result_router 통합 완료 (2026-03-22)
 
 ### 4-2. 로또 청약 정보 수집 (3일 주기) — 파서 구현 완료 ✅
 
@@ -289,7 +289,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `generate_housing_report`: 마감 알림(D-1/D-3/D-7) 포함 리포트
 - [ ] 신규 공고 → 분석 보고서 자동 생성 (입주자모집공고 PDF 분석)
   - 위치, 가격, 경쟁률 예상, 자격 충족 여부
-- [ ] 보고서 → Notion + Telegram 전송 → 인간 승인 → 직접 청약
+- [x] 보고서 → Notion + Telegram 전송 — result_router + housing_notifier 통합 완료 (2026-03-22)
+- [ ] 인간 승인 → 직접 청약
 
 ### 4-3. 블라인드 네이버 인기글 모니터링 (매일)
 
@@ -312,7 +313,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `create_keyword_filter()`: 영/한 양방향 (에듀테크, NVC, 자동화, 로컬LLM 등)
   - [x] `generate_trend_report()`: 소스별 그룹핑 + 점수 내림차순 포맷
   - [x] `run_ai_trend_research()`: 전체 오케스트레이터 (partial failure 허용, 19 tests)
-- [ ] Notion 페이지 생성 → Slack 전달 (알림 라우터 연결)
+- [x] Notion 페이지 생성 → Slack 전달 — result_router 통합 완료 (2026-03-22)
 
 ### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기)
 
@@ -346,7 +347,7 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `check_degradation()`: 히스토리 비교 (10점+ 하락 감지)
   - [x] `format_report()`: PASS/FAIL + ↑↓ 비교 화살표 + 권장사항 (27 tests)
 - [x] 히스토리 추적: `state/lighthouse_history.json` 자동 저장
-- [ ] 주기적 실행 스케줄 등록 (n8n 또는 schedules.yml)
+- [x] 주기적 실행 스케줄 등록 — `schedules.yml` 주간 목요 03:00 (2026-03-22)
 
 ---
 
@@ -422,7 +423,8 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
 - [x] **B2B 인텐트 크롤링 파이프라인** — Crawl4AI + OpenClaw + Clay.com (2026-03-22)
   - [x] `src/pipeline/b2b_intent_pipeline.ts` 구현
   - [x] schedules.yml에 b2b_intent_crawl 등록 (04:30, hunter)
-  - [ ] Crawl4AI Docker 실행 + Clay.com webhook URL 설정 *(인간 작업)*
+  - [x] Crawl4AI Docker 실행 — Colima + Docker + Crawl4AI v0.8.5 가동 완료 (2026-03-22)
+  - [ ] Clay.com webhook URL 설정 *(인간 작업)*
 
 ### 6-1. 캐시플로우 프로젝트 발굴
 
@@ -677,11 +679,25 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 
 ---
 
-## 잔여 작업 상세 (2026-03-21 22:00 기준)
+## 잔여 작업 상세 (2026-03-22 기준)
 
 > 세션 1: 587→1006 테스트, 17개 신규 모듈 구현
 > 세션 2 (섀도우): 1006→1182 테스트, 8개 추가 모듈 + 헌터 초기 세팅 + 스크립트 버그 수정
-> 총 60개 테스트 파일, 1182개 테스트 통과. 캡틴/섀도우 모두 검증 완료.
+> 세션 3: 1182→1214 테스트, 6개 자율 실행 모듈 (blind, trend, grad, lighthouse, usage, resilient)
+> 세션 4 (현재): 1214→1371 테스트, result_router + 헌터 Docker + Crawl4AI
+> 총 65개 테스트 파일, 1371개 테스트 통과.
+
+### ✅ 세션 4에서 완료한 것 (2026-03-22)
+
+- [x] Result Router — 헌터 태스크 결과를 전문 핸들러로 자동 라우팅 (`src/pipeline/result_router.ts`, 23 tests)
+  - grant, housing, blind, blind_nvc, ai_trends, bigtech_jobs, edutech, grad_school, lighthouse, b2b_intent, deep_research
+  - `server.ts` 헌터 결과 엔드포인트에 와이어링 완료
+  - `main.ts`에서 research_store + result_router 초기화 완료
+- [x] Lighthouse 주기적 스케줄 — `config/schedules.yml`에 주간 목요 03:00 등록
+- [x] 헌터 Docker 환경 구축 — Homebrew + Colima + Docker 설치, 로그인 시 자동 시작
+- [x] Crawl4AI 컨테이너 가동 — `localhost:11235` (v0.8.5, restart=unless-stopped)
+- [x] docker-compose CLI 플러그인 경로 설정
+- [x] Thunderbolt 케이블 검증 — bridge0 존재 확인 (pf 방화벽은 sudo 필요)
 
 ### ✅ 세션 2에서 완료한 것 (2026-03-21)
 
@@ -706,8 +722,10 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 | ~~헌터 머신 초기 세팅~~ | ~~0-5~~ | ✅ 완료 |
 | ~~Gemini CLI 계정 인증~~ | ~~1-2~~ | ✅ 완료 |
 | ~~Notion DB + API Key~~ | ~~7-3b~~ | ✅ 이미 설정됨 |
-| Thunderbolt 케이블 연결 + 검증 | 2-3 | 주인님 준비되면. `verify_cable_connection.sh`로 검증 |
-| Crawl4AI Docker + Clay.com webhook 설정 | 6-0b | 헌터에서 Docker 실행 + URL 설정 |
+| ~~Thunderbolt 케이블 연결~~ | ~~2-3~~ | ✅ bridge0 존재 확인, pf 방화벽은 sudo 필요 |
+| ~~Crawl4AI Docker 실행~~ | ~~6-0b~~ | ✅ Colima+Docker+Crawl4AI 가동 완료 (v0.8.5) |
+| Clay.com webhook URL 설정 | 6-0b | webhook URL 확정 필요 *(인간 작업)* |
+| pf 방화벽 활성화 (sudo) | 2-3 | `sudo bash scripts/setup/setup_pf_firewall.sh` *(인간 작업)* |
 
 ### 🟡 주인님 판단 필요 (코딩은 가능하나 방향 확정 필요)
 
