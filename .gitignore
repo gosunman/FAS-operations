@@ -43,3 +43,6 @@ coverage/
 # Security review outputs (Doctrine isolation — must never reach hunter)
 reviews/
 research/
+
+# Runtime output data
+output/
