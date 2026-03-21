@@ -24,6 +24,9 @@ import { create_task_executor, type TaskExecutor } from './task_executor.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
 import { create_crash_monitor } from '../watchdog/crash_recovery.js';
 import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
+import { create_result_router } from '../pipeline/result_router.js';
+import { create_research_store } from './research_store.js';
+import { create_notebooklm_verifier } from '../gateway/notebooklm_verify.js';
 import type { GeminiConfig } from '../gemini/types.js';
 import { execSync } from 'node:child_process';
 import { get_sessions_for_device } from '../shared/agents_config.js';
@@ -139,6 +142,15 @@ const main = async () => {
   });
   console.log(`[Captain] Crash monitor initialized with alert bridge (${CRASH_STATE_PATH})`);
 
+  // 2c. Research store (Deep Research results persistence)
+  const RESEARCH_DIR = resolve(process.cwd(), 'research');
+  const research_store = create_research_store(RESEARCH_DIR);
+  console.log(`[Captain] Research store initialized (${RESEARCH_DIR})`);
+
+  // 2d. Result router (dispatches hunter results to specialized handlers)
+  const result_router = create_result_router({ router, research_store });
+  console.log('[Captain] Result router initialized');
+
   // 3. Gateway API server
   const dev_mode = process.env.FAS_DEV_MODE === 'true' && process.env.NODE_ENV !== 'production';
 
@@ -150,6 +162,7 @@ const main = async () => {
       : null,
     notification_router: router,
     activity_logger,
+    result_router,
   });
 
   const server: Server = await new Promise((resolve) => {

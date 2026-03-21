@@ -53,6 +53,7 @@ import type { ActivityLogger } from '../watchdog/activity_logger.js';
 import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
 import { create_n8n_routes, type N8nWebhookDeps } from './n8n_webhooks.js';
 import type { PlanningLoop } from '../captain/planning_loop.js';
+import type { ResultRouter } from '../pipeline/result_router.js';
 
 // Shared logger instance for the gateway module
 const log = create_logger({ prefix: 'Gateway' });
@@ -87,6 +88,7 @@ export type AppOptions = {
   notification_router?: NotificationRouter | null; // Notification router for crawl_result events
   activity_logger?: ActivityLogger | null;         // Activity logger for audit trail
   planning_loop?: PlanningLoop | null;             // Planning loop for n8n webhook integration
+  result_router?: ResultRouter | null;             // Specialized result routing (grant, housing, blind, etc.)
 };
 
 // Notion backup configuration — saves completed task results to Notion as a durable backup
@@ -590,8 +592,8 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         notion_backup.backup_task_result(completed_task.id, completed_task.title, safe_output).catch(() => {});
       }
 
-      // Fire-and-forget notification: crawl_result → Notion (full) + Slack (summary + link)
-      if (options.notification_router && completed_task) {
+      // Fire-and-forget notification: route to specialized handler or generic fallback
+      if (completed_task) {
         // Extract text payload from OpenClaw JSON result
         let notify_text = safe_output;
         try {
@@ -602,15 +604,28 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
           }
         } catch { /* not JSON, use safe_output as-is */ }
 
-        const event: NotificationEvent = {
-          type: 'crawl_result',
-          message: `[${completed_task.title}]\n\n${notify_text}`,
-          device: 'hunter',
-          severity: 'low',
-        };
-        options.notification_router.route(event).catch((err) => {
-          log.warn(`Notification failed for task ${req.params.id}:`, err);
-        });
+        if (options.result_router) {
+          // Use specialized result router for handler dispatch
+          options.result_router.route(
+            { id: completed_task.id, title: completed_task.title, description: completed_task.description, action: completed_task.action },
+            notify_text,
+          ).then((route_result) => {
+            log.info(`Result routed: task=${completed_task.id} handler=${route_result.handler} handled=${route_result.handled}`);
+          }).catch((err) => {
+            log.warn(`Result routing failed for task ${req.params.id}:`, err);
+          });
+        } else if (options.notification_router) {
+          // Fallback: generic crawl_result notification
+          const event: NotificationEvent = {
+            type: 'crawl_result',
+            message: `[${completed_task.title}]\n\n${notify_text}`,
+            device: 'hunter',
+            severity: 'low',
+          };
+          options.notification_router.route(event).catch((err) => {
+            log.warn(`Notification failed for task ${req.params.id}:`, err);
+          });
+        }
       }
     } else {
       store.block_task(req.params.id, safe_output);

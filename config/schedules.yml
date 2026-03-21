@@ -122,6 +122,18 @@ schedules:
     action: b2b_intent_crawl
     description: "타겟 도메인 크롤링 후 OpenClaw로 인텐트 추출 및 Clay.com 자동 전송"
 
+  lighthouse_audit:
+    title: "Lighthouse SEO/성능 감사"
+    type: weekly
+    day: thursday
+    time: "03:00"
+    mode: sleep
+    agent: captain
+    risk_level: low
+    requires_personal_info: false
+    action: lighthouse_audit
+    description: "등록된 URL 대상 Lighthouse 감사 (Performance/SEO/Accessibility). 10점+ 하락 시 Slack 경고"
+
   # === System workflows (no agent — triggered by cron/launchd) ===
 
   morning_briefing:
