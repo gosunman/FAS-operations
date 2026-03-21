@@ -50,6 +50,9 @@ const ROUTE_MAP: Array<{ pattern: RegExp; handler: string }> = [
   { pattern: /대학원.*지원|grad.*school|OMSCS|GSEP/i, handler: 'grad_school' },
   { pattern: /Lighthouse|lighthouse|SEO.*성능/i, handler: 'lighthouse' },
   { pattern: /B2B.*인텐트|b2b.*intent/i, handler: 'b2b_intent' },
+  { pattern: /AI 에이전트.*자동화|ai.?agent.*automation/i, handler: 'ai_agent_automation' },
+  { pattern: /FAS.*개선.*인텔|fas.*improvement/i, handler: 'fas_improvement' },
+  { pattern: /Claude Code.*업데이트|claude.?code.*update/i, handler: 'claude_code_updates' },
   // deep_research must be last among content patterns — "딥 리서치" appears in other titles
   { pattern: /^deep.?research|^딥.?리서치/i, handler: 'deep_research' },
 ];
@@ -162,6 +165,22 @@ export const detect_high_value = (handler_name: string, output: string): HighVal
       return null;
     }
 
+    // These three are ALWAYS high-value — owner explicitly requested daily delivery
+    case 'ai_agent_automation': {
+      const snippet = output.slice(0, 200).replace(/\n/g, ' ');
+      return { title: '🤖 AI Agent 자동화 동향', summary: snippet, severity: 'high' };
+    }
+
+    case 'fas_improvement': {
+      const snippet = output.slice(0, 200).replace(/\n/g, ' ');
+      return { title: '🔧 FAS 개선 인텔리전스', summary: snippet, severity: 'high' };
+    }
+
+    case 'claude_code_updates': {
+      const snippet = output.slice(0, 200).replace(/\n/g, ' ');
+      return { title: '🧠 Claude Code 업데이트', summary: snippet, severity: 'high' };
+    }
+
     default:
       // All other handlers: no Telegram escalation
       return null;
@@ -220,6 +239,18 @@ export const create_result_router = (deps: ResultRouterDeps) => {
 
         case 'b2b_intent':
           result = await handle_formatted_result(output, task, '🎯 B2B Intent Crawl');
+          break;
+
+        case 'ai_agent_automation':
+          result = await handle_formatted_result(output, task, '🤖 AI Agent Automation Intel');
+          break;
+
+        case 'fas_improvement':
+          result = await handle_formatted_result(output, task, '🔧 FAS Improvement Intel');
+          break;
+
+        case 'claude_code_updates':
+          result = await handle_formatted_result(output, task, '🧠 Claude Code Updates');
           break;
 
         case 'deep_research':

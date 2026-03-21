@@ -87,6 +87,9 @@ describe('result_router vs schedules.yml integration', () => {
       edutech_competitors: 'edutech_competitors',
       grad_school_deadlines: 'grad_school',
       b2b_intent_crawl: 'b2b_intent',
+      ai_agent_automation: 'ai_agent_automation',
+      fas_improvement_intel: 'fas_improvement',
+      claude_code_updates: 'claude_code_updates',
     });
   });
 });

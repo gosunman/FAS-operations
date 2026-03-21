@@ -125,6 +125,60 @@ schedules:
     action: b2b_intent_crawl
     description: "타겟 도메인 크롤링 후 OpenClaw로 인텐트 추출 및 Clay.com 자동 전송"
 
+  ai_agent_automation:
+    title: "AI 에이전트 자동화 기술 동향"
+    type: daily
+    time: "01:30"
+    mode: sleep
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: chatgpt_task
+    description: >-
+      AI 에이전트를 이용한 자동화 관련 최신 정보를 수집.
+      대상: Claude Code/Anthropic Agent SDK 업데이트, OpenAI Agents SDK,
+      Google ADK, LangChain/LangGraph, CrewAI, AutoGen, n8n AI nodes,
+      MCP(Model Context Protocol) 신규 서버/도구.
+      각 항목의 핵심 기능, 목표, 사용법을 3줄 요약하고
+      상세 정보 URL을 반드시 포함. 출처: GitHub releases, 공식 블로그,
+      HN, Reddit r/ClaudeAI r/ChatGPTPro r/LocalLLaMA, X(Twitter).
+
+  fas_improvement_intel:
+    title: "FAS 시스템 개선 인텔리전스"
+    type: daily
+    time: "01:45"
+    mode: sleep
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: chatgpt_task
+    description: >-
+      FAS(Fully Automation System) 개선에 도움 되는 기술/정보/트렌드 조사.
+      FAS 구성: Mac Studio 2대(캡틴+헌터), Claude Code, Gemini CLI, ChatGPT/OpenClaw,
+      n8n, Playwright, Crawl4AI, Tailscale, SQLite, Express Gateway.
+      조사 범위: (1) 위 스택의 신규 버전/기능/보안패치 (2) 대안 도구 등장 여부
+      (3) 멀티 에이전트 오케스트레이션 신기술 (4) 로컬 LLM 추론 최적화(JACCL 등)
+      (5) macOS 자동화 신기능 (6) 보안 강화 도구/기법.
+      각 항목: 3줄 요약 + 도입 시 기대 효과 + 상세 URL 필수.
+
+  claude_code_updates:
+    title: "Claude Code 일일 업데이트 추적"
+    type: daily
+    time: "02:00"
+    mode: sleep
+    agent: hunter
+    risk_level: low
+    requires_personal_info: false
+    action: chatgpt_task
+    description: >-
+      Claude Code(Anthropic 공식 CLI)의 최신 업데이트, 변경사항, 신기능을 추적.
+      출처: GitHub anthropics/claude-code releases, Anthropic 공식 블로그,
+      docs.anthropic.com, X @AnthropicAI, Reddit r/ClaudeAI.
+      포함 사항: (1) 새 버전 릴리즈 노트 요약 (2) 신규 도구/MCP 서버
+      (3) 프롬프트 엔지니어링 팁 (4) 플러그인/스킬 생태계 변화
+      (5) API 변경사항 (6) 경쟁 도구(Cursor, Copilot, Cline) 동향 비교.
+      각 항목: 핵심 기능 + 목표 + 사용법 3줄 요약 + 상세 URL 필수.
+
   lighthouse_audit:
     title: "Lighthouse SEO/성능 감사"
     type: weekly
