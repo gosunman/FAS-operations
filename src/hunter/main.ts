@@ -258,7 +258,8 @@ if (is_main) {
   logger.info('Hunter agent started in CAPTAIN mode. Monitoring Captain API health...');
   logger.info('Revenue loop will activate automatically if Captain becomes unreachable.');
 
-  await notify.alert('👁️ Hunter Agent v2.0 started — Dual Mode (Captain + Autonomous)');
+  // Fire-and-forget — do NOT await (blocks event loop if Telegram is unreachable)
+  notify.alert('👁️ Hunter Agent v2.0 started — Dual Mode (Captain + Autonomous)').catch(() => {});
 
   // Graceful shutdown — close all resources
   const shutdown = async () => {
