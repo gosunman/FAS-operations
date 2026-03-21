@@ -58,32 +58,27 @@ export const build_scout_prompt = (existing_titles: string[]): string => {
     ? existing_titles.join(', ')
     : '(none)';
 
-  return `You are the brain of Hunter, an autonomous revenue agent. Your mission is to find monetizable side-project opportunities.
+  return `IMPORTANT: You MUST respond with ONLY a JSON array. No explanation, no markdown, no text before or after. Just the JSON array.
 
-Search these sources:
-1. GitHub Trending (last 7 days) — look for tools/frameworks that could become paid services
-2. ProductHunt — recent popular products that could be replicated/adapted
-3. Overseas communities (IndieHackers, r/SideProject, r/Entrepreneur) — proven revenue models
-4. AI tool trends — new AI capabilities that enable new business models
+You are Hunter, an autonomous revenue agent. Find 3-5 monetizable side-project opportunities from:
+1. GitHub Trending (last 7 days) — tools that could become paid services
+2. ProductHunt — products that could be replicated for Korean market
+3. IndieHackers, r/SideProject — proven solo-founder revenue models
+4. AI tool trends — new AI capabilities enabling new businesses
 
-For each opportunity, evaluate:
-- Can one person build an MVP in under 1 week?
-- Is there Korean market demand?
-- Expected monthly revenue range
-- Required technical resources
+Requirements per opportunity:
+- One person can build MVP in under 1 week
+- Korean market demand exists
+- Monthly revenue potential
 
-Already known projects (skip these): ${titles_list}
+Skip these existing projects: ${titles_list}
 
-Return a JSON array (no markdown, just raw JSON):
-[{
-  "title": "Project name",
-  "category": "youtube_shorts_automation|blog_seo_auto_content|micro_saas|print_on_demand|info_brokerage|github_trending_service|other",
-  "expected_revenue": "월 XX만원",
-  "resources_needed": ["tool1", "tool2"],
-  "reasoning": "Why this is promising"
-}]
+YOUR RESPONSE MUST BE EXACTLY THIS FORMAT (valid JSON array, nothing else):
+[{"title":"Project name","category":"micro_saas","expected_revenue":"월 30만원","resources_needed":["Node.js","Vercel"],"reasoning":"Why promising"}]
 
-Find 3-5 opportunities. Be creative but realistic.`;
+Valid categories: youtube_shorts_automation, blog_seo_auto_content, micro_saas, print_on_demand, info_brokerage, github_trending_service, other
+
+RESPOND WITH ONLY THE JSON ARRAY. NO OTHER TEXT.`;
 };
 
 // Execute OpenClaw CLI with the given prompt and timeout.
@@ -171,8 +166,24 @@ export const parse_opportunities = (raw: string): Opportunity[] | null => {
           return parsed as Opportunity[];
         }
       } catch {
-        // Fall through to return null
+        // Fall through to attempt 4
       }
+    }
+
+    // Attempt 4: extract individual JSON objects {...} and assemble an array
+    // Handles cases where OpenClaw returns narrative text with embedded JSON objects
+    const object_matches = raw.match(/\{[^{}]*"title"[^{}]*\}/g);
+    if (object_matches && object_matches.length > 0) {
+      const results: Opportunity[] = [];
+      for (const obj_str of object_matches) {
+        try {
+          const parsed = JSON.parse(obj_str);
+          results.push(parsed as Opportunity);
+        } catch {
+          // Skip malformed objects
+        }
+      }
+      if (results.length > 0) return results;
     }
 
     return null;

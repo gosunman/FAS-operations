@@ -173,7 +173,7 @@ describe('build_scout_prompt', () => {
     // Then
     expect(prompt).toContain('Project Alpha');
     expect(prompt).toContain('Project Beta');
-    expect(prompt).toContain('Already known projects (skip these)');
+    expect(prompt).toContain('Skip these existing projects');
   });
 
   it('should show "(none)" when no existing projects', () => {
@@ -192,8 +192,8 @@ describe('build_scout_prompt', () => {
     const prompt = build_scout_prompt([]);
 
     // Then
-    expect(prompt).toContain('Return a JSON array');
-    expect(prompt).toContain('Find 3-5 opportunities');
+    expect(prompt).toContain('JSON array');
+    expect(prompt).toContain('3-5');
   });
 
   it('should mention all four research sources', () => {
