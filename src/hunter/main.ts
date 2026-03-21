@@ -210,33 +210,9 @@ if (is_main) {
     }, check_interval);
   };
 
-  // === Mode transition handler ===
-  // Watch mode_router state and start/stop appropriate loops
-  let last_known_mode = mode_router.get_mode();
-
-  const watch_mode_transitions = () => {
-    setInterval(() => {
-      const current_mode = mode_router.get_mode();
-
-      if (current_mode !== last_known_mode) {
-        logger.info(`[Mode Switch] ${last_known_mode} → ${current_mode}`);
-
-        if (current_mode === 'autonomous') {
-          // Captain went down — start revenue loop, keep poll loop running for recovery detection
-          start_revenue_loop();
-        } else {
-          // Captain recovered — stop revenue loop, poll loop continues
-          stop_revenue_loop();
-        }
-
-        last_known_mode = current_mode;
-      }
-    }, 5_000); // Check every 5 seconds
-  };
-
   // === Startup ===
   logger.info('═══════════════════════════════════════════════════');
-  logger.info('  Hunter Agent v2.0 — Dual Mode (Captain + Autonomous)');
+  logger.info('  Hunter Agent v2.0 — Hybrid Mode (Captain + Revenue)');
   logger.info('═══════════════════════════════════════════════════');
   logger.info(`Captain API: ${config.captain_api_url}`);
   logger.info(`Poll interval: ${config.poll_interval_ms}ms`);
@@ -247,19 +223,21 @@ if (is_main) {
   logger.info(`Scout interval: ${config.scout_interval_ms}ms (${config.scout_interval_ms / 3_600_000}h)`);
   logger.info(`Captain failure threshold: ${config.captain_failure_threshold}`);
 
-  // Start all systems
+  // Start all systems in parallel — Hunter is NEVER idle
+  // Captain poll loop: handles assigned tasks from Captain API
+  // Revenue loop: discovers and executes self-directed revenue projects
+  // Both run simultaneously. Captain tasks take priority (OpenClaw is single-threaded).
   poll_loop.start();                // Always running — polls Captain for work
   mode_router.start();              // Always running — monitors Captain health
-  watch_mode_transitions();         // Always running — handles mode switches
+  start_revenue_loop();             // Always running — revenue project pipeline
   schedule_daily_summary();         // Always running — daily summaries
 
-  // Start in autonomous mode immediately if Captain is expected to be down
-  // (The mode_router will switch back once Captain is confirmed alive)
-  logger.info('Hunter agent started in CAPTAIN mode. Monitoring Captain API health...');
-  logger.info('Revenue loop will activate automatically if Captain becomes unreachable.');
+  logger.info('Hunter agent started in HYBRID mode.');
+  logger.info('Captain poll loop + Revenue loop running in parallel.');
+  logger.info('Hunter is NEVER idle — always researching, building, or learning.');
 
   // Fire-and-forget — do NOT await (blocks event loop if Telegram is unreachable)
-  notify.alert('👁️ Hunter Agent v2.0 started — Dual Mode (Captain + Autonomous)').catch(() => {});
+  notify.alert('👁️ Hunter Agent v2.0 started — Hybrid Mode (Captain + Revenue always active)').catch(() => {});
 
   // Graceful shutdown — close all resources
   const shutdown = async () => {
