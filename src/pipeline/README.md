@@ -8,6 +8,7 @@
 |------|------|
 | `b2b_intent_pipeline.ts` | Crawl4AI 크롤링 → OpenClaw 인텐트 추출 → Clay.com 전송 |
 | `ai_trend_parser.ts` | HN/Reddit/arxiv AI 트렌드 수집 + 키워드 필터링 + 일일 리포트 |
+| `bigtech_job_scanner.ts` | 빅테크 커리어 브랜딩 스캐너 — 15개 기업 설정 + 브랜드 티어 + 포지션 매칭 |
 | `blind_monitor.ts` | 블라인드 네이버 인기글 결과 파서 + 인기 기준 필터 + Slack 포맷 |
 | `grad_school_tracker.ts` | OMSCS/GSEP 대학원 마감 추적 + D-30/14/7/3 단계별 알림 |
 | `lighthouse_audit.ts` | Lighthouse CLI 래퍼 + 성능/SEO/접근성 감사 + 히스토리 비교 |
