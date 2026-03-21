@@ -315,12 +315,15 @@ Phase 7: 안정화 + 모니터링 고도화        (지속)
   - [x] `run_ai_trend_research()`: 전체 오케스트레이터 (partial failure 허용, 19 tests)
 - [x] Notion 페이지 생성 → Slack 전달 — result_router 통합 완료 (2026-03-22)
 
-### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기)
+### 4-5. 글로벌 빅테크 취업 공고 체크 (3일 주기) — 스캐너 구현 완료 ✅
 
-- [ ] 대상: Google, Meta, Apple, Amazon, Microsoft, Netflix 등 글로벌 인지도 높은 기업
-- [ ] 조건 필터: 주인님 스펙 기반 (TS 풀스택 6년, 석사, 영어 가능)
-- [ ] 한국 오피스 + 해외 포지션 모두 체크 (TODO: 조건 상세 확정)
-- [ ] 매칭되는 공고 발견 시 → Notion 보고서 + Telegram 알림
+- [x] 빅테크 커리어 브랜딩 스캐너 — `src/pipeline/bigtech_job_scanner.ts` (2026-03-22)
+  - [x] 15개 대상 기업 설정 (S/A/B 브랜드 티어): Google, Apple, Meta, Amazon, Microsoft, Netflix, NVIDIA 등
+  - [x] 조건 필터: TS 풀스택 6년, 석사, 영어 가능 기반 스펙 매칭
+  - [x] 한국 오피스 + 해외 원격 포지션 모두 체크
+  - [x] `scan_config` + `match_posting` + `generate_scan_report` + `format_scan_alert`
+- [x] result_router 통합 — bigtech_jobs 핸들러 등록 완료
+- [ ] 실제 크롤링 연동 (헌터 chatgpt_task) — 조건 상세 확정 후 스케줄 활성화
 
 ### 4-6. 대학원 지원 일정 알림
 
@@ -684,20 +687,43 @@ Phase 0 ─┬→ Phase 1 ─→ Phase 2 ─→ Phase 3
 > 세션 1: 587→1006 테스트, 17개 신규 모듈 구현
 > 세션 2 (섀도우): 1006→1182 테스트, 8개 추가 모듈 + 헌터 초기 세팅 + 스크립트 버그 수정
 > 세션 3: 1182→1214 테스트, 6개 자율 실행 모듈 (blind, trend, grad, lighthouse, usage, resilient)
-> 세션 4 (현재): 1214→1371 테스트, result_router + 헌터 Docker + Crawl4AI
-> 총 65개 테스트 파일, 1371개 테스트 통과.
+> 세션 4: 1214→1534 테스트, result_router + captain_worker + bigtech_scanner + google_messages + safe_fire_forget + local_script + 헌터 Docker + Crawl4AI + NotebookLM 리뷰 1-4 반영
+> 총 71개 테스트 파일, 1534개 테스트 통과.
 
 ### ✅ 세션 4에서 완료한 것 (2026-03-22)
 
+**핵심 모듈:**
 - [x] Result Router — 헌터 태스크 결과를 전문 핸들러로 자동 라우팅 (`src/pipeline/result_router.ts`, 23 tests)
   - grant, housing, blind, blind_nvc, ai_trends, bigtech_jobs, edutech, grad_school, lighthouse, b2b_intent, deep_research
   - `server.ts` 헌터 결과 엔드포인트에 와이어링 완료
   - `main.ts`에서 research_store + result_router 초기화 완료
+- [x] Captain Worker — 캡틴 전용 태스크 실행기 (`src/captain/captain_worker.ts`, lighthouse_audit + local_script 핸들러)
+- [x] Local Script Handler — 보안 스크립트 실행기 (`src/captain/local_script_handler.ts`, 경로 탈출 방지 + 타임아웃)
+- [x] Bigtech Job Scanner — 빅테크 커리어 브랜딩 스캐너 (`src/pipeline/bigtech_job_scanner.ts`, 15개 기업 + 포지션 매칭)
+- [x] Google Messages — 학부모 문자 웹 자동화 (`src/academy/google_messages.ts`, Playwright + 구글 프로필)
+- [x] safe_fire_forget — 안전한 fire-and-forget 유틸리티 (`src/shared/safe_fire_forget.ts`, Slack 알림 + rate limit)
+
+**인프라 & 설정:**
 - [x] Lighthouse 주기적 스케줄 — `config/schedules.yml`에 주간 목요 03:00 등록
 - [x] 헌터 Docker 환경 구축 — Homebrew + Colima + Docker 설치, 로그인 시 자동 시작
 - [x] Crawl4AI 컨테이너 가동 — `localhost:11235` (v0.8.5, restart=unless-stopped)
 - [x] docker-compose CLI 플러그인 경로 설정
 - [x] Thunderbolt 케이블 검증 — bridge0 존재 확인 (pf 방화벽은 sudo 필요)
+- [x] .gitignore 수정 — output/, .claude/ 디렉토리 제외
+
+**와이어링 & 통합:**
+- [x] LLM PII async — `sanitizer.ts`에 비동기 PII 필터링 (Gemini CLI 기반)
+- [x] SLEEP defer — 나이트 플래닝에서 SLEEP 모드 태스크 자동 연기
+- [x] local_script 핸들러를 captain_worker에 등록 (`main.ts`)
+- [x] Research cleanup을 나이트 플래닝에 와이어링 (30일 retention)
+- [x] E2E integration test — result_router 통합 테스트 (`result_router.integration.test.ts`)
+- [x] Chemistry template — 화학 과목 기본 템플릿 (textbook_generator 확장)
+
+**NotebookLM 교차 검증 리뷰 반영:**
+- [x] Part 1-4 리뷰 적용 — 코드 품질, 테스트 커버리지, 아키텍처 일관성 개선
+- [x] Telegram Galaxy Watch 승인 패턴 확인 — 인라인 키보드 OK
+
+**세션 4 통계: 1214→1534 테스트, 71개 파일**
 
 ### ✅ 세션 2에서 완료한 것 (2026-03-21)
 

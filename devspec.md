@@ -93,6 +93,11 @@
 - **grad_school_tracker.ts**: OMSCS/GSEP 대학원 마감 추적기. `check_deadlines(today?)` — D-30/14/7/3 단계별 알림 판단 (stateless). 프로그램별 체크리스트 자동 생성.
 - **lighthouse_audit.ts**: Lighthouse CLI(`npx lighthouse`) 래퍼. `create_lighthouse_auditor(config)` → `audit()`, `audit_all()`, `check_degradation()`, `format_report()`. `state/lighthouse_history.json`에 히스토리 저장, 10점+ 하락 감지.
 - **b2b_intent_pipeline.ts**: Crawl4AI → OpenClaw 인텐트 추출 → Clay.com 전송.
+- **result_router.ts**: 헌터 태스크 결과를 전문 핸들러로 자동 라우팅. `server.ts` 헌터 결과 엔드포인트에 와이어링. 11개 핸들러: grant, housing, blind, blind_nvc, ai_trends, bigtech_jobs, edutech, grad_school, lighthouse, b2b_intent, deep_research. 매칭되지 않는 결과는 generic `crawl_result`로 폴백.
+- **bigtech_job_scanner.ts**: 빅테크 커리어 브랜딩 스캐너. 15개 대상 기업 (S/A/B 브랜드 티어). `create_scan_config()` — 사용자 스펙 기반 프로필, `match_posting()` — 포지션 적합도 판정, `generate_scan_report()` — 구조화 리포트, `format_scan_alert()` — Telegram/Slack 알림 포맷. Stateless 설정 + 매칭 로직, 실제 크롤링은 hunter chatgpt_task 위임.
+
+### Academy (`src/academy/`)
+- **google_messages.ts**: Google Messages 웹 자동화. Playwright + 구글 프로필 기반 `messages.google.com` 세션 재사용. `format_sms()` — 한국 전화번호 정규화 + 메시지 포맷, `validate_sms_batch()` — 배치 검증, `send_sms()` / `send_sms_batch()` — 브라우저 자동화 발송. `parent_message.ts`에서 생성한 학부모 문자를 실제 전송. 세션 만료 감지 → `[LOGIN_REQUIRED]` 반환.
 
 ### Hunter (`src/hunter/`)
 - **browser.ts**: Playwright 브라우저 매니저 (Chromium, lazy initialization, 30s timeout). `get_page()` — 일반 페이지 (headless), `get_persistent_page(profile_dir)` — 구글 프로필 기반 세션 재사용 (headed, 로그인 유지).
@@ -106,11 +111,16 @@
 - **main.ts**: 진입점 (`pnpm run hunter`), 브라우저 graceful shutdown 포함
 
 ### Captain (`src/captain/`)
-- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands, Stale Task Cleanup를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 `config/agents.yml`에서 동적 로딩(`src/shared/agents_config.ts`) + 기동 시 `tmux list-sessions`로 실제 존재하는 세션만 자동 필터링 (캡틴 자체 세션 `fas-captain` 제외). 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출. **Gemini discovery 활성화**: `gemini_config` 전달로 나이트 플래닝에서 동적 태스크 발견 기능 가동. **Stale cleanup**: 5분 간격으로 in_progress 30분+ 태스크를 blocked 전환 + alert 알림.
+- **main.ts**: 통합 캡틴 진입점. Gateway API, Output Watcher, Planning Loop, Telegram Commands, Stale Task Cleanup를 한 프로세스에서 기동. 그레이스풀 셧다운 지원. `pnpm captain`으로 실행. Output Watcher 감시 대상은 `config/agents.yml`에서 동적 로딩(`src/shared/agents_config.ts`) + 기동 시 `tmux list-sessions`로 실제 존재하는 세션만 자동 필터링 (캡틴 자체 세션 `fas-captain` 제외). 나이트 플래닝 훅에서 Feedback Extractor를 호출하여 완료 태스크의 교훈을 자동 추출 + Research Store 30일 보관 자동 정리. **Gemini discovery 활성화**: `gemini_config` 전달로 나이트 플래닝에서 동적 태스크 발견 기능 가동. **Stale cleanup**: 5분 간격으로 in_progress 30분+ 태스크를 blocked 전환 + alert 알림.
 - **planning_loop.ts**: 모닝/나이트 자율 스케줄링 (`config/schedules.yml` → due 태스크 산출 → TaskStore 주입 → 브리핑 알림). daily/every_3_days/weekly 스케줄 타입 지원, 중복 방지. **동적 기회 발견**: 최근 3일 크롤링/리서치 완료 태스크를 Gemini CLI로 분석하여 최대 3개의 추가 행동 아이템을 자동 생성 (야간 SLEEP 모드). Fire-and-forget 방식으로 실패 시 나이트 플래닝을 차단하지 않음.
 - **feedback_extractor.ts**: 완료 태스크에서 교훈 추출 (Gemini CLI fire-and-forget → Doctrine feedback 파일에 append). `main.ts`의 나이트 플래닝 훅에서 자동 호출되어 당일 완료 태스크의 교훈을 `DOCTRINE_FEEDBACK_PATH`에 기록.
 - **persona_injector.ts**: 동적 페르소나 주입기. Doctrine 메모리 디렉토리(`DOCTRINE_MEMORY_DIR`)에서 사용자 컨텍스트를 읽어 PII를 제거한 배경 정보를 헌터 태스크 description에 주입. 헌터가 맥락 없이 작업하는 것을 방지.
 - **telegram_commands.ts**: Telegram 인바운드 명령 핸들러. 주인님이 Telegram에서 `/hunter`, `/crawl`, `/research`, `/status`, `/tasks`, `/cancel` 명령을 보내면 캡틴이 해당 액션을 즉시 수행 (태스크 생성, 상태 조회 등). **일반 텍스트는 기본 `captain` 태스크로 생성** — PII가 포함될 수 있는 일반 텍스트가 헌터로 직행하는 취약점을 방지하기 위해 캡틴이 먼저 수신하고 판단 후 PII 마스킹하여 헌터에 하위 태스크로 하달.
+- **captain_worker.ts**: 캡틴 전용 태스크 실행기. TaskStore에서 `assigned_to === 'captain'` + `in_progress` 태스크를 폴링하여 `action` 필드 기반으로 핸들러에 디스패치. `lighthouse_audit`, `local_script` 핸들러 등록. 30초 폴링, 핸들러 실패 시 자동 block 처리.
+- **local_script_handler.ts**: 보안 스크립트 실행기. `scripts/` 디렉토리 내 bash/python 스크립트만 실행 허용. 경로 탈출(`..`) 방지, 화이트리스트 디렉토리 검증, 2분 타임아웃 강제. `CaptainActionHandler` 인터페이스 구현.
+
+### Shared (`src/shared/`)
+- **safe_fire_forget.ts**: 안전한 fire-and-forget 유틸리티. Promise 실패 시 silent swallow 대신 Slack 알림으로 가시화. 컨텍스트별 rate limit (시간당 5회, 기본값) 으로 알림 폭주 방지. PII 자동 제거. router 미제공 시 `console.warn` 폴백.
 
 ### Cross-Approval (`src/gateway/cross_approval.ts`)
 - Gemini CLI 교차 승인 모듈. MID 리스크 액션에 대해 Gemini CLI spawn → JSON 파싱 → 승인/거부 결정.
