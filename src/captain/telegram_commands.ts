@@ -7,6 +7,12 @@
 import type { TaskStore } from '../gateway/task_store.js';
 import type { Task } from '../shared/types.js';
 import type { ActivityHooks } from '../watchdog/activity_integration.js';
+import {
+  create_pending_approval_queue,
+  match_approval_pattern,
+  type PendingApprovalQueue,
+  type ApprovalResolution,
+} from './pending_approval_queue.js';
 
 // === Configuration ===
 
@@ -52,6 +58,11 @@ export const create_telegram_commands = (
   let abort_controller: AbortController | null = null;
   const poll_interval = config.poll_interval_ms ?? DEFAULT_POLL_INTERVAL_MS;
   const base_url = `https://api.telegram.org/bot${config.bot_token}`;
+
+  // Pending approval queue — when the system sends an approval request,
+  // it registers here so short replies ("네"/"아니오") are matched instead
+  // of being created as new tasks.
+  const approval_queue = create_pending_approval_queue();
 
   // === Telegram API helpers ===
 
@@ -182,6 +193,48 @@ export const create_telegram_commands = (
     }
   };
 
+  // === Approval response handlers ===
+
+  /** Callback list for approval resolutions — external modules can subscribe */
+  const approval_callbacks: Array<(resolution: ApprovalResolution) => void> = [];
+
+  /**
+   * Handle an approval/rejection response from the user.
+   * Returns true if the message was consumed as an approval response, false otherwise.
+   */
+  const try_handle_approval_response = async (text: string): Promise<boolean> => {
+    const decision = match_approval_pattern(text);
+    if (!decision) return false;
+
+    // Only consume as approval if there's a pending request
+    if (!approval_queue.has_pending()) return false;
+
+    const approved = decision === 'approve';
+    const resolution = approval_queue.resolve(approved);
+    if (!resolution) return false;
+
+    // Notify subscribers
+    for (const cb of approval_callbacks) {
+      try {
+        cb(resolution);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[TelegramCmd] Approval callback error: ${msg}`);
+      }
+    }
+
+    // Send confirmation to user
+    const status_emoji = approved ? '✅' : '❌';
+    const status_text = approved ? '승인됨' : '거부됨';
+    await reply(
+      `${status_emoji} *${status_text}*\n` +
+      `요청: ${resolution.description}\n` +
+      `ID: \`${resolution.request_id}\``,
+    );
+
+    return true;
+  };
+
   // === Message dispatcher ===
 
   /** Parse and dispatch a single message */
@@ -219,9 +272,13 @@ export const create_telegram_commands = (
         // Unknown command — ignore silently to avoid noise
         await reply(`알 수 없는 명령어: ${trimmed.split(' ')[0]}`);
       } else {
-        // Default: non-command text → captain receives first, then decides routing
-        // Security: never send raw user text directly to hunter (PII leak risk)
-        await handle_captain(trimmed);
+        // Check if this is an approval/rejection response before creating a task
+        const was_approval = await try_handle_approval_response(trimmed);
+        if (!was_approval) {
+          // Default: non-command text → captain receives first, then decides routing
+          // Security: never send raw user text directly to hunter (PII leak risk)
+          await handle_captain(trimmed);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -303,9 +360,15 @@ export const create_telegram_commands = (
   return {
     start,
     stop,
+    // Approval queue — register pending approvals and subscribe to resolutions
+    register_pending_approval: approval_queue.register,
+    on_approval_resolved: (cb: (resolution: ApprovalResolution) => void) => {
+      approval_callbacks.push(cb);
+    },
     // Exposed for testing
     _handle_message: handle_message,
     _reply: reply,
+    _approval_queue: approval_queue,
   };
 };
 

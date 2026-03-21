@@ -271,6 +271,137 @@ describe('telegram_commands', () => {
     });
   });
 
+  describe('approval response handling', () => {
+    it('should process "네" as approval when there is a pending approval', async () => {
+      commands.register_pending_approval('req-1', 'git push to production');
+      mock_send_ok();
+
+      await commands._handle_message('네', '12345');
+
+      // Should NOT create a task
+      expect(store.create).not.toHaveBeenCalled();
+
+      // Should send approval confirmation
+      const call_body = JSON.parse(mock_fetch.mock.calls[0][1].body);
+      expect(call_body.text).toContain('승인됨');
+      expect(call_body.text).toContain('req-1');
+    });
+
+    it('should process "아니오" as rejection when there is a pending approval', async () => {
+      commands.register_pending_approval('req-2', 'deploy staging');
+      mock_send_ok();
+
+      await commands._handle_message('아니오', '12345');
+
+      expect(store.create).not.toHaveBeenCalled();
+      const call_body = JSON.parse(mock_fetch.mock.calls[0][1].body);
+      expect(call_body.text).toContain('거부됨');
+      expect(call_body.text).toContain('req-2');
+    });
+
+    it.each(['ㅇㅇ', '승인', 'yes', 'ok', 'ㅇ'])(
+      'should process "%s" as approval',
+      async (text) => {
+        commands.register_pending_approval('req-a', 'some action');
+        mock_send_ok();
+
+        await commands._handle_message(text, '12345');
+        expect(store.create).not.toHaveBeenCalled();
+
+        const call_body = JSON.parse(mock_fetch.mock.calls[0][1].body);
+        expect(call_body.text).toContain('승인됨');
+      },
+    );
+
+    it.each(['ㄴㄴ', '거부', 'no', 'ㄴ'])(
+      'should process "%s" as rejection',
+      async (text) => {
+        commands.register_pending_approval('req-b', 'some action');
+        mock_send_ok();
+
+        await commands._handle_message(text, '12345');
+        expect(store.create).not.toHaveBeenCalled();
+
+        const call_body = JSON.parse(mock_fetch.mock.calls[0][1].body);
+        expect(call_body.text).toContain('거부됨');
+      },
+    );
+
+    it('should fall through to task creation when no pending approval exists', async () => {
+      // No pending approval registered
+      mock_send_ok();
+
+      await commands._handle_message('네', '12345');
+
+      // Should create a captain task instead
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigned_to: 'captain',
+          description: '네',
+        }),
+      );
+    });
+
+    it('should fall through to task creation for non-approval text', async () => {
+      commands.register_pending_approval('req-3', 'some request');
+      mock_send_ok();
+
+      await commands._handle_message('네이버 부동산 시세 알려줘', '12345');
+
+      // Should create a task — "네이버" does not match "네" exactly
+      expect(store.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigned_to: 'captain',
+        }),
+      );
+    });
+
+    it('should notify on_approval_resolved callbacks', async () => {
+      const callback = vi.fn();
+      commands.on_approval_resolved(callback);
+      commands.register_pending_approval('req-4', 'test callback');
+      mock_send_ok();
+
+      await commands._handle_message('네', '12345');
+
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request_id: 'req-4',
+          description: 'test callback',
+          approved: true,
+        }),
+      );
+    });
+
+    it('should handle callback errors gracefully', async () => {
+      const bad_callback = vi.fn(() => { throw new Error('callback crash'); });
+      commands.on_approval_resolved(bad_callback);
+      commands.register_pending_approval('req-5', 'error test');
+      mock_send_ok();
+
+      // Should not throw even if callback throws
+      await commands._handle_message('네', '12345');
+
+      // Confirmation should still be sent
+      expect(mock_fetch).toHaveBeenCalled();
+    });
+
+    it('should consume only the most recent approval per response', async () => {
+      commands.register_pending_approval('req-a', 'first');
+      commands.register_pending_approval('req-b', 'second');
+      mock_send_ok();
+
+      await commands._handle_message('네', '12345');
+
+      // The most recent (req-b) should be resolved
+      const call_body = JSON.parse(mock_fetch.mock.calls[0][1].body);
+      expect(call_body.text).toContain('req-b');
+
+      // First one should still be pending
+      expect(commands._approval_queue.has_pending()).toBe(true);
+    });
+  });
+
   describe('empty/whitespace messages', () => {
     it('should ignore empty messages', async () => {
       await commands._handle_message('', '12345');
