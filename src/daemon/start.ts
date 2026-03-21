@@ -78,7 +78,9 @@ const server = app.listen(port, host, () => {
   console.log(`[Daemon] Gateway listening on ${host}:${port}`);
 });
 
-// === Start Telegram Bot ===
+// === Start Telegram Bot (skipped when Captain is running — avoids 409 conflict) ===
+
+const skip_telegram = process.env.SKIP_TELEGRAM_BOT === 'true';
 
 const bot = create_telegram_bot(
   {
@@ -88,7 +90,11 @@ const bot = create_telegram_bot(
   store,
 );
 
-bot.start();
+if (skip_telegram) {
+  console.log('[Daemon] Telegram bot SKIPPED (SKIP_TELEGRAM_BOT=true — Captain handles Telegram)');
+} else {
+  bot.start();
+}
 
 // === Start Slack Bot (optional) ===
 
