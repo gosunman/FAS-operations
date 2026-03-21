@@ -21,6 +21,8 @@ import { create_feedback_extractor, type FeedbackExtractor } from './feedback_ex
 import { create_telegram_commands, type TelegramCommands } from './telegram_commands.js';
 import { create_morning_briefing, type MorningBriefing } from './morning_briefing.js';
 import { create_task_executor, type TaskExecutor } from './task_executor.js';
+import { create_captain_worker, type CaptainWorker } from './captain_worker.js';
+import { create_lighthouse_auditor } from '../pipeline/lighthouse_audit.js';
 import { create_cross_approval } from '../gateway/cross_approval.js';
 import { create_crash_monitor } from '../watchdog/crash_recovery.js';
 import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
@@ -258,6 +260,43 @@ const main = async () => {
   task_executor.start();
   console.log('[Captain] Task executor started (cross-approval gate for MID-risk tasks)');
 
+  // 11b. Captain worker — executes captain-assigned tasks (lighthouse_audit, etc.)
+  const lighthouse_urls = (process.env.LIGHTHOUSE_URLS ?? '').split(',').map((u) => u.trim()).filter(Boolean);
+  const lighthouse_handler = lighthouse_urls.length > 0
+    ? async () => {
+        const auditor = create_lighthouse_auditor({ urls: lighthouse_urls });
+        const results = await auditor.audit_all();
+        const degradations = auditor.check_degradation();
+        const total_violations = results.reduce((n, r) => n + r.violations.length, 0);
+        const summary = `Audited ${results.length} URL(s). Violations: ${total_violations}. Degradations: ${degradations.length}.`;
+
+        // Alert on degradation
+        if (degradations.length > 0) {
+          await router.route({
+            type: 'alert',
+            message: `[LIGHTHOUSE] Score degradation detected:\n${degradations.join('\n')}`,
+            device: 'captain',
+          }).catch(() => {});
+        }
+
+        return {
+          summary,
+          files_created: ['state/lighthouse_history.json'],
+        };
+      }
+    : undefined;
+
+  const captain_worker = create_captain_worker({
+    store,
+    router,
+    handlers: {
+      ...(lighthouse_handler ? { lighthouse_audit: lighthouse_handler } : {}),
+    },
+    poll_interval_ms: parseInt(process.env.CAPTAIN_WORKER_POLL_MS ?? '30000', 10),
+  });
+  captain_worker.start();
+  console.log(`[Captain] Captain worker started (handlers: ${lighthouse_handler ? 'lighthouse_audit' : 'none'}${lighthouse_urls.length > 0 ? ` [${lighthouse_urls.length} URLs]` : ''})`);
+
   // 12. Telegram command listener (inbound commands from user)
   let telegram_commands: TelegramCommands | null = null;
   if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
@@ -377,6 +416,7 @@ const main = async () => {
     clearInterval(schedule_timer);
     clearInterval(stale_timer);
     task_executor.stop();
+    captain_worker.stop();
     telegram_commands?.stop();
     resource_monitor.stop();
     stop_hunter_monitor();
