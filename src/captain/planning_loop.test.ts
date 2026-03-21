@@ -140,6 +140,42 @@ describe('PlanningLoop', () => {
     });
   });
 
+  describe('monthly schedules', () => {
+    it('should be due on the correct day of month', () => {
+      const loop = create_planning_loop({ store, router, schedules_path });
+      const epoch = new Date('2026-01-01');
+      const entry = { title: 'test', type: 'monthly' as const, time: '04:30', day: 1 };
+
+      // 1st of month = due
+      expect(loop._is_due_today(entry, new Date('2026-03-01'), epoch)).toBe(true);
+      // 2nd of month = not due
+      expect(loop._is_due_today(entry, new Date('2026-03-02'), epoch)).toBe(false);
+      // 1st of next month = due
+      expect(loop._is_due_today(entry, new Date('2026-04-01'), epoch)).toBe(true);
+    });
+
+    it('should handle string day values from YAML', () => {
+      const loop = create_planning_loop({ store, router, schedules_path });
+      const epoch = new Date('2026-01-01');
+      // YAML may parse numeric day as string
+      const entry = { title: 'test', type: 'monthly' as const, time: '04:30', day: '15' };
+
+      expect(loop._is_due_today(entry, new Date('2026-03-15'), epoch)).toBe(true);
+      expect(loop._is_due_today(entry, new Date('2026-03-14'), epoch)).toBe(false);
+    });
+
+    it('should reject invalid day values (0, 29+)', () => {
+      const loop = create_planning_loop({ store, router, schedules_path });
+      const epoch = new Date('2026-01-01');
+
+      const entry_zero = { title: 'test', type: 'monthly' as const, time: '04:30', day: 0 };
+      expect(loop._is_due_today(entry_zero, new Date('2026-03-01'), epoch)).toBe(false);
+
+      const entry_29 = { title: 'test', type: 'monthly' as const, time: '04:30', day: 29 };
+      expect(loop._is_due_today(entry_29, new Date('2026-03-29'), epoch)).toBe(false);
+    });
+  });
+
   // === run_morning ===
 
   describe('run_morning()', () => {

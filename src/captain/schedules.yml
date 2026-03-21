@@ -5,12 +5,13 @@
 #   daily        — runs every day
 #   every_3_days — runs every 3 days from epoch (2026-01-01)
 #   weekly       — runs on a specific day of the week
+#   monthly      — runs on a specific day of the month (1-28)
 #
 # Fields:
 #   title       — human-readable task title (must be unique for dedup)
-#   type        — schedule type (daily | every_3_days | weekly)
+#   type        — schedule type (daily | every_3_days | weekly | monthly)
 #   time        — preferred execution time (HH:MM, informational only)
-#   day         — day of week for weekly schedules (monday, tuesday, ...)
+#   day         — day of week for weekly schedules (monday, tuesday, ...) or day of month for monthly (1-28)
 #   mode        — FAS mode (awake | sleep | recurring)
 #   agent       — assigned agent (gemini_a, claude, hunter). Omit for system workflows.
 #   action      — action type (web_crawl, research, chatgpt_task, generate_test, etc.)
@@ -93,6 +94,20 @@ schedules:
     risk_level: low
     requires_personal_info: false
     description: "EIDOS SCIENCE 주간 테스트 자동 생성. 물리학 역학 단원 객관식 시험지와 정답표."
+
+  # === Monthly schedules ===
+
+  remote_degree_check:
+    title: "원격 학위 과정 조사"
+    type: monthly
+    day: 1
+    time: "04:30"
+    mode: sleep
+    agent: gemini_a
+    action: research
+    risk_level: low
+    requires_personal_info: false
+    description: "원격/온라인 학위 과정 (OMSCS, GSEP, UT Austin MSCSO, UIUC MCS 등) 마감일 및 신규 프로그램 조사. 리포트 생성 후 Slack 전송."
 
   # === System workflows (no agent — handled by n8n) ===
 

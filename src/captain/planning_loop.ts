@@ -12,7 +12,7 @@ import type { PersonaInjector } from './persona_injector.js';
 
 // === Schedule types (from schedules.yml) ===
 
-type ScheduleType = 'daily' | 'every_3_days' | 'weekly';
+type ScheduleType = 'daily' | 'every_3_days' | 'weekly' | 'monthly';
 
 type ScheduleEntry = {
   title: string;
@@ -22,7 +22,7 @@ type ScheduleEntry = {
   agent?: string;
   risk_level?: string;
   requires_personal_info?: boolean;
-  day?: string;          // For weekly schedules (e.g., 'monday')
+  day?: string | number;  // For weekly schedules (e.g., 'monday') or monthly (day of month, 1-28)
   workflow?: string;     // System workflows (not task-based)
   action?: string;       // Action type (e.g., 'web_crawl', 'research', 'chatgpt_task')
   description?: string;  // Task description from schedule config
@@ -51,6 +51,12 @@ const is_due_today = (entry: ScheduleEntry, today: Date, epoch: Date): boolean =
       const diff_ms = today.getTime() - epoch.getTime();
       const diff_days = Math.floor(diff_ms / (24 * 60 * 60 * 1000));
       return diff_days % 3 === 0;
+    }
+    case 'monthly': {
+      // Run on a specific day of the month (1-28 to avoid end-of-month edge cases)
+      const target_day = typeof entry.day === 'number' ? entry.day : parseInt(String(entry.day), 10);
+      if (isNaN(target_day) || target_day < 1 || target_day > 28) return false;
+      return today.getDate() === target_day;
     }
     default:
       return false;

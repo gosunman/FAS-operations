@@ -261,6 +261,56 @@ describe('Schedule Wiring — housing_lottery, bigtech_jobs, weekly_test', () =>
   });
 
   // ========================================
+  // 4b. remote_degree_check wiring — monthly on 1st
+  // ========================================
+
+  describe('remote_degree_check wiring (monthly/1st)', () => {
+    it('should contain remote_degree_check entry in schedules.yml', () => {
+      const loop = create_planning_loop({ store, router, schedules_path: SCHEDULES_PATH });
+      const schedules = loop._load_schedules();
+
+      expect(schedules.remote_degree_check).toBeDefined();
+      expect(schedules.remote_degree_check.title).toBe('원격 학위 과정 조사');
+      expect(schedules.remote_degree_check.type).toBe('monthly');
+      expect(schedules.remote_degree_check.agent).toBe('gemini_a');
+      expect(schedules.remote_degree_check.action).toBe('research');
+    });
+
+    it('should create remote_degree_check task on 1st of month', async () => {
+      const loop = create_planning_loop({ store, router, schedules_path: SCHEDULES_PATH });
+
+      // 2026-04-01 is the 1st of April
+      const result = await loop.run_morning(new Date('2026-04-01T07:00:00Z'));
+
+      expect(result.created).toContain('원격 학위 과정 조사');
+    });
+
+    it('should NOT create remote_degree_check task on 2nd of month', async () => {
+      const loop = create_planning_loop({ store, router, schedules_path: SCHEDULES_PATH });
+
+      // 2026-04-02 is the 2nd
+      const result = await loop.run_morning(new Date('2026-04-02T07:00:00Z'));
+
+      expect(result.created).not.toContain('원격 학위 과정 조사');
+    });
+
+    it('should set correct task properties for remote_degree_check', async () => {
+      const loop = create_planning_loop({ store, router, schedules_path: SCHEDULES_PATH });
+
+      await loop.run_morning(new Date('2026-04-01T07:00:00Z'));
+
+      const all_tasks = store.get_all();
+      const degree_task = all_tasks.find((t) => t.title === '원격 학위 과정 조사');
+
+      expect(degree_task).toBeDefined();
+      expect(degree_task!.assigned_to).toBe('gemini_a');
+      expect(degree_task!.action).toBe('research');
+      expect(degree_task!.risk_level).toBe('low');
+      expect(degree_task!.requires_personal_info).toBe(false);
+    });
+  });
+
+  // ========================================
   // 5. Deduplication — all 3 schedules
   // ========================================
 
