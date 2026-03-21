@@ -27,6 +27,7 @@ import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
 import { create_result_router } from '../pipeline/result_router.js';
 import { create_research_store } from './research_store.js';
 import { create_notebooklm_verifier } from '../gateway/notebooklm_verify.js';
+import { safe_fire_forget } from '../shared/safe_fire_forget.js';
 import type { GeminiConfig } from '../gemini/types.js';
 import { execSync } from 'node:child_process';
 import { get_sessions_for_device } from '../shared/agents_config.js';
@@ -213,11 +214,8 @@ const main = async () => {
     schedules_path: SCHEDULES_PATH,
   });
 
-  // Run initial morning briefing on startup (fire-and-forget)
-  morning_briefing.run().catch((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Captain] Initial morning briefing failed: ${msg}`);
-  });
+  // Run initial morning briefing on startup (fire-and-forget with Slack alert)
+  safe_fire_forget(morning_briefing.run(), 'morning_briefing_startup', { router });
   console.log('[Captain] Morning briefing module initialized');
 
   // 7. Hunter heartbeat monitor
@@ -319,7 +317,11 @@ const main = async () => {
         );
         for (const task of today_done) {
           if (task.output?.summary) {
-            feedback_extractor.extract(task.title, task.output.summary).catch(() => {});
+            safe_fire_forget(
+              feedback_extractor.extract(task.title, task.output.summary),
+              `feedback_extract:${task.title}`,
+              { router },
+            );
           }
         }
         if (today_done.length > 0) {
@@ -343,11 +345,15 @@ const main = async () => {
         console.warn(`[Captain] Stale task timed out: "${task.title}" (${task.id})`);
       }
       if (stale_tasks.length > 0) {
-        router.route({
-          type: 'alert',
-          message: `[STALE] ${stale_tasks.length} task(s) timed out after 30 minutes: ${stale_tasks.map((t) => t.title).join(', ')}`,
-          device: 'captain',
-        }).catch(() => {}); // fire-and-forget
+        safe_fire_forget(
+          router.route({
+            type: 'alert',
+            message: `[STALE] ${stale_tasks.length} task(s) timed out after 30 minutes: ${stale_tasks.map((t) => t.title).join(', ')}`,
+            device: 'captain',
+          }),
+          'stale_task_alert',
+          { router },
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

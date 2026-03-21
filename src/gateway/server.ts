@@ -38,7 +38,7 @@
 
 import express from 'express';
 import { create_task_store, type TaskStore } from './task_store.js';
-import { sanitize_task, contains_pii, contains_critical_pii, sanitize_text, detect_pii_types, detect_pii_with_severity } from './sanitizer.js';
+import { sanitize_task, contains_pii, contains_critical_pii, sanitize_text, sanitize_full, detect_pii_types, detect_pii_with_severity } from './sanitizer.js';
 import { create_local_queue, type LocalQueue } from '../watchdog/local_queue.js';
 import { create_rate_limiter, type RateLimiter } from './rate_limiter.js';
 import { create_cross_approval, type CrossApproval } from './cross_approval.js';
@@ -438,7 +438,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   });
 
   // Submit hunter task result (with schema validation + PII quarantine)
-  app.post('/api/hunter/tasks/:id/result', (req, res) => {
+  app.post('/api/hunter/tasks/:id/result', async (req, res) => {
     const { status: result_status, output, files } = req.body;
 
     // --- Schema validation ---
@@ -563,14 +563,16 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         return;
       }
 
-      // Warning-only PII: auto-sanitize and allow through with a log warning
+      // Warning-only PII: auto-sanitize with full pipeline (regex + LLM contextual)
       const warning_types = detections.filter((d) => d.severity === 'warning').map((d) => d.name);
       log.warn(
         `[SECURITY] Hunter task ${req.params.id} output contains warning-level PII ` +
-        `(${warning_types.join(', ')}) — auto-sanitized and passed through`
+        `(${warning_types.join(', ')}) — sanitizing with full pipeline (regex + LLM)`
       );
-      // Replace with sanitized version for downstream processing
-      safe_output = sanitize_text(safe_output);
+      // Replace with fully sanitized version (regex first, then LLM contextual)
+      // sanitize_full chains Stage 1 (regex) + Stage 2 (Gemini LLM contextual PII)
+      // If LLM fails, regex result is still applied — partial protection > none
+      safe_output = await sanitize_full(safe_output);
     }
 
     // --- Normal processing (no PII detected) ---

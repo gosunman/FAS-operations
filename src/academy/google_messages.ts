@@ -286,6 +286,35 @@ export const create_google_messages_sender = (config: GoogleMessagesConfig = {})
     };
   };
 
+  // Check if Google Messages session is still healthy (not requiring QR re-pairing)
+  // Returns: { healthy: true } or { healthy: false, reason: string }
+  // Call this periodically (e.g., daily) to detect session expiry before batch sending
+  const check_session_health = async (): Promise<{ healthy: boolean; reason?: string }> => {
+    try {
+      const context = await get_context();
+      const page = context.pages()[0] ?? await context.newPage();
+      page.setDefaultTimeout(timeout_ms);
+
+      await page.goto(MESSAGES_URL, { waitUntil: 'domcontentloaded', timeout: timeout_ms });
+
+      // Check for QR code pairing screen — indicates session expired
+      const qr_visible = await page.$('mw-qr-code, [data-e2e-qr-code], img[alt*="QR"]');
+      if (qr_visible) {
+        return { healthy: false, reason: 'QR code pairing screen detected — session expired, manual QR scan required' };
+      }
+
+      // Check for conversation list — indicates healthy session
+      const ready = await ensure_ready(page);
+      if (!ready) {
+        return { healthy: false, reason: 'Google Messages page loaded but conversation list not found' };
+      }
+
+      return { healthy: true };
+    } catch (err) {
+      return { healthy: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
   // Close browser context
   const close = async () => {
     try {
@@ -300,6 +329,7 @@ export const create_google_messages_sender = (config: GoogleMessagesConfig = {})
     send_sms,
     send_batch,
     ensure_ready,
+    check_session_health,
     close,
   };
 };
