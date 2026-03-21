@@ -29,6 +29,7 @@ import { create_local_script_handler } from './local_script_handler.js';
 import { create_crash_alert_bridge } from '../watchdog/alert_integration.js';
 import { create_result_router } from '../pipeline/result_router.js';
 import { create_research_store } from './research_store.js';
+import { create_smart_escalator, type SmartEscalator } from '../notification/smart_escalation.js';
 import { create_notebooklm_verifier } from '../gateway/notebooklm_verify.js';
 import { safe_fire_forget } from '../shared/safe_fire_forget.js';
 import type { GeminiConfig } from '../gemini/types.js';
@@ -72,9 +73,10 @@ const live_sessions = get_live_tmux_sessions();
 const WATCHED_SESSIONS = get_sessions_for_device('captain')
   .filter((s) => s !== CAPTAIN_SELF_SESSION && live_sessions.has(s));
 
-// Planning schedule — hours to run morning (07:30) and night (22:50)
-const MORNING_HOUR = 7;
-const MORNING_MINUTE = 30;
+// Planning schedule — hours to run morning and night
+// Default: 09:00 (aligned with smart escalation flush) — override via env for backward compat
+const MORNING_HOUR = parseInt(process.env.FAS_MORNING_HOUR ?? '9', 10);
+const MORNING_MINUTE = parseInt(process.env.FAS_MORNING_MINUTE ?? '0', 10);
 const NIGHT_HOUR = 22;
 const NIGHT_MINUTE = 50;
 const SCHEDULE_CHECK_INTERVAL_MS = 60_000; // check every minute
@@ -151,9 +153,17 @@ const main = async () => {
   const research_store = create_research_store(RESEARCH_DIR);
   console.log(`[Captain] Research store initialized (${RESEARCH_DIR})`);
 
-  // 2d. Result router (dispatches hunter results to specialized handlers)
-  const result_router = create_result_router({ router, research_store });
-  console.log('[Captain] Result router initialized');
+  // 2d. Smart escalator (time-aware Telegram escalation for high-value results)
+  const escalator = create_smart_escalator({
+    router,
+    quiet_start: parseInt(process.env.FAS_QUIET_START ?? '21', 10),
+    quiet_end: parseInt(process.env.FAS_QUIET_END ?? '9', 10),
+  });
+  console.log('[Captain] Smart escalator initialized (quiet 21:00~09:00)');
+
+  // 2e. Result router (dispatches hunter results to specialized handlers)
+  const result_router = create_result_router({ router, research_store, escalator });
+  console.log('[Captain] Result router initialized (with smart escalation)');
 
   // 3. Gateway API server
   const dev_mode = process.env.FAS_DEV_MODE === 'true' && process.env.NODE_ENV !== 'production';
@@ -347,6 +357,19 @@ const main = async () => {
       morning_briefing.run(now).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[Captain] Scheduled morning briefing failed: ${msg}`);
+      });
+
+      // Flush overnight escalation queue — sends queued high-value alerts as morning summary
+      escalator.flush_morning_briefing().then((flush_result) => {
+        if (flush_result.flushed_count > 0) {
+          console.log(`[Captain] Morning escalation flush: ${flush_result.flushed_count} items sent`);
+        }
+        if (flush_result.error) {
+          console.warn(`[Captain] Morning escalation flush error: ${flush_result.error}`);
+        }
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Captain] Morning escalation flush failed: ${msg}`);
       });
     }
 

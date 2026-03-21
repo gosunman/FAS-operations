@@ -7,6 +7,7 @@
 import type { NotificationRouter } from '../notification/router.js';
 import type { NotificationEvent } from '../shared/types.js';
 import type { ResearchStore } from '../captain/research_store.js';
+import type { SmartEscalator, EscalationSeverity } from '../notification/smart_escalation.js';
 import { process_blind_results } from './blind_monitor.js';
 import { parse_grant_announcements, detect_new_grants, match_grant_to_profile, calculate_deadline_alerts, generate_grant_report } from '../hunter/startup_grants.js';
 import { create_grant_notification_handler } from '../hunter/grant_notifier.js';
@@ -18,6 +19,7 @@ import { create_housing_notification_handler } from '../hunter/housing_notifier.
 export type ResultRouterDeps = {
   router: NotificationRouter;
   research_store?: ResearchStore | null;
+  escalator?: SmartEscalator | null; // optional: time-aware Telegram escalation for high-value results
 };
 
 export type RouteResult = {
@@ -60,10 +62,116 @@ export const match_handler = (title: string): string => {
   return 'generic';
 };
 
+// === High-value detection — determines if a result warrants Telegram escalation ===
+//
+// Rules (from task spec):
+// - Grant: priority === 'high' (regardless of deadline)
+// - Housing: priority === 'residence'
+// - Blind: category === 'hot' (comments 50+ or likes 100+)
+// - Bigtech jobs: brand_tier === 'S' or brand_tier === 'A'
+// - AI trends: items with matched_keywords.length >= 2
+// - Everything else: Slack only (no Telegram escalation)
+//
+// Since handler output is a raw string from ChatGPT/crawlers, we use heuristic
+// keyword/pattern matching on the output text to detect high-value signals.
+
+type HighValueResult = {
+  title: string;
+  summary: string;
+  severity: EscalationSeverity;
+};
+
+export const detect_high_value = (handler_name: string, output: string): HighValueResult | null => {
+  switch (handler_name) {
+    case 'grant': {
+      // High-priority grant: look for priority markers in output
+      const has_high_priority = /priority[:\s]*["']?high/i.test(output)
+        || /우선순위[:\s]*높음/i.test(output)
+        || /긴급|즉시\s?지원/i.test(output);
+      if (has_high_priority) {
+        const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+        return { title: 'Grant: 고우선 공고 감지', summary: snippet, severity: 'high' };
+      }
+      return null;
+    }
+
+    case 'housing': {
+      // Residence-priority housing: look for residence markers
+      const has_residence = /priority[:\s]*["']?residence/i.test(output)
+        || /거주[용지]?\s*(우선|적합|매칭)/i.test(output)
+        || /강남.*1시간|50\s*㎡/i.test(output);
+      if (has_residence) {
+        const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+        return { title: 'Housing: 거주용 청약 매칭', summary: snippet, severity: 'high' };
+      }
+      return null;
+    }
+
+    case 'blind':
+    case 'blind_nvc': {
+      // Hot posts: comments 50+ or likes 100+
+      const comment_match = output.match(/comment_count[:\s]*(\d+)/i)
+        ?? output.match(/댓글[:\s]*(\d+)/);
+      const like_match = output.match(/like_count[:\s]*(\d+)/i)
+        ?? output.match(/좋아요[:\s]*(\d+)/);
+      const comments = comment_match ? parseInt(comment_match[1], 10) : 0;
+      const likes = like_match ? parseInt(like_match[1], 10) : 0;
+      const has_hot = comments >= 50 || likes >= 100
+        || /category[:\s]*["']?hot/i.test(output)
+        || /🔥\s*hot/i.test(output);
+      if (has_hot) {
+        const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+        return {
+          title: handler_name === 'blind_nvc' ? 'Blind: NVC 핫 포스트' : 'Blind: 네이버 핫 포스트',
+          summary: `댓글 ${comments}+ / 좋아요 ${likes}+ — ${snippet}`,
+          severity: 'medium',
+        };
+      }
+      return null;
+    }
+
+    case 'bigtech_jobs': {
+      // S-tier or A-tier brand matches
+      const has_top_tier = /brand_tier[:\s]*["']?[SA]/i.test(output)
+        || /tier[:\s]*["']?[SA]/i.test(output)
+        || /\b(Google|Apple|Meta|Amazon|Microsoft|Netflix|OpenAI)\b/i.test(output);
+      if (has_top_tier) {
+        const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+        return { title: 'Bigtech: S/A급 포지션 발견', summary: snippet, severity: 'high' };
+      }
+      return null;
+    }
+
+    case 'ai_trends': {
+      // Multiple keyword matches (matched_keywords.length >= 2)
+      const keyword_matches = output.match(/matched_keywords[:\s]*\[([^\]]*)\]/i);
+      if (keyword_matches) {
+        const keywords = keyword_matches[1].split(',').filter(Boolean);
+        if (keywords.length >= 2) {
+          const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+          return { title: 'AI Trend: 다중 키워드 매칭', summary: `${keywords.length}개 키워드 — ${snippet}`, severity: 'medium' };
+        }
+      }
+      // Fallback: check for multiple relevant keyword mentions in plain text
+      const ai_keywords = ['LLM', 'GPT', 'Claude', 'Gemini', 'transformer', 'RAG', 'fine-tuning', 'agent', 'multimodal'];
+      const found_keywords = ai_keywords.filter((kw) => new RegExp(kw, 'i').test(output));
+      if (found_keywords.length >= 2) {
+        const snippet = output.slice(0, 120).replace(/\n/g, ' ');
+        return { title: 'AI Trend: 다중 키워드 매칭', summary: `키워드: ${found_keywords.join(', ')} — ${snippet}`, severity: 'medium' };
+      }
+      return null;
+    }
+
+    default:
+      // All other handlers: no Telegram escalation
+      return null;
+  }
+};
+
 // === Create the result router factory ===
 
 export const create_result_router = (deps: ResultRouterDeps) => {
-  const { router, research_store } = deps;
+  const { router, research_store, escalator } = deps;
 
   // Pre-create notification handlers that need factory initialization
   const grant_handler = create_grant_notification_handler({ router });
@@ -74,41 +182,69 @@ export const create_result_router = (deps: ResultRouterDeps) => {
     const handler_name = match_handler(task.title);
 
     try {
+      let result: RouteResult;
+
       switch (handler_name) {
         case 'grant':
-          return await handle_grant(output, task);
+          result = await handle_grant(output, task);
+          break;
 
         case 'housing':
-          return await handle_housing(output, task);
+          result = await handle_housing(output, task);
+          break;
 
         case 'blind':
         case 'blind_nvc':
-          return await handle_blind(output, task, handler_name);
+          result = await handle_blind(output, task, handler_name);
+          break;
 
         case 'ai_trends':
-          return await handle_formatted_result(output, task, '🤖 AI Trend Research');
+          result = await handle_formatted_result(output, task, '🤖 AI Trend Research');
+          break;
 
         case 'bigtech_jobs':
-          return await handle_formatted_result(output, task, '💼 Bigtech Career Scan');
+          result = await handle_formatted_result(output, task, '💼 Bigtech Career Scan');
+          break;
 
         case 'edutech_competitors':
-          return await handle_formatted_result(output, task, '🔬 Edutech Competitor Research');
+          result = await handle_formatted_result(output, task, '🔬 Edutech Competitor Research');
+          break;
 
         case 'grad_school':
-          return await handle_formatted_result(output, task, '🎓 Grad School Deadline');
+          result = await handle_formatted_result(output, task, '🎓 Grad School Deadline');
+          break;
 
         case 'lighthouse':
-          return await handle_formatted_result(output, task, '🔍 Lighthouse Audit');
+          result = await handle_formatted_result(output, task, '🔍 Lighthouse Audit');
+          break;
 
         case 'b2b_intent':
-          return await handle_formatted_result(output, task, '🎯 B2B Intent Crawl');
+          result = await handle_formatted_result(output, task, '🎯 B2B Intent Crawl');
+          break;
 
         case 'deep_research':
-          return await handle_deep_research(output, task);
+          result = await handle_deep_research(output, task);
+          break;
 
         default:
-          return await handle_generic(output, task);
+          result = await handle_generic(output, task);
+          break;
       }
+
+      // After successful handling, check for high-value escalation
+      if (result.handled && escalator) {
+        const escalation = detect_high_value(handler_name, output);
+        if (escalation) {
+          // Fire-and-forget: escalation failure should not break result routing
+          escalator.escalate(escalation.title, escalation.summary, escalation.severity)
+            .catch((err) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.warn(`[ResultRouter] Escalation failed for ${handler_name}: ${msg}`);
+            });
+        }
+      }
+
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Fallback: send generic notification so results are never lost

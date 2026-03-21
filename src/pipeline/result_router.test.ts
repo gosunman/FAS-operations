@@ -1,9 +1,10 @@
 // Result Router tests — verifies task result dispatch to appropriate handlers
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { create_result_router, match_handler, type TaskInfo } from './result_router.js';
+import { create_result_router, match_handler, detect_high_value, type TaskInfo } from './result_router.js';
 import type { NotificationRouter } from '../notification/router.js';
 import type { ResearchStore } from '../captain/research_store.js';
+import type { SmartEscalator } from '../notification/smart_escalation.js';
 
 // === Helpers ===
 
@@ -276,6 +277,168 @@ describe('create_result_router', () => {
           message: expect.stringContaining('Grad School Deadline'),
         }),
       );
+    });
+  });
+
+  describe('route — escalation wiring', () => {
+    const make_mock_escalator = (): SmartEscalator => ({
+      escalate: vi.fn().mockResolvedValue(undefined),
+      flush_morning_briefing: vi.fn().mockResolvedValue({ flushed_count: 0 }),
+      get_queued_count: vi.fn().mockReturnValue(0),
+      get_queued_items: vi.fn().mockReturnValue([]),
+    });
+
+    it('calls escalator for high-value grant results', async () => {
+      const escalator = make_mock_escalator();
+      const result_router = create_result_router({ router: mock_router, escalator });
+      // Output containing "priority: high" triggers grant escalation
+      const output = 'ChatGPT: priority: high — 예비창업패키지 2차 모집';
+      const task = make_task('창업지원사업 신규 공고 수집');
+
+      await result_router.route(task, output);
+
+      // Wait for fire-and-forget escalation
+      await new Promise((r) => setTimeout(r, 10));
+      expect(escalator.escalate).toHaveBeenCalledWith(
+        expect.stringContaining('Grant'),
+        expect.any(String),
+        'high',
+      );
+    });
+
+    it('calls escalator for bigtech S-tier job results', async () => {
+      const escalator = make_mock_escalator();
+      const result_router = create_result_router({ router: mock_router, escalator });
+      const output = 'Google Senior SWE Remote — brand_tier: S';
+      const task = make_task('글로벌 빅테크 원격 커리어 스캐닝');
+
+      await result_router.route(task, output);
+
+      await new Promise((r) => setTimeout(r, 10));
+      expect(escalator.escalate).toHaveBeenCalledWith(
+        expect.stringContaining('Bigtech'),
+        expect.any(String),
+        'high',
+      );
+    });
+
+    it('does NOT call escalator for low-value results', async () => {
+      const escalator = make_mock_escalator();
+      const result_router = create_result_router({ router: mock_router, escalator });
+      const output = 'OMSCS Fall 2026: Application deadline May 1';
+      const task = make_task('대학원 지원 일정 체크');
+
+      await result_router.route(task, output);
+
+      await new Promise((r) => setTimeout(r, 10));
+      expect(escalator.escalate).not.toHaveBeenCalled();
+    });
+
+    it('works without escalator (backward compatible)', async () => {
+      const result_router = create_result_router({ router: mock_router });
+      const output = 'priority: high — grant found';
+      const task = make_task('창업지원사업 신규 공고 수집');
+
+      // Should not throw even with high-value output and no escalator
+      const result = await result_router.route(task, output);
+      expect(result.handled).toBe(true);
+    });
+  });
+});
+
+// === detect_high_value tests ===
+
+describe('detect_high_value', () => {
+  describe('grant handler', () => {
+    it('detects high-priority grants', () => {
+      expect(detect_high_value('grant', 'priority: high — 예비창업패키지')).not.toBeNull();
+      expect(detect_high_value('grant', '우선순위: 높음')).not.toBeNull();
+      expect(detect_high_value('grant', '긴급 공고 발견')).not.toBeNull();
+    });
+
+    it('returns null for normal grants', () => {
+      expect(detect_high_value('grant', 'priority: low — 일반 공고')).toBeNull();
+    });
+  });
+
+  describe('housing handler', () => {
+    it('detects residence-priority housing', () => {
+      expect(detect_high_value('housing', 'priority: residence — 강남 아파트')).not.toBeNull();
+      expect(detect_high_value('housing', '거주용 우선')).not.toBeNull();
+      expect(detect_high_value('housing', '강남 1시간 이내 매칭')).not.toBeNull();
+    });
+
+    it('returns null for investment-only housing', () => {
+      expect(detect_high_value('housing', '수익형 — 지방 소형')).toBeNull();
+    });
+  });
+
+  describe('blind handler', () => {
+    it('detects hot posts by comment count', () => {
+      expect(detect_high_value('blind', 'comment_count: 80')).not.toBeNull();
+    });
+
+    it('detects hot posts by like count', () => {
+      expect(detect_high_value('blind', 'like_count: 150')).not.toBeNull();
+    });
+
+    it('detects hot category marker', () => {
+      expect(detect_high_value('blind', 'category: hot — 대박 글')).not.toBeNull();
+    });
+
+    it('returns null for low-engagement posts', () => {
+      expect(detect_high_value('blind', 'comment_count: 10, like_count: 20')).toBeNull();
+    });
+  });
+
+  describe('bigtech_jobs handler', () => {
+    it('detects S-tier brands', () => {
+      expect(detect_high_value('bigtech_jobs', 'brand_tier: S — Google')).not.toBeNull();
+    });
+
+    it('detects A-tier brands', () => {
+      expect(detect_high_value('bigtech_jobs', 'brand_tier: A — Netflix')).not.toBeNull();
+    });
+
+    it('detects by company name', () => {
+      expect(detect_high_value('bigtech_jobs', 'Google Senior SWE Remote')).not.toBeNull();
+      expect(detect_high_value('bigtech_jobs', 'OpenAI Research Engineer')).not.toBeNull();
+    });
+
+    it('returns null for unknown companies', () => {
+      expect(detect_high_value('bigtech_jobs', 'SmallStartup: Junior Dev')).toBeNull();
+    });
+  });
+
+  describe('ai_trends handler', () => {
+    it('detects multiple keyword matches via matched_keywords array', () => {
+      expect(detect_high_value('ai_trends', 'matched_keywords: [LLM, RAG, agent]')).not.toBeNull();
+    });
+
+    it('detects multiple keyword mentions in text', () => {
+      expect(detect_high_value('ai_trends', 'New LLM and RAG breakthroughs')).not.toBeNull();
+    });
+
+    it('returns null for single keyword', () => {
+      expect(detect_high_value('ai_trends', 'Some article about cooking')).toBeNull();
+    });
+  });
+
+  describe('other handlers', () => {
+    it('returns null for generic handler', () => {
+      expect(detect_high_value('generic', 'anything')).toBeNull();
+    });
+
+    it('returns null for grad_school handler', () => {
+      expect(detect_high_value('grad_school', 'OMSCS deadline')).toBeNull();
+    });
+
+    it('returns null for lighthouse handler', () => {
+      expect(detect_high_value('lighthouse', 'score: 95')).toBeNull();
+    });
+
+    it('returns null for edutech_competitors handler', () => {
+      expect(detect_high_value('edutech_competitors', 'competitor found')).toBeNull();
     });
   });
 });
