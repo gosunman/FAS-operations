@@ -131,6 +131,25 @@ export const exec_openclaw = (
   });
 };
 
+// Extract the actual LLM text from OpenClaw's JSON envelope.
+// OpenClaw --json returns: {"runId":"...","result":{"payloads":[{"text":"actual response"}]}}
+// If the input is not an OpenClaw envelope, returns the input unchanged.
+export const extract_openclaw_payload = (raw: string): string => {
+  try {
+    const envelope = JSON.parse(raw);
+    if (envelope?.result?.payloads?.[0]?.text) {
+      return envelope.result.payloads[0].text;
+    }
+    // If parsed but no payloads, return stringified result
+    if (envelope?.result) {
+      return JSON.stringify(envelope.result);
+    }
+  } catch {
+    // Not JSON envelope — return as-is
+  }
+  return raw;
+};
+
 // Extract JSON array from raw text.
 // Tries direct JSON.parse first, then falls back to extracting
 // JSON from markdown code blocks (```json ... ``` or ``` ... ```).
@@ -245,8 +264,13 @@ export const create_revenue_scout = (deps: {
 
     logger.info(`revenue_scout: OpenClaw returned ${openclaw_result.output.length} chars`);
 
+    // Step 2.5: Extract actual LLM response from OpenClaw JSON envelope
+    // OpenClaw --json wraps responses in: {"runId":"...","result":{"payloads":[{"text":"..."}]}}
+    const raw_text = extract_openclaw_payload(openclaw_result.output);
+    logger.info(`revenue_scout: extracted payload (${raw_text.length} chars)`);
+
     // Step 3: Parse the response into opportunities
-    const opportunities = parse_opportunities(openclaw_result.output);
+    const opportunities = parse_opportunities(raw_text);
 
     if (!opportunities) {
       const error_msg = 'Failed to parse OpenClaw response as JSON';
