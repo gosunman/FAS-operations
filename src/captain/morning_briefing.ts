@@ -301,15 +301,29 @@ export const format_detailed_briefing = (data: BriefingData): {
   };
 };
 
-// === Main: generate and send morning briefing ===
-
-// TODO: Google Messages session health check
+// === Google Messages session health check (stub) ===
 // Google Messages web automation (src/academy/google_messages.ts) uses Playwright
 // with persistent Chrome profile. Session can expire requiring re-pairing.
-// This should NOT be added to morning briefing (Playwright is too heavy for a briefing).
-// Instead, implement as a separate scheduled check (e.g. daily 08:00 in schedules.yml)
-// that verifies messages.google.com session is alive and alerts via Telegram if unhealthy.
-// For now, SMS sending is manual — user decided to skip automation until stable.
+// This is a separate scheduled check (not part of morning briefing — Playwright is too heavy).
+// Phase 6: Implement full health check that verifies messages.google.com session is alive
+// and alerts via Telegram if unhealthy.
+
+export type GoogleMessagesHealthStatus = {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  message: string;
+  checked_at: string;
+};
+
+export const check_google_messages_health = (): GoogleMessagesHealthStatus => {
+  // Stub implementation — returns unknown until full Playwright check is built
+  return {
+    status: 'unknown',
+    message: 'Health check not yet implemented',
+    checked_at: new Date().toISOString(),
+  };
+};
+
+// === Main: generate and send morning briefing ===
 
 export const create_morning_briefing = (deps: MorningBriefingDeps) => {
   // Generate briefing, send to all channels, return result

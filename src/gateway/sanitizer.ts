@@ -1,7 +1,8 @@
 // Personal information sanitizer for FAS
 // Removes PII before sending tasks to Hunter (isolated device)
 // Stage 1: Regex-based pattern matching (fast, deterministic)
-// Stage 2: LLM-based contextual filtering (TODO: future)
+// Phase 6: LLM-based contextual filtering - will use Claude API for semantic PII detection
+// beyond pattern matching. Planned for post-MVP phase.
 
 import type { Task } from '../shared/types.js';
 

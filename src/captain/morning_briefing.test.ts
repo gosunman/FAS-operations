@@ -14,6 +14,7 @@ import {
   format_short_briefing,
   format_detailed_briefing,
   create_morning_briefing,
+  check_google_messages_health,
   type BriefingData,
 } from './morning_briefing.js';
 
@@ -324,6 +325,31 @@ describe('morning_briefing', () => {
       expect(result.sections[2].title).toBe('Task Status Overview');
       expect(result.sections[2].content).toContain('Blocked: 1');
       expect(result.sections[2].content).toContain('In Progress: 1');
+    });
+  });
+
+  describe('check_google_messages_health', () => {
+    it('should return unknown status as stub implementation', () => {
+      // Given: no external dependencies (stub)
+
+      // When: checking Google Messages health
+      const result = check_google_messages_health();
+
+      // Then: should return unknown status with message
+      expect(result.status).toBe('unknown');
+      expect(result.message).toBe('Health check not yet implemented');
+      expect(result.checked_at).toBeTruthy();
+    });
+
+    it('should return a valid ISO timestamp in checked_at', () => {
+      // Given: calling health check
+
+      // When: checking result
+      const result = check_google_messages_health();
+
+      // Then: checked_at should be a valid ISO date string
+      const parsed = new Date(result.checked_at);
+      expect(parsed.getTime()).not.toBeNaN();
     });
   });
 
