@@ -406,6 +406,353 @@ register_template('physics', '역학과 에너지', '운동의 법칙', (config)
   };
 });
 
+// ─── Chemistry: 물질의 구성 / 주기율표와 원소 ─────────────────
+
+register_template('chemistry', '물질의 구성', '주기율표와 원소', (config) => {
+  // ── Concept Sections ──
+
+  const sections: ConceptSection[] = [
+    {
+      title: '원자의 구조 (Atomic Structure)',
+      content:
+        '원자는 물질을 구성하는 기본 입자이다. 원자의 중심에는 (+)전하를 띠는 원자핵이 있고, ' +
+        '원자핵 주위를 (-)전하를 띠는 전자가 돌고 있다.\n\n' +
+        '▣ 원자핵의 구성\n' +
+        '- 양성자(proton): (+)전하, 질량 약 1 amu\n' +
+        '- 중성자(neutron): 전하 없음, 질량 약 1 amu\n' +
+        '- 원자핵 = 양성자 + 중성자 (핵자, nucleon)\n\n' +
+        '▣ 전자\n' +
+        '- (-)전하, 질량은 양성자의 약 1/1836\n' +
+        '- 전자 수 = 양성자 수 (중성 원자)\n\n' +
+        '▣ 원자번호와 질량수\n' +
+        '- 원자번호(Z) = 양성자 수 → 원소의 종류를 결정\n' +
+        '- 질량수(A) = 양성자 수 + 중성자 수\n' +
+        '- 중성자 수(N) = A - Z\n' +
+        '- 같은 원소에서 중성자 수가 다른 원자를 동위 원소(isotope)라 한다\n\n' +
+        '예시: ¹²C (탄소-12) → Z=6, A=12, N=6 / ¹⁴C (탄소-14) → Z=6, A=14, N=8',
+      key_formulas: [
+        'A = Z + N (질량수 = 원자번호 + 중성자 수)',
+        'Z = 양성자 수 = 전자 수 (중성 원자)',
+        'N = A - Z (중성자 수)',
+      ],
+      important_notes: [
+        '원자번호가 같으면 같은 원소이다. 중성자 수가 달라도 화학적 성질은 같다.',
+        '원자의 질량은 거의 대부분 원자핵(양성자 + 중성자)에 집중되어 있다.',
+        '전자의 질량은 매우 작으므로 질량수 계산에 포함하지 않는다.',
+      ],
+    },
+    {
+      title: '주기율표 (Periodic Table)',
+      content:
+        '주기율표는 원소를 원자번호 순서로 배열하되, 화학적 성질이 비슷한 원소가 같은 세로줄(족)에 오도록 정리한 표이다.\n\n' +
+        '▣ 주기 (Period) — 가로줄\n' +
+        '- 1~7주기: 같은 주기의 원소는 전자 껍질 수가 같다\n' +
+        '- 주기 번호 = 전자 껍질 수\n' +
+        '- 같은 주기에서 왼쪽→오른쪽으로 갈수록 원자번호 증가\n\n' +
+        '▣ 족 (Group) — 세로줄\n' +
+        '- 1~18족: 같은 족의 원소는 원자가 전자 수가 같아 화학적 성질이 비슷\n' +
+        '- 1족: 알칼리 금속 (Li, Na, K 등) — 반응성 큼, 물과 반응\n' +
+        '- 2족: 알칼리 토금속 (Be, Mg, Ca 등)\n' +
+        '- 17족: 할로겐 (F, Cl, Br, I 등) — 비금속, 반응성 큼\n' +
+        '- 18족: 비활성 기체 (He, Ne, Ar 등) — 안정, 반응 거의 안 함\n\n' +
+        '▣ 원소의 분류\n' +
+        '- 금속 원소: 주기율표 왼쪽/중앙, 광택, 전기/열 전도성, 양이온 형성\n' +
+        '- 비금속 원소: 주기율표 오른쪽, 음이온 형성, 공유 결합\n' +
+        '- 준금속(메탈로이드): 금속과 비금속의 중간 성질 (Si, Ge 등)',
+      key_formulas: [
+        '주기 번호 = 전자 껍질 수',
+        '같은 족 → 원자가 전자 수 동일 → 화학적 성질 유사',
+        '1족: 원자가 전자 1개, 17족: 원자가 전자 7개, 18족: 원자가 전자 8개(He은 2개)',
+      ],
+      important_notes: [
+        '주기율표에서 원소의 위치만으로 많은 화학적 성질을 예측할 수 있다.',
+        '같은 족 원소는 원자가 전자 수가 같으므로 화학적 성질이 비슷하다.',
+        '비활성 기체(18족)는 전자 배치가 안정하여 화학 반응을 거의 하지 않는다.',
+      ],
+    },
+    {
+      title: '원소와 화합물 (Elements and Compounds)',
+      content:
+        '▣ 원소 (Element)\n' +
+        '- 한 종류의 원자로만 이루어진 순수한 물질\n' +
+        '- 화학적 방법으로 더 간단한 물질로 분해할 수 없다\n' +
+        '- 원소 기호: 라틴어 이름의 첫 글자(대문자) 또는 첫 두 글자\n' +
+        '  예) H(수소), O(산소), C(탄소), Fe(철), Na(나트륨), Au(금)\n\n' +
+        '▣ 화합물 (Compound)\n' +
+        '- 두 종류 이상의 원소가 일정한 비율로 화학적으로 결합한 물질\n' +
+        '- 성분 원소와는 전혀 다른 성질을 가진다\n' +
+        '- 화학식: 원소 기호와 숫자로 화합물의 조성을 나타냄\n' +
+        '  예) H₂O(물), NaCl(염화나트륨), CO₂(이산화탄소), CaCO₃(탄산칼슘)\n\n' +
+        '▣ 화학식 읽기\n' +
+        '- 아래 첨자 숫자 = 해당 원소의 원자 수\n' +
+        '- H₂O: 수소 원자 2개 + 산소 원자 1개\n' +
+        '- CO₂: 탄소 원자 1개 + 산소 원자 2개\n' +
+        '- 계수(coefficient): 화학식 앞의 숫자, 분자 수를 나타냄\n' +
+        '  예) 2H₂O = 물 분자 2개',
+      key_formulas: [
+        '원소 기호: 첫 글자 대문자 + (필요 시) 둘째 글자 소문자',
+        '화학식의 아래 첨자 = 원자 수, 화학식 앞 계수 = 분자 수',
+      ],
+      important_notes: [
+        '원소와 원자는 다른 개념이다. 원소는 물질의 종류, 원자는 물질을 이루는 입자이다.',
+        '화합물의 성질은 성분 원소의 성질과 다르다 (예: Na는 폭발적 금속이고 Cl₂는 유독 기체지만, NaCl은 안전한 소금).',
+        '혼합물은 화합물과 다르다. 혼합물은 물리적 혼합이고, 화합물은 화학적 결합이다.',
+      ],
+    },
+    {
+      title: '분자와 이온 (Molecules and Ions)',
+      content:
+        '▣ 분자 (Molecule)\n' +
+        '- 두 개 이상의 원자가 공유 결합으로 결합한 입자\n' +
+        '- 공유 결합: 비금속 원자끼리 전자쌍을 공유하여 형성\n' +
+        '- 분자식: 분자를 구성하는 원자의 종류와 수를 나타냄\n' +
+        '  예) H₂(수소 분자), O₂(산소 분자), H₂O(물), NH₃(암모니아)\n\n' +
+        '▣ 이온 (Ion)\n' +
+        '- 원자가 전자를 잃거나 얻어서 전하를 띠게 된 입자\n' +
+        '- 양이온(cation): 전자를 잃어 (+)전하를 띠는 이온\n' +
+        '  예) Na⁺, Ca²⁺, Fe³⁺, NH₄⁺\n' +
+        '- 음이온(anion): 전자를 얻어 (-)전하를 띠는 이온\n' +
+        '  예) Cl⁻, O²⁻, SO₄²⁻, NO₃⁻\n\n' +
+        '▣ 이온 결합 (Ionic Bond)\n' +
+        '- 양이온과 음이온 사이의 정전기적 인력으로 형성\n' +
+        '- 주로 금속 + 비금속 사이에서 형성\n' +
+        '- 이온 결합 화합물: 높은 녹는점, 물에 녹으면 전기 전도\n' +
+        '  예) NaCl, MgO, CaCl₂\n\n' +
+        '▣ 공유 결합 (Covalent Bond)\n' +
+        '- 비금속 원자끼리 전자쌍을 공유하여 형성\n' +
+        '- 단일 결합(H₂), 이중 결합(O₂), 삼중 결합(N₂)\n' +
+        '- 공유 결합 화합물: 상대적으로 낮은 녹는점/끓는점',
+      key_formulas: [
+        '양이온: 원자 → 전자 잃음 → (+) 전하 (예: Na → Na⁺ + e⁻)',
+        '음이온: 원자 → 전자 얻음 → (-) 전하 (예: Cl + e⁻ → Cl⁻)',
+        '이온 결합: 양이온 + 음이온 → 정전기적 인력',
+        '공유 결합: 비금속 + 비금속 → 전자쌍 공유',
+      ],
+      important_notes: [
+        '양이온은 원자보다 크기가 작고, 음이온은 원자보다 크기가 크다.',
+        '이온 결합과 공유 결합을 구별할 때, 금속+비금속=이온 결합, 비금속+비금속=공유 결합으로 판단한다.',
+        '다원자 이온(NH₄⁺, SO₄²⁻ 등)은 여러 원자가 공유 결합으로 묶인 뒤 전체가 전하를 띠는 이온이다.',
+      ],
+    },
+    {
+      title: '화학 반응식 (Chemical Equations)',
+      content:
+        '화학 반응식은 화학 반응에서 반응물과 생성물을 화학식으로 나타낸 식이다.\n\n' +
+        '▣ 화학 반응식의 구성\n' +
+        '- 반응물(reactant): 화살표 왼쪽, 반응 전 물질\n' +
+        '- 생성물(product): 화살표 오른쪽, 반응 후 물질\n' +
+        '- 화살표(→): 반응 방향\n' +
+        '- 계수(coefficient): 화학식 앞의 숫자, 각 물질의 분자 수 비\n\n' +
+        '▣ 계수 맞추기 (Balancing)\n' +
+        '화학 반응에서 원자는 새로 생기거나 없어지지 않으므로(질량 보존 법칙), ' +
+        '반응물과 생성물의 각 원자 수가 같아야 한다.\n\n' +
+        '계수 맞추기 방법:\n' +
+        '1. 반응식의 반응물과 생성물을 화학식으로 쓴다\n' +
+        '2. 각 원소의 원자 수를 비교한다\n' +
+        '3. 계수를 조절하여 양쪽의 원자 수를 같게 맞춘다\n' +
+        '4. 최소 정수비로 계수를 정리한다\n\n' +
+        '예시:\n' +
+        '- H₂ + O₂ → H₂O (미완성) → 2H₂ + O₂ → 2H₂O (완성)\n' +
+        '- C₃H₈ + O₂ → CO₂ + H₂O → C₃H₈ + 5O₂ → 3CO₂ + 4H₂O\n' +
+        '- Fe + O₂ → Fe₂O₃ → 4Fe + 3O₂ → 2Fe₂O₃',
+      key_formulas: [
+        '반응물 → 생성물 (화학 반응식의 기본 형태)',
+        '질량 보존 법칙: 반응 전후 각 원소의 원자 수가 같다',
+        '2H₂ + O₂ → 2H₂O (수소의 연소)',
+        'C₃H₈ + 5O₂ → 3CO₂ + 4H₂O (프로판의 연소)',
+      ],
+      important_notes: [
+        '화학식의 아래 첨자는 절대 바꾸지 않는다! 계수만 조절한다.',
+        '계수 맞추기는 가장 복잡한 화학식(원자 종류가 많은 것)부터 시작하면 편리하다.',
+        '계수가 1인 경우 생략한다.',
+      ],
+    },
+  ];
+
+  // ── Examples (worked problems) ──
+
+  const all_examples: ExampleProblem[] = [
+    {
+      number: 1,
+      problem:
+        '탄소(C)의 원자번호는 6이고 질량수는 12이다. 탄소 원자의 양성자 수, 중성자 수, 전자 수를 각각 구하시오.',
+      solution_steps: [
+        '주어진 조건 정리: Z = 6, A = 12',
+        '양성자 수 = 원자번호 = Z = 6',
+        '중성자 수 = 질량수 - 원자번호 = A - Z = 12 - 6 = 6',
+        '전자 수 = 양성자 수 = 6 (중성 원자)',
+      ],
+      answer: '양성자 6개, 중성자 6개, 전자 6개',
+      difficulty: 'basic',
+    },
+    {
+      number: 2,
+      problem:
+        '다음 이온의 양성자 수와 전자 수를 구하시오: (1) Na⁺ (원자번호 11), (2) Cl⁻ (원자번호 17)',
+      solution_steps: [
+        '(1) Na⁺: 원자번호 11 → 양성자 11개',
+        'Na⁺는 전자 1개를 잃은 양이온 → 전자 수 = 11 - 1 = 10개',
+        '(2) Cl⁻: 원자번호 17 → 양성자 17개',
+        'Cl⁻는 전자 1개를 얻은 음이온 → 전자 수 = 17 + 1 = 18개',
+      ],
+      answer: '(1) Na⁺: 양성자 11개, 전자 10개 / (2) Cl⁻: 양성자 17개, 전자 18개',
+      difficulty: 'standard',
+    },
+    {
+      number: 3,
+      problem:
+        '다음 화학 반응식의 계수를 맞추시오: Al + O₂ → Al₂O₃',
+      solution_steps: [
+        '미완성 반응식: Al + O₂ → Al₂O₃',
+        'Al: 왼쪽 1개, 오른쪽 2개 → Al₂O₃의 Al을 기준으로 왼쪽 Al에 계수 조정 필요',
+        'O: 왼쪽 2개(O₂), 오른쪽 3개(Al₂O₃) → 최소공배수 이용',
+        'O의 최소공배수: 6 → 3O₂(왼쪽), 2Al₂O₃(오른쪽)',
+        'Al: 오른쪽 2×2 = 4개 → 왼쪽 4Al',
+        '최종: 4Al + 3O₂ → 2Al₂O₃',
+        '검산: Al 4=4, O 6=6',
+      ],
+      answer: '4Al + 3O₂ → 2Al₂O₃',
+      difficulty: 'standard',
+    },
+    {
+      number: 4,
+      problem:
+        '메탄(CH₄)의 완전 연소 반응식을 완성하고, 각 물질의 계수를 구하시오. (연소 생성물: CO₂, H₂O)',
+      solution_steps: [
+        '미완성: CH₄ + O₂ → CO₂ + H₂O',
+        'C: 왼쪽 1개, 오른쪽 1개(CO₂) → C는 맞음',
+        'H: 왼쪽 4개(CH₄), 오른쪽 2개(H₂O) → H₂O에 계수 2',
+        'CH₄ + O₂ → CO₂ + 2H₂O',
+        'O: 오른쪽 = 2(CO₂) + 2(2H₂O) = 4개 → 왼쪽 O₂에 계수 2',
+        '최종: CH₄ + 2O₂ → CO₂ + 2H₂O',
+        '검산: C 1=1, H 4=4, O 4=4',
+      ],
+      answer: 'CH₄ + 2O₂ → CO₂ + 2H₂O',
+      difficulty: 'advanced',
+    },
+  ];
+
+  // ── Practice Problems ──
+
+  const all_practice: PracticeProblem[] = [
+    {
+      number: 1,
+      problem: '원자번호 17, 질량수 35인 염소(Cl) 원자의 중성자 수는?',
+      choices: [
+        { label: CHOICE_LABELS[0], text: '17' },
+        { label: CHOICE_LABELS[1], text: '18' },
+        { label: CHOICE_LABELS[2], text: '35' },
+        { label: CHOICE_LABELS[3], text: '52' },
+        { label: CHOICE_LABELS[4], text: '8' },
+      ],
+      answer: CHOICE_LABELS[1],
+      hint: 'N = A - Z = 35 - 17 = 18',
+    },
+    {
+      number: 2,
+      problem: '주기율표에서 같은 족(세로줄)에 있는 원소들의 공통점으로 옳은 것은?',
+      choices: [
+        { label: CHOICE_LABELS[0], text: '전자 껍질 수가 같다' },
+        { label: CHOICE_LABELS[1], text: '질량수가 같다' },
+        { label: CHOICE_LABELS[2], text: '원자가 전자 수가 같다' },
+        { label: CHOICE_LABELS[3], text: '중성자 수가 같다' },
+        { label: CHOICE_LABELS[4], text: '원자번호가 같다' },
+      ],
+      answer: CHOICE_LABELS[2],
+      hint: '같은 족 원소는 원자가 전자 수가 같아서 화학적 성질이 유사하다',
+    },
+    {
+      number: 3,
+      problem: '다음 중 이온 결합 화합물에 해당하는 것은?',
+      choices: [
+        { label: CHOICE_LABELS[0], text: 'H₂O' },
+        { label: CHOICE_LABELS[1], text: 'CO₂' },
+        { label: CHOICE_LABELS[2], text: 'NaCl' },
+        { label: CHOICE_LABELS[3], text: 'NH₃' },
+        { label: CHOICE_LABELS[4], text: 'CH₄' },
+      ],
+      answer: CHOICE_LABELS[2],
+      hint: '금속(Na) + 비금속(Cl)의 결합은 이온 결합이다',
+    },
+    {
+      number: 4,
+      problem: '산소 원자(O, 원자번호 8)가 안정한 이온이 될 때의 이온식과 전자 수는?',
+      choices: [
+        { label: CHOICE_LABELS[0], text: 'O⁺, 전자 7개' },
+        { label: CHOICE_LABELS[1], text: 'O²⁺, 전자 6개' },
+        { label: CHOICE_LABELS[2], text: 'O⁻, 전자 9개' },
+        { label: CHOICE_LABELS[3], text: 'O²⁻, 전자 10개' },
+        { label: CHOICE_LABELS[4], text: 'O²⁻, 전자 8개' },
+      ],
+      answer: CHOICE_LABELS[3],
+      hint: '산소는 비금속으로 전자 2개를 얻어 O²⁻가 되어 안정(전자 8+2=10개)',
+    },
+    {
+      number: 5,
+      problem: '다음 화학 반응식에서 a의 값은? aH₂ + O₂ → 2H₂O',
+      choices: [
+        { label: CHOICE_LABELS[0], text: '1' },
+        { label: CHOICE_LABELS[1], text: '2' },
+        { label: CHOICE_LABELS[2], text: '3' },
+        { label: CHOICE_LABELS[3], text: '4' },
+        { label: CHOICE_LABELS[4], text: '6' },
+      ],
+      answer: CHOICE_LABELS[1],
+      hint: 'H: 왼쪽 2a개, 오른쪽 4개 → 2a = 4 → a = 2',
+    },
+    {
+      number: 6,
+      problem:
+        '¹⁶O와 ¹⁸O는 서로 동위 원소이다. 두 원소에 대한 설명으로 옳은 것을 모두 고르시오. ' +
+        '(가) 양성자 수가 같다. (나) 중성자 수가 같다. (다) 화학적 성질이 같다.',
+      answer: '(가), (다) — 동위 원소는 양성자 수(원자번호)가 같고, 중성자 수만 다르며, 화학적 성질은 같다.',
+    },
+    {
+      number: 7,
+      problem:
+        '다음 중 공유 결합으로 이루어진 분자를 모두 고르시오: NaCl, H₂O, MgO, CO₂, KBr',
+      answer: 'H₂O, CO₂ — 비금속 원자끼리 결합한 것이 공유 결합이다.',
+      hint: '금속+비금속은 이온 결합, 비금속+비금속은 공유 결합',
+    },
+  ];
+
+  // ── Level-based filtering ──
+  // basic: first 3 examples, first 5 practice
+  // standard: all examples, all practice
+  // advanced: all examples, all practice
+  const examples_count = config.level === 'basic' ? 3 : all_examples.length;
+  const practice_count = config.level === 'basic' ? 5 : all_practice.length;
+
+  const summary =
+    '이 단원에서는 물질을 구성하는 기본 입자인 원자의 구조를 학습하였다. ' +
+    '원자는 양성자와 중성자로 이루어진 원자핵과 그 주위의 전자로 구성되며, ' +
+    '원자번호(양성자 수)가 원소의 종류를 결정한다. ' +
+    '주기율표는 원소를 체계적으로 분류한 표로, 같은 족 원소는 원자가 전자 수가 같아 화학적 성질이 유사하다. ' +
+    '원자가 전자를 잃거나 얻으면 이온이 되며, ' +
+    '금속과 비금속은 이온 결합을, 비금속끼리는 공유 결합을 형성한다. ' +
+    '화학 반응식에서는 질량 보존 법칙에 따라 양쪽의 원자 수를 맞추는 계수 맞추기가 핵심이다.';
+
+  const key_terms: { term: string; definition: string }[] = [
+    { term: '원자번호(Z)', definition: '원자핵 속 양성자의 수. 원소의 종류를 결정한다.' },
+    { term: '질량수(A)', definition: '양성자 수와 중성자 수의 합. A = Z + N' },
+    { term: '동위 원소', definition: '같은 원소(양성자 수 동일)에서 중성자 수가 다른 원자. 화학적 성질은 같다.' },
+    { term: '주기', definition: '주기율표의 가로줄. 같은 주기의 원소는 전자 껍질 수가 같다.' },
+    { term: '족', definition: '주기율표의 세로줄. 같은 족의 원소는 원자가 전자 수가 같아 화학적 성질이 유사하다.' },
+    { term: '이온', definition: '원자가 전자를 잃거나 얻어서 전하를 띠게 된 입자. 양이온(+)과 음이온(-)이 있다.' },
+    { term: '공유 결합', definition: '비금속 원자끼리 전자쌍을 공유하여 형성하는 화학 결합.' },
+    { term: '이온 결합', definition: '양이온과 음이온 사이의 정전기적 인력으로 형성되는 화학 결합.' },
+    { term: '화학 반응식', definition: '화학 반응의 반응물과 생성물을 화학식으로 나타낸 식. 계수를 맞추어야 한다.' },
+  ];
+
+  return {
+    sections,
+    examples: all_examples.slice(0, examples_count),
+    practice_problems: all_practice.slice(0, practice_count),
+    summary,
+    key_terms,
+  };
+});
+
 // ─── Core Functions ──────────────────────────────────────────
 
 /**
