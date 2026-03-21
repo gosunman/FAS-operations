@@ -1,0 +1,111 @@
+# Captain Planning Loop — Schedule Definitions
+# Consumed by planning_loop.ts to create tasks on a recurring basis.
+#
+# Schedule types:
+#   daily        — runs every day
+#   every_3_days — runs every 3 days from epoch (2026-01-01)
+#   weekly       — runs on a specific day of the week
+#
+# Fields:
+#   title       — human-readable task title (must be unique for dedup)
+#   type        — schedule type (daily | every_3_days | weekly)
+#   time        — preferred execution time (HH:MM, informational only)
+#   day         — day of week for weekly schedules (monday, tuesday, ...)
+#   mode        — FAS mode (awake | sleep | recurring)
+#   agent       — assigned agent (gemini_a, claude, hunter). Omit for system workflows.
+#   action      — action type (web_crawl, research, chatgpt_task, generate_test, etc.)
+#   risk_level  — LOW | MID | HIGH | CRITICAL
+#   requires_personal_info — whether task needs PII access (true/false)
+#   workflow    — system workflow ID (for non-task schedules)
+#   description — task description text
+
+schedules:
+  # === Daily schedules ===
+
+  ai_trends:
+    title: "AI 트렌드 리서치"
+    type: daily
+    time: "01:00"
+    mode: sleep
+    agent: gemini_a
+    action: research
+    risk_level: low
+    requires_personal_info: false
+    description: "AI/ML 최신 트렌드, 논문, 제품 출시 동향을 리서치하고 요약"
+
+  # === Every 3 days schedules ===
+
+  startup_crawl:
+    title: "창업지원사업 크롤링"
+    type: every_3_days
+    time: "02:00"
+    mode: sleep
+    agent: gemini_a
+    action: web_crawl
+    risk_level: low
+    requires_personal_info: true
+    description: "정부/공공 창업지원사업 공고 크롤링 및 마감일 추적"
+
+  housing_lottery:
+    title: "청약홈 공고 스캔"
+    type: every_3_days
+    time: "03:00"
+    mode: sleep
+    agent: hunter
+    action: web_crawl
+    risk_level: low
+    requires_personal_info: false
+    description: "청약홈(applyhome.co.kr) 신규 공고 크롤링. 수도권 50m2+ 무주택 조건 필터링."
+
+  bigtech_jobs:
+    title: "빅테크 채용공고 스캔"
+    type: every_3_days
+    time: "03:30"
+    mode: sleep
+    agent: hunter
+    action: web_crawl
+    risk_level: low
+    requires_personal_info: false
+    description: "FAANG + 주요 빅테크 기업 채용 페이지 스캔. 이름빨 간판 모으기 목적. 근무조건/직군/계약 무관."
+
+  # === Weekly schedules ===
+
+  grad_school:
+    title: "대학원 일정 체크"
+    type: weekly
+    day: monday
+    time: "04:00"
+    mode: sleep
+    agent: gemini_a
+    action: research
+    risk_level: low
+    requires_personal_info: false
+    description: "OMSCS, GSEP 등 관심 대학원 일정/마감 확인"
+
+  weekly_test:
+    title: "주간 테스트 생성"
+    type: weekly
+    day: friday
+    time: "22:00"
+    mode: recurring
+    agent: claude
+    action: generate_test
+    risk_level: low
+    requires_personal_info: false
+    description: "EIDOS SCIENCE 주간 테스트 자동 생성. 물리학 역학 단원 객관식 시험지와 정답표."
+
+  # === System workflows (no agent — handled by n8n) ===
+
+  morning_briefing:
+    title: "모닝 브리핑"
+    type: daily
+    time: "07:30"
+    mode: awake
+    workflow: WF-4
+
+  night_summary:
+    title: "나이트 서머리"
+    type: daily
+    time: "23:00"
+    mode: sleep
+    workflow: WF-5
