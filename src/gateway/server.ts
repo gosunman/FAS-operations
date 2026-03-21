@@ -438,7 +438,7 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
   });
 
   // Submit hunter task result (with schema validation + PII quarantine)
-  app.post('/api/hunter/tasks/:id/result', async (req, res) => {
+  app.post('/api/hunter/tasks/:id/result', (req, res) => {
     const { status: result_status, output, files } = req.body;
 
     // --- Schema validation ---
@@ -563,16 +563,42 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         return;
       }
 
-      // Warning-only PII: auto-sanitize with full pipeline (regex + LLM contextual)
+      // Warning-only PII: immediate regex sanitize + deferred LLM contextual check
       const warning_types = detections.filter((d) => d.severity === 'warning').map((d) => d.name);
       log.warn(
         `[SECURITY] Hunter task ${req.params.id} output contains warning-level PII ` +
-        `(${warning_types.join(', ')}) — sanitizing with full pipeline (regex + LLM)`
+        `(${warning_types.join(', ')}) — regex sanitized immediately, LLM check deferred`
       );
-      // Replace with fully sanitized version (regex first, then LLM contextual)
-      // sanitize_full chains Stage 1 (regex) + Stage 2 (Gemini LLM contextual PII)
-      // If LLM fails, regex result is still applied — partial protection > none
-      safe_output = await sanitize_full(safe_output);
+      // Stage 1: Immediate regex sanitize (fast, deterministic, non-blocking)
+      safe_output = sanitize_text(safe_output);
+
+      // Stage 2: LLM contextual PII check runs AFTER response is sent (fire-and-forget)
+      // This avoids blocking the hunter for 10-30s on a Gemini CLI call.
+      // If LLM finds additional contextual PII, it logs a warning for manual review.
+      const task_id_for_llm = req.params.id;
+      const output_for_llm = safe_output;
+      setTimeout(() => {
+        sanitize_full(output_for_llm).then((llm_result) => {
+          if (llm_result !== output_for_llm) {
+            log.warn(
+              `[SECURITY] LLM contextual PII detected in task ${task_id_for_llm} ` +
+              `— original was regex-sanitized but LLM found additional contextual PII. ` +
+              `Flagged for review.`
+            );
+            // Alert via notification router
+            if (options.notification_router) {
+              options.notification_router.route({
+                type: 'alert',
+                message: `⚠️ *[Contextual PII]* 태스크 ${task_id_for_llm}에서 LLM이 문맥적 개인정보를 추가 감지했습니다. 수동 검토가 필요합니다.`,
+                device: 'captain',
+                severity: 'medium',
+              }).catch(() => {});
+            }
+          }
+        }).catch((err) => {
+          log.warn(`[SECURITY] LLM PII check failed for task ${task_id_for_llm}: ${err}`);
+        });
+      }, 0);
     }
 
     // --- Normal processing (no PII detected) ---
