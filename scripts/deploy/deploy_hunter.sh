@@ -59,6 +59,18 @@ HUNTER_POLL_INTERVAL=10000
 # Browser
 HUNTER_HEADLESS=true
 
+# === Autonomous Mode (Revenue Projects) ===
+# SQLite project pipeline database
+HUNTER_DB_PATH=./data/hunter_projects.db
+# Reports directory
+HUNTER_REPORTS_DIR=./reports
+# Revenue scout cycle interval (6 hours = 21600000ms)
+HUNTER_SCOUT_INTERVAL_MS=21600000
+# Captain health check interval (30 seconds)
+CAPTAIN_HEALTH_CHECK_INTERVAL_MS=30000
+# Consecutive failures before autonomous switch
+CAPTAIN_FAILURE_THRESHOLD=3
+
 # === Notification (Optional — hunter works without these) ===
 # Hunter's own Telegram bot token (separate from captain)
 HUNTER_TELEGRAM_BOT_TOKEN=
@@ -164,4 +176,5 @@ echo "  cd $DEPLOY_DIR"
 echo "  cp .env.example .env && vim .env    # Set CAPTAIN_API_URL and HUNTER_API_KEY"
 echo "  pnpm install"
 echo "  npx playwright install chromium"
-echo "  pnpm start                          # Start hunter agent"
+echo "  mkdir -p data reports"
+echo "  pnpm start                          # Start hunter agent v2.0 (dual mode)"
