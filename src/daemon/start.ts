@@ -30,7 +30,7 @@ import type { CaptainMode } from './usage_monitor.js';
 // === Validate required environment variables ===
 
 const bot_token = process.env.TELEGRAM_BOT_TOKEN;
-const owner_id = process.env.TELEGRAM_OWNER_ID;
+const owner_id = process.env.TELEGRAM_OWNER_ID ?? process.env.TELEGRAM_CHAT_ID;
 
 if (!bot_token) {
   console.error('[Daemon] FATAL: TELEGRAM_BOT_TOKEN is not set');

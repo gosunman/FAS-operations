@@ -346,8 +346,13 @@ export const create_telegram_bot = (
       try {
         const updates = await fetch_updates();
 
+        if (updates.length > 0) {
+          console.log(`${LOG_PREFIX} Received ${updates.length} update(s)`);
+        }
+
         for (const update of updates) {
           last_update_id = update.update_id;
+          console.log(`${LOG_PREFIX} Update #${update.update_id}: chat_id=${update.message?.chat?.id}, text="${update.message?.text ?? '(none)'}"`);
 
           if (update.message?.text) {
             await handle_message(
