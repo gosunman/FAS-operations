@@ -6,7 +6,7 @@
 //   research/{YYYY-MM-DD}/{id}.md     — human-readable markdown summary
 //   research/index.json               — fast lookup index
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -47,12 +47,19 @@ export type ResearchIndex = {
   updated_at: string;
 };
 
+// Result of cleanup operation
+export type CleanupResult = {
+  deleted_count: number;
+  deleted_dirs: string[];    // date directory names that were removed (e.g. "2026-01-15")
+};
+
 // Store interface returned by factory
 export type ResearchStore = {
   save_research: (result: ResearchResult) => ResearchResult;
   list_research: (filter?: ResearchFilter) => ResearchIndexEntry[];
   get_research: (id: string) => ResearchResult | null;
   get_index: () => ResearchIndex;
+  cleanup_old_research: (retention_days?: number) => CleanupResult;
 };
 
 // === Helpers ===
@@ -229,5 +236,57 @@ export const create_research_store = (dir: string): ResearchStore => {
     return index;
   };
 
-  return { save_research, list_research, get_research, get_index };
+  // Delete research folders older than retention_days and update index accordingly.
+  // Scans date-named subdirectories (YYYY-MM-DD) under the research root.
+  // Default retention: 30 days.
+  const cleanup_old_research = (retention_days = 30): CleanupResult => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retention_days);
+    const cutoff_date = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+    // Reload index to ensure we have the latest state
+    index = load_index(index_path);
+
+    const deleted_dirs: string[] = [];
+    let deleted_count = 0;
+
+    // Scan top-level subdirectories for date-named folders
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      // Only process directories matching YYYY-MM-DD pattern
+      const dir_name = entry.name;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dir_name)) continue;
+
+      // If directory date is strictly before cutoff, remove it
+      if (dir_name < cutoff_date) {
+        const full_path = join(dir, dir_name);
+
+        // Count entries that will be removed from the index
+        const entries_in_dir = index.entries.filter((e) =>
+          e.file_path.startsWith(`${dir_name}/`),
+        );
+        deleted_count += entries_in_dir.length;
+
+        // Remove from index
+        index.entries = index.entries.filter((e) =>
+          !e.file_path.startsWith(`${dir_name}/`),
+        );
+
+        // Delete the directory from disk
+        rmSync(full_path, { recursive: true, force: true });
+        deleted_dirs.push(dir_name);
+      }
+    }
+
+    // Persist updated index if anything was deleted
+    if (deleted_dirs.length > 0) {
+      save_index(index_path, index);
+    }
+
+    return { deleted_count, deleted_dirs };
+  };
+
+  return { save_research, list_research, get_research, get_index, cleanup_old_research };
 };
