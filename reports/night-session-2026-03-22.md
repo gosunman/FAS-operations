@@ -99,7 +99,7 @@
 | Shadow (MBP) | offline (주인님 수면 중) |
 | Telegram Bot | Captain만 polling (충돌 해결) |
 | Task Store | 15개 태스크 pending으로 리셋 |
-| Tests | 2194 passed (FAS) + 19 passed (GrantCraft) |
+| Tests | 2194 passed (FAS) + 28 passed (GrantCraft) |
 
 ---
 
@@ -115,8 +115,27 @@
 ## 세션 통계
 
 - FAS 테스트: 2194 passed
-- GrantCraft 테스트: 19 passed
-- 커밋: 3건 (FAS 1, GrantCraft 2)
+- GrantCraft 테스트: 28 passed
+- 커밋: 8건 (FAS 2, GrantCraft 6)
 - 새 레포지토리: 1개 (grant-craft)
 - 인프라 수정: 2건 (Telegram 409, 타임아웃)
 - Hunter 발견: 기존 fas-hunter-agent 정상 가동 확인
+- 시장 리서치: 경쟁사 3개(독스헌트, PULSE AI, 퀀텀점프클럽), PSST 프레임워크, 결제 솔루션
+
+---
+
+## 시장 리서치 요약
+
+### 경쟁 구도
+- **독스헌트**: 건당 89,000~149,000원, 4,000+ 사용자 — 가장 직접적 경쟁사
+- **전통 컨설팅**: 220만~1,045만원 — AI 서비스가 10~20배 저렴
+- **시장 초기 단계**: 침투율 극히 낮음, 선점 기회 존재
+
+### GrantCraft 차별화
+1. **월 구독 29,900원** (독스헌트 건당 89K 대비 압도적 가격 경쟁력)
+2. **PSST 프레임워크 기반** (2026 표준 양식 자동 적용)
+3. **Claude API 품질** (GPT 기반 경쟁사 대비 고품질 한국어)
+
+### 결제 전략
+- 1순위: 토스페이먼츠 (개발자 API, 구독결제 네이티브 지원)
+- 2순위: 포트원 (멀티 PG 통합)
