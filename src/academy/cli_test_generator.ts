@@ -166,7 +166,8 @@ Optional:
   --output           Output directory for PDF (default: ./output/tests)
 
 Available question banks:
-  physics: 역학
+  physics: 역학, 열역학, 파동, 전자기
+  chemistry: 화학결합, 산화환원
 
 Examples:
   pnpm run academy:test -- --subject physics --chapter "역학"

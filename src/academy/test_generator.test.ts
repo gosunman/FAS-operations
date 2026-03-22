@@ -67,6 +67,83 @@ describe('create_question_bank', () => {
   });
 });
 
+// === Tests for new question banks ===
+
+const ALL_NEW_BANKS: { subject: SubjectArea; chapter: string; min_count: number }[] = [
+  { subject: 'physics', chapter: '열역학', min_count: 15 },
+  { subject: 'physics', chapter: '파동', min_count: 15 },
+  { subject: 'physics', chapter: '전자기', min_count: 15 },
+  { subject: 'chemistry', chapter: '화학결합', min_count: 10 },
+  { subject: 'chemistry', chapter: '산화환원', min_count: 10 },
+];
+
+describe.each(ALL_NEW_BANKS)('create_question_bank: $subject/$chapter', ({ subject, chapter, min_count }) => {
+  it(`should return at least ${min_count} questions`, () => {
+    const bank = create_question_bank(subject, chapter);
+    expect(Array.isArray(bank)).toBe(true);
+    expect(bank.length).toBeGreaterThanOrEqual(min_count);
+  });
+
+  it('should have 5 choices per question with Korean labels', () => {
+    const bank = create_question_bank(subject, chapter);
+    for (const q of bank) {
+      expect(q.choices).toHaveLength(5);
+      const labels = q.choices.map((c) => c.label);
+      expect(labels).toEqual(VALID_LABELS);
+    }
+  });
+
+  it('should include all 3 difficulty levels', () => {
+    const bank = create_question_bank(subject, chapter);
+    const levels = new Set(bank.map((q) => q.difficulty_tag));
+    expect(levels.has('regular')).toBe(true);
+    expect(levels.has('ogeum')).toBe(true);
+    expect(levels.has('medical')).toBe(true);
+  });
+
+  it('should have valid correct_answer labels', () => {
+    const bank = create_question_bank(subject, chapter);
+    for (const q of bank) {
+      expect(VALID_LABELS).toContain(q.correct_answer);
+    }
+  });
+
+  it('should have numbered questions starting from 1', () => {
+    const bank = create_question_bank(subject, chapter);
+    for (let i = 0; i < bank.length; i++) {
+      expect(bank[i].number).toBe(i + 1);
+    }
+  });
+
+  it('should have non-empty stems and explanations', () => {
+    const bank = create_question_bank(subject, chapter);
+    for (const q of bank) {
+      expect(q.stem.length).toBeGreaterThan(0);
+      expect(q.explanation.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('should have unique question stems (no duplicates)', () => {
+    const bank = create_question_bank(subject, chapter);
+    const stems = bank.map((q) => q.stem);
+    const unique_stems = new Set(stems);
+    expect(unique_stems.size).toBe(stems.length);
+  });
+
+  it('should generate a valid test', () => {
+    const config: TestConfig = {
+      subject,
+      chapter,
+      difficulty: 'regular',
+      num_questions: Math.min(min_count, 10),
+    };
+    const test = generate_test(config);
+    const result = validate_test(test);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+});
+
 describe('generate_test', () => {
   const base_config: TestConfig = {
     subject: 'physics',
