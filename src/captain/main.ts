@@ -84,7 +84,7 @@ const NIGHT_HOUR = 22;
 const NIGHT_MINUTE = 50;
 const SCHEDULE_CHECK_INTERVAL_MS = 60_000; // check every minute
 const STALE_CHECK_INTERVAL_MS = 5 * 60_000; // check every 5 minutes
-const STALE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
+const STALE_TIMEOUT_MS = 120 * 60_000; // 2 hours — Hunter tasks need more time (OpenClaw research can be slow)
 
 // === Build notification router from env vars ===
 

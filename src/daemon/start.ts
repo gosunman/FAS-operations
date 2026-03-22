@@ -80,7 +80,31 @@ const server = app.listen(port, host, () => {
 
 // === Start Telegram Bot (skipped when Captain is running — avoids 409 conflict) ===
 
-const skip_telegram = process.env.SKIP_TELEGRAM_BOT === 'true';
+// Auto-detect Captain process to prevent 409 Conflict on getUpdates.
+// If SKIP_TELEGRAM_BOT is explicitly set, respect it.
+// Otherwise, check if captain/main.ts is already running — if so, skip daemon bot.
+import { execFileSync } from 'child_process';
+
+const detect_captain_running = (): boolean => {
+  if (process.env.SKIP_TELEGRAM_BOT === 'true') return true;
+  if (process.env.SKIP_TELEGRAM_BOT === 'false') return false;
+
+  try {
+    const result = execFileSync('pgrep', ['-f', 'captain/main.ts'], {
+      encoding: 'utf-8',
+      timeout: 3000,
+    }).trim();
+    if (result) {
+      console.log(`[Daemon] Captain process detected (PID: ${result.split('\n')[0]}) — auto-skipping Telegram bot`);
+      return true;
+    }
+  } catch {
+    // pgrep exits non-zero when no match — that's fine, Captain isn't running
+  }
+  return false;
+};
+
+const skip_telegram = detect_captain_running();
 
 const bot = create_telegram_bot(
   {
@@ -173,7 +197,7 @@ const shutdown = () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-const components = ['Gateway', 'Telegram Bot', 'UsageMonitor', 'GeminiFallback'];
+const components = ['Gateway', skip_telegram ? 'Telegram Bot (SKIPPED)' : 'Telegram Bot', 'UsageMonitor', 'GeminiFallback'];
 if (slack_bot) components.push('Slack Bot');
 console.log(`[Daemon] FAS Daemon started — ${components.join(' + ')}`);
 
