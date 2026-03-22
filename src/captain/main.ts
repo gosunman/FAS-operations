@@ -196,7 +196,7 @@ const main = async () => {
 
   // 4. Output watcher
   const watcher_router = create_watcher_router();
-  const watcher = create_routed_watcher(WATCHED_SESSIONS, watcher_router);
+  const watcher = create_routed_watcher(WATCHED_SESSIONS, watcher_router, 2000, activity_hooks);
   watcher.start();
   console.log(`[Captain] Output watcher started (sessions: ${WATCHED_SESSIONS.join(', ')})`);
 

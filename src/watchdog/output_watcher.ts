@@ -17,6 +17,7 @@ import { create_telegram_client, type TelegramClient } from '../notification/tel
 import { create_slack_client, type SlackClient } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
 import type { NotificationEventType } from '../shared/types.js';
+import type { ActivityHooks } from './activity_integration.js';
 
 // === Pattern definitions ===
 
@@ -276,12 +277,24 @@ export const create_routed_watcher = (
   sessions: string[],
   router: NotificationRouter | null,
   poll_interval_ms = 2000,
+  activity_hooks?: ActivityHooks | null,
 ): OutputWatcher => {
   return new OutputWatcher({
     sessions,
     poll_interval_ms,
     on_match: async (match) => {
       console.log(`[Watcher] Pattern detected: [${match.pattern_name}] ${match.description} (session: ${match.session})`);
+
+      // Track Claude AI usage via activity hooks
+      if (activity_hooks) {
+        if (match.pattern_name === 'DONE' || match.pattern_name === 'MILESTONE') {
+          activity_hooks.log_ai_call('claude', true);
+        } else if (match.pattern_name === 'ERROR') {
+          activity_hooks.log_ai_call('claude', false, match.description);
+        } else if (match.pattern_name === 'BLOCKED') {
+          activity_hooks.log_ai_call('claude', false, `blocked: ${match.description}`);
+        }
+      }
 
       if (router) {
         const event_type = map_pattern_to_event(match.pattern_name);
