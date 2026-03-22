@@ -13,6 +13,9 @@ import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_mo
 import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
 import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
 import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resource_monitor.js';
+import { create_time_classifier, type TimeClassifier } from '../watchdog/time_classifier.js';
+import { aggregate_snapshots, build_daily_report, format_infra_report_telegram } from '../watchdog/daily_aggregator.js';
+import type { ResourceSnapshot } from '../shared/types.js';
 import { create_telegram_client } from '../notification/telegram.js';
 import { create_slack_client } from '../notification/slack.js';
 import { create_notification_router, type NotificationRouter } from '../notification/router.js';
@@ -219,12 +222,64 @@ const main = async () => {
     console.error(`[Captain] Morning planning failed: ${msg}`);
   }
 
-  // 6b. Morning briefing module (overnight summary + today's schedule + blocked tasks)
+  // 6b. Time classifier + snapshot store (created before morning briefing so callback can reference them)
+  const time_classifier = create_time_classifier({
+    device: 'captain',
+    check_interval_ms: 60_000, // every minute
+  });
+  time_classifier.start();
+  console.log('[Captain] Time classifier started (1min interval)');
+
+  const snapshot_store: ResourceSnapshot[] = [];
+  const SNAPSHOT_MAX_AGE_MS = 25 * 60 * 60 * 1000; // 25 hours retention
+
+  // 6c. Morning briefing module (overnight summary + today's schedule + blocked tasks + infra report)
   const morning_briefing = create_morning_briefing({
     store,
     router,
     notion,
     schedules_path: SCHEDULES_PATH,
+    get_infra_report: () => {
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const date_str = yesterday.toISOString().slice(0, 10);
+
+        // Filter snapshots for yesterday
+        const yesterday_snapshots = snapshot_store.filter(s =>
+          s.timestamp.startsWith(date_str),
+        );
+
+        if (yesterday_snapshots.length === 0) return null;
+
+        const time_summary = time_classifier.get_summary();
+        const captain_stats = aggregate_snapshots(
+          'Captain M4 Ultra',
+          date_str,
+          yesterday_snapshots,
+          time_summary,
+        );
+
+        // AI stats — placeholder until full AI usage tracker is wired
+        const ai_stats = {
+          date: date_str,
+          claude_requests: 0,
+          claude_failures: 0,
+          claude_throttle_count: 0,
+          chatgpt_requests: 0,
+          chatgpt_failures: 0,
+          gemini_requests: 0,
+          gemini_failures: 0,
+        };
+
+        const report = build_daily_report(date_str, [captain_stats], ai_stats);
+        return format_infra_report_telegram(report);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Captain] Infra report generation failed: ${msg}`);
+        return null;
+      }
+    },
   });
 
   // Run initial morning briefing on startup (fire-and-forget with Slack alert)
@@ -255,6 +310,19 @@ const main = async () => {
   });
   resource_monitor.start();
   console.log('[Captain] Resource monitor started (2min interval)');
+
+  // 10b. Snapshot collection (stores snapshots for daily aggregation)
+  const snapshot_timer = setInterval(() => {
+    const snapshot = resource_monitor.take_snapshot();
+    snapshot_store.push(snapshot);
+    // Prune old snapshots (older than 25 hours)
+    const cutoff = Date.now() - SNAPSHOT_MAX_AGE_MS;
+    while (snapshot_store.length > 0 && new Date(snapshot_store[0].timestamp).getTime() < cutoff) {
+      snapshot_store.shift();
+    }
+  }, 120_000); // same 2min interval as resource_monitor
+  if (snapshot_timer.unref) snapshot_timer.unref();
+  console.log('[Captain] Snapshot store started (2min interval, 25h retention)');
 
   // 11. Cross-approval gate + Task executor (MID-risk pre-execution check)
   const cross_approval = create_cross_approval({
@@ -454,10 +522,12 @@ const main = async () => {
     console.log('[Captain] Shutting down...');
     clearInterval(schedule_timer);
     clearInterval(stale_timer);
+    clearInterval(snapshot_timer);
     task_executor.stop();
     captain_worker.stop();
     telegram_commands?.stop();
     resource_monitor.stop();
+    time_classifier.stop();
     stop_hunter_monitor();
     watcher.stop();
     server.close();
