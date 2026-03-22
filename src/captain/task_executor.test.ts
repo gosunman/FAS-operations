@@ -5,6 +5,7 @@ import { create_task_store, type TaskStore } from '../gateway/task_store.js';
 import type { NotificationRouter } from '../notification/router.js';
 import type { CrossApproval } from '../gateway/cross_approval.js';
 import type { CrossApprovalResult } from '../shared/types.js';
+import type { ActivityHooks } from '../watchdog/activity_integration.js';
 
 // === Test helpers ===
 
@@ -352,6 +353,116 @@ describe('TaskExecutor', () => {
       expect(result.approved).toContain(low_task.id);
       expect(result.approved).toContain(mid_task.id);
       expect(result.skipped).toContain(high_task.id);
+    });
+  });
+
+  // === AI call tracking via activity_hooks ===
+
+  describe('AI call tracking', () => {
+    it('should log gemini AI call on successful cross-approval', async () => {
+      // Given: a MID-risk task with activity_hooks
+      const task = store.create({
+        title: 'Config change tracked',
+        assigned_to: 'claude',
+        risk_level: 'mid',
+      });
+
+      const approval = create_mock_approval(approved_result);
+      const mock_hooks: ActivityHooks = {
+        log_task_created: vi.fn(),
+        log_task_completed: vi.fn(),
+        log_task_failed: vi.fn(),
+        log_hunter_heartbeat: vi.fn(),
+        log_notification_sent: vi.fn(),
+        log_telegram_command: vi.fn(),
+        log_error: vi.fn(),
+        log_ai_call: vi.fn(),
+      };
+      const executor = create_task_executor({ store, router, approval, activity_hooks: mock_hooks });
+
+      // When
+      await executor.process_pending();
+
+      // Then: gemini AI call should be logged as success
+      expect(mock_hooks.log_ai_call).toHaveBeenCalledWith('gemini', true);
+    });
+
+    it('should log gemini AI call on rejection (API call itself succeeded)', async () => {
+      // Given: a MID-risk task that gets rejected
+      const task = store.create({
+        title: 'Rejected tracked',
+        assigned_to: 'claude',
+        risk_level: 'mid',
+      });
+
+      const approval = create_mock_approval(rejected_result);
+      const mock_hooks: ActivityHooks = {
+        log_task_created: vi.fn(),
+        log_task_completed: vi.fn(),
+        log_task_failed: vi.fn(),
+        log_hunter_heartbeat: vi.fn(),
+        log_notification_sent: vi.fn(),
+        log_telegram_command: vi.fn(),
+        log_error: vi.fn(),
+        log_ai_call: vi.fn(),
+      };
+      const executor = create_task_executor({ store, router, approval, activity_hooks: mock_hooks });
+
+      // When
+      await executor.process_pending();
+
+      // Then: gemini AI call logged as success (rejection is a valid API response)
+      expect(mock_hooks.log_ai_call).toHaveBeenCalledWith('gemini', true);
+    });
+
+    it('should log gemini AI call as failure when cross-approval throws', async () => {
+      // Given: cross-approval that throws
+      const task = store.create({
+        title: 'Error tracked',
+        assigned_to: 'claude',
+        risk_level: 'mid',
+      });
+
+      const approval: CrossApproval = {
+        request_approval: vi.fn().mockRejectedValue(new Error('Gemini CLI crashed')),
+      };
+      const mock_hooks: ActivityHooks = {
+        log_task_created: vi.fn(),
+        log_task_completed: vi.fn(),
+        log_task_failed: vi.fn(),
+        log_hunter_heartbeat: vi.fn(),
+        log_notification_sent: vi.fn(),
+        log_telegram_command: vi.fn(),
+        log_error: vi.fn(),
+        log_ai_call: vi.fn(),
+      };
+      const executor = create_task_executor({ store, router, approval, activity_hooks: mock_hooks });
+
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // When
+      await executor.process_pending();
+
+      // Then: gemini AI call logged as failure with error message
+      expect(mock_hooks.log_ai_call).toHaveBeenCalledWith('gemini', false, 'Gemini CLI crashed');
+
+      vi.restoreAllMocks();
+    });
+
+    it('should not crash when activity_hooks is not provided', async () => {
+      // Given: no activity_hooks (backward compatibility)
+      store.create({
+        title: 'No hooks task',
+        assigned_to: 'claude',
+        risk_level: 'mid',
+      });
+
+      const approval = create_mock_approval(approved_result);
+      const executor = create_task_executor({ store, router, approval });
+
+      // When/Then: should not throw
+      const result = await executor.process_pending();
+      expect(result.approved).toHaveLength(1);
     });
   });
 

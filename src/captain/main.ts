@@ -12,7 +12,7 @@ import { create_routed_watcher, create_watcher_router } from '../watchdog/output
 import { start_hunter_monitor, stop_hunter_monitor } from '../watchdog/hunter_monitor.js';
 import { create_activity_logger, type ActivityLogger } from '../watchdog/activity_logger.js';
 import { create_activity_hooks, type ActivityHooks } from '../watchdog/activity_integration.js';
-import { create_resource_monitor, type ResourceMonitor } from '../watchdog/resource_monitor.js';
+import { create_resource_monitor, create_ai_usage_tracker, type ResourceMonitor, type AIUsageTracker } from '../watchdog/resource_monitor.js';
 import { create_time_classifier, type TimeClassifier } from '../watchdog/time_classifier.js';
 import { aggregate_snapshots, build_daily_report, format_infra_report_telegram } from '../watchdog/daily_aggregator.js';
 import type { ResourceSnapshot } from '../shared/types.js';
@@ -131,7 +131,12 @@ const main = async () => {
 
   // 1b. Activity logger + hooks (created early so all services can use it)
   const activity_logger = create_activity_logger({ db_path: ACTIVITY_DB_PATH });
-  const activity_hooks = create_activity_hooks(activity_logger);
+
+  // 1c. AI usage tracker (tracks per-provider request counts for morning briefing)
+  const ai_tracker = create_ai_usage_tracker();
+  console.log('[Captain] AI usage tracker initialized');
+
+  const activity_hooks = create_activity_hooks(activity_logger, ai_tracker);
   console.log(`[Captain] Activity logger initialized (${ACTIVITY_DB_PATH})`);
 
   // 2. Notification router + Notion client (shared between router and morning briefing)
@@ -260,16 +265,20 @@ const main = async () => {
           time_summary,
         );
 
-        // AI stats — placeholder until full AI usage tracker is wired
+        // AI stats — pulled from the live AI usage tracker
+        const claude_stats = ai_tracker.get_provider_stats('claude');
+        const chatgpt_stats = ai_tracker.get_provider_stats('chatgpt');
+        const gemini_stats = ai_tracker.get_provider_stats('gemini');
+
         const ai_stats = {
           date: date_str,
-          claude_requests: 0,
-          claude_failures: 0,
-          claude_throttle_count: 0,
-          chatgpt_requests: 0,
-          chatgpt_failures: 0,
-          gemini_requests: 0,
-          gemini_failures: 0,
+          claude_requests: claude_stats.total_requests,
+          claude_failures: claude_stats.failed_requests,
+          claude_throttle_count: claude_stats.failed_requests, // approximation: failures ≈ throttles
+          chatgpt_requests: chatgpt_stats.total_requests,
+          chatgpt_failures: chatgpt_stats.failed_requests,
+          gemini_requests: gemini_stats.total_requests,
+          gemini_failures: gemini_stats.failed_requests,
         };
 
         const report = build_daily_report(date_str, [captain_stats], ai_stats);
@@ -335,6 +344,7 @@ const main = async () => {
     router,
     approval: cross_approval,
     poll_interval_ms: parseInt(process.env.TASK_EXECUTOR_POLL_MS ?? '30000', 10),
+    activity_hooks,
   });
   task_executor.start();
   console.log('[Captain] Task executor started (cross-approval gate for MID-risk tasks)');

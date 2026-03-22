@@ -1,8 +1,9 @@
 // TDD tests for activity integration — wiring ActivityLogger into FAS services
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { create_activity_logger, type ActivityLogger } from './activity_logger.js';
 import { create_activity_hooks, type ActivityHooks } from './activity_integration.js';
+import { create_ai_usage_tracker, type AIUsageTracker } from './resource_monitor.js';
 import { create_app } from '../gateway/server.js';
 import { create_task_store, type TaskStore } from '../gateway/task_store.js';
 
@@ -126,6 +127,86 @@ describe('Activity Integration', () => {
         message: 'Database connection failed',
         endpoint: '/api/tasks',
       });
+    });
+  });
+
+  // === AI call tracking tests ===
+
+  describe('log_ai_call()', () => {
+    it('should log a successful AI call to SQLite', () => {
+      hooks.log_ai_call('claude', true);
+      const entries = get_all_activities(logger);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].action).toBe('ai_call');
+      expect(entries[0].agent).toBe('captain');
+      expect(entries[0].risk_level).toBe('low');
+      expect(entries[0].details).toEqual({ provider: 'claude', success: true });
+    });
+
+    it('should log a failed AI call with reason to SQLite', () => {
+      hooks.log_ai_call('chatgpt', false, 'Rate limited');
+      const entries = get_all_activities(logger);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].action).toBe('ai_call');
+      expect(entries[0].details).toEqual({
+        provider: 'chatgpt',
+        success: false,
+        reason: 'Rate limited',
+      });
+    });
+
+    it('should log a failed AI call without reason', () => {
+      hooks.log_ai_call('gemini', false);
+      const entries = get_all_activities(logger);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].details).toEqual({ provider: 'gemini', success: false });
+    });
+
+    it('should report success to ai_tracker when provided', () => {
+      const ai_tracker = create_ai_usage_tracker();
+      const hooks_with_tracker = create_activity_hooks(logger, ai_tracker);
+
+      hooks_with_tracker.log_ai_call('claude', true);
+
+      const stats = ai_tracker.get_provider_stats('claude');
+      expect(stats.total_requests).toBe(1);
+      expect(stats.successful_requests).toBe(1);
+      expect(stats.failed_requests).toBe(0);
+    });
+
+    it('should report failure to ai_tracker when provided', () => {
+      const ai_tracker = create_ai_usage_tracker();
+      const hooks_with_tracker = create_activity_hooks(logger, ai_tracker);
+
+      hooks_with_tracker.log_ai_call('chatgpt', false, 'Timeout');
+
+      const stats = ai_tracker.get_provider_stats('chatgpt');
+      expect(stats.total_requests).toBe(1);
+      expect(stats.successful_requests).toBe(0);
+      expect(stats.failed_requests).toBe(1);
+    });
+
+    it('should work without ai_tracker (no crash)', () => {
+      // Default hooks have no ai_tracker
+      hooks.log_ai_call('gemini', true);
+      const entries = get_all_activities(logger);
+      expect(entries).toHaveLength(1);
+      // Should log to SQLite even without ai_tracker
+      expect(entries[0].action).toBe('ai_call');
+    });
+
+    it('should track multiple providers independently', () => {
+      const ai_tracker = create_ai_usage_tracker();
+      const hooks_with_tracker = create_activity_hooks(logger, ai_tracker);
+
+      hooks_with_tracker.log_ai_call('claude', true);
+      hooks_with_tracker.log_ai_call('chatgpt', true);
+      hooks_with_tracker.log_ai_call('gemini', false, 'CLI error');
+      hooks_with_tracker.log_ai_call('claude', true);
+
+      expect(ai_tracker.get_provider_stats('claude').total_requests).toBe(2);
+      expect(ai_tracker.get_provider_stats('chatgpt').total_requests).toBe(1);
+      expect(ai_tracker.get_provider_stats('gemini').failed_requests).toBe(1);
     });
   });
 

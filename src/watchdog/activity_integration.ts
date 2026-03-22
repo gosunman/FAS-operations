@@ -5,6 +5,7 @@
 
 import type { ActivityLogger } from './activity_logger.js';
 import type { RiskLevel } from '../shared/types.js';
+import type { AIUsageTracker, AIProvider } from './resource_monitor.js';
 
 // === ActivityHooks — structured logging helpers for each event type ===
 
@@ -23,11 +24,13 @@ export type ActivityHooks = {
   log_telegram_command: (command: string, args: string) => void;
   /** Log an error */
   log_error: (agent: string, message: string, extra?: Record<string, unknown>) => void;
+  /** Log an AI provider call (success or failure) */
+  log_ai_call: (provider: 'claude' | 'chatgpt' | 'gemini', success: boolean, reason?: string) => void;
 };
 
 // === Factory function ===
 
-export const create_activity_hooks = (logger: ActivityLogger): ActivityHooks => {
+export const create_activity_hooks = (logger: ActivityLogger, ai_tracker?: AIUsageTracker): ActivityHooks => {
   // Wrap each call in try-catch so activity logging never crashes the caller
   const safe_log = (fn: () => void): void => {
     try {
@@ -119,6 +122,25 @@ export const create_activity_hooks = (logger: ActivityLogger): ActivityHooks => 
     });
   };
 
+  const log_ai_call = (provider: 'claude' | 'chatgpt' | 'gemini', success: boolean, reason?: string): void => {
+    safe_log(() => {
+      logger.log_activity({
+        agent: 'captain',
+        action: 'ai_call',
+        risk_level: 'low',
+        details: { provider, success, ...(reason ? { reason } : {}) },
+      });
+    });
+    // Also report to AI usage tracker (if provided)
+    if (ai_tracker) {
+      if (success) {
+        ai_tracker.report_success(provider as AIProvider).catch(() => {});
+      } else {
+        ai_tracker.report_failure(provider as AIProvider, reason).catch(() => {});
+      }
+    }
+  };
+
   return {
     log_task_created,
     log_task_completed,
@@ -127,5 +149,6 @@ export const create_activity_hooks = (logger: ActivityLogger): ActivityHooks => 
     log_notification_sent,
     log_telegram_command,
     log_error,
+    log_ai_call,
   };
 };

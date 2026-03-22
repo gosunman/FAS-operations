@@ -614,10 +614,11 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
         files_created: files ?? [],
       });
 
-      // Activity log: hunter task completed
+      // Activity log: hunter task completed + ChatGPT AI usage tracking
       const completed_task = store.get_by_id(req.params.id);
       if (completed_task) {
         activity_hooks?.log_task_completed(completed_task.id, completed_task.title);
+        activity_hooks?.log_ai_call('chatgpt', true);
       }
 
       // Fire-and-forget Notion backup for hunter results
@@ -662,8 +663,9 @@ export const create_app = (store: TaskStore, options: AppOptions = {}) => {
       }
     } else {
       store.block_task(req.params.id, safe_output);
-      // Activity log: hunter task failed
+      // Activity log: hunter task failed + ChatGPT AI usage tracking
       activity_hooks?.log_task_failed(req.params.id, safe_output);
+      activity_hooks?.log_ai_call('chatgpt', false, safe_output.slice(0, 200));
     }
 
     res.json({ ok: true });

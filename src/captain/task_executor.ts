@@ -10,6 +10,7 @@ import type { TaskStore } from '../gateway/task_store.js';
 import type { CrossApproval } from '../gateway/cross_approval.js';
 import type { NotificationRouter } from '../notification/router.js';
 import type { Task, RiskLevel } from '../shared/types.js';
+import type { ActivityHooks } from '../watchdog/activity_integration.js';
 
 // === Constants ===
 
@@ -28,6 +29,7 @@ export type TaskExecutorDeps = {
   router: NotificationRouter;
   approval?: CrossApproval;          // Optional: if absent, MID tasks are blocked
   poll_interval_ms?: number;         // Default: 30s
+  activity_hooks?: ActivityHooks;    // Optional: for AI usage tracking
 };
 
 export type ProcessResult = {
@@ -92,6 +94,9 @@ export const create_task_executor = (deps: TaskExecutorDeps) => {
       const context = build_approval_context(task);
       const result = await deps.approval.request_approval(action, context);
 
+      // Track Gemini AI call — both approved and rejected are successful API calls
+      deps.activity_hooks?.log_ai_call('gemini', true);
+
       if (result.decision === 'approved') {
         deps.store.update_status(task.id, 'in_progress');
         // Notify approval_mid channel
@@ -115,6 +120,9 @@ export const create_task_executor = (deps: TaskExecutorDeps) => {
       // Cross-approval threw unexpectedly — block as safe default
       const error_msg = err instanceof Error ? err.message : String(err);
       console.warn(`[TaskExecutor] Cross-approval error for "${task.title}": ${error_msg}`);
+
+      // Track Gemini AI call failure
+      deps.activity_hooks?.log_ai_call('gemini', false, error_msg);
 
       deps.store.block_task(task.id, `Cross-approval error: ${error_msg}`);
       await deps.router.route({
