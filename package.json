@@ -14,7 +14,10 @@
     "watcher": "tsx src/watchdog/output_watcher.ts",
     "hunter": "tsx src/hunter/main.ts",
     "mode:sleep": "bash scripts/mode_switch.sh sleep",
-    "mode:awake": "bash scripts/mode_switch.sh awake"
+    "mode:awake": "bash scripts/mode_switch.sh awake",
+    "academy:text": "tsx src/academy/cli_parent_message.ts",
+    "academy:test": "tsx src/academy/cli_test_generator.ts",
+    "academy:student": "tsx src/academy/cli_student.ts"
   },
   "keywords": [
     "automation",

@@ -2,63 +2,127 @@
 
 EIDOS SCIENCE 학원 업무 자동화 모듈.
 
+## Quick Start (CLI)
+
+### 1. 학부모 문자 생성
+
+```bash
+pnpm run academy:text -- --name "예성" --grade "중2" --topics "힘과 운동,뉴턴 법칙" --performance "적극적 참여" --homework "교재 p.42~44"
+```
+
+Options:
+- `--name` (required) Student name
+- `--grade` (required) Grade (e.g. "고1", "중2")
+- `--topics` (required) Comma-separated topics
+- `--class-type` Class: regular | ogeum | medical (default: regular)
+- `--performance` Comma-separated keywords
+- `--homework` Homework description
+- `--next-class` Next class note
+- `--date` Date YYYY-MM-DD (default: today)
+- `--tone` caring | professional | enthusiastic (default: caring)
+- `--format` text | json (default: text)
+
+### 2. 객관식 시험지 생성
+
+```bash
+pnpm run academy:test -- --subject physics --chapter "역학" --difficulty regular --questions 10
+```
+
+Options:
+- `--subject` (required) physics | chemistry | biology | earth_science | integrated_science
+- `--chapter` (required) Chapter name (e.g. "역학")
+- `--difficulty` regular | ogeum | medical (default: regular)
+- `--questions` Number, 1-50 (default: 20)
+- `--time` Time limit in minutes (default: 40)
+- `--no-explanations` Omit answer explanations
+- `--format` text | json | pdf (default: text)
+- `--output` Output directory for PDF (default: ./output/tests)
+
+Available question banks: `physics:역학` (28 questions across 3 difficulty levels)
+
+### 3. 학생 데이터 관리
+
+```bash
+# List all students
+pnpm run academy:student -- list
+pnpm run academy:student -- list --class-type "의대반" --active
+
+# Add a student
+pnpm run academy:student -- add --name "예성" --grade "중2" --class-type "일반반" --phone "010-1234-5678"
+
+# Record a test score
+pnpm run academy:student -- score --id "abc123" --test-name "3월 모의" --subject physics --score 85 --total 100
+
+# Generate report (markdown)
+pnpm run academy:student -- report --id "abc123"
+
+# View progress summary
+pnpm run academy:student -- progress --id "abc123"
+
+# Class rankings
+pnpm run academy:student -- ranking --class-type "의대반" --test-id "test-001"
+```
+
 ## Modules
 
-### parent_message.ts — 학부모 메시지 자동 생성
+### parent_message.ts
 
-수업 후 선생님이 키워드를 입력하면, 학부모에게 보낼 SMS 문자를 자동 생성합니다.
+Template-based parent SMS message generator. No external AI API calls.
 
-**흐름:**
-1. 학생 정보 (`StudentContext`) + 수업 키워드 (`ClassKeywords`) 입력
-2. 템플릿 기반으로 구조화된 메시지 생성 (외부 AI API 호출 없음)
-3. 톤 규칙 적용 (존댓말, 긍정 프레이밍 등)
-4. 검증 (글자수 200-500, 필수 섹션, 부적절 표현 필터)
+- `generate_parent_message()` - Generate structured message from student context + class keywords
+- `apply_tone_rules()` - Apply tone transformations (formal/caring/enthusiastic)
+- `validate_message()` - Validate completeness, char count (200-500), inappropriate content filter
 
-**주요 함수:**
+### test_generator.ts
 
-| 함수 | 설명 |
+Weekly test generator with 5-choice multiple-choice questions.
+
+- `generate_test()` - Generate a test from subject/chapter/difficulty config
+- `format_test_sheet()` / `format_answer_key()` - Text formatting
+- `validate_test()` - Validate generated test integrity
+
+### student_data.ts
+
+Higher-level student management with auto-percentile, progress tracking, and markdown reports.
+
+- `add_student()` / `get_student()` / `list_students()` / `update_student()` - CRUD
+- `add_test_score()` - Record score with auto-percentile calculation
+- `get_student_progress()` - Progress with trend analysis (improving/declining/stable)
+- `generate_student_report()` - Markdown formatted report
+- `get_class_rankings()` - Class rankings with tie handling
+
+### student_store.ts
+
+Lower-level student store with subject-specific trend analysis.
+
+### pdf_generator.ts
+
+PDFKit-based PDF generator for test sheets and answer keys. Korean font support (NotoSansKR/AppleGothic).
+
+### google_messages.ts
+
+Playwright-based Google Messages web automation for SMS sending. Persistent Chrome profile with session health checks.
+
+### textbook_generator.ts
+
+Textbook content generator for structured chapter content (concepts, examples, practice problems).
+
+### CLI Tools
+
+- `cli_parent_message.ts` - Parent message generator CLI
+- `cli_test_generator.ts` - Test generator CLI
+- `cli_student.ts` - Student data management CLI
+
+## Data Storage
+
+Student data is stored as JSON files in `state/academy/`:
+- `student_data_students.json` - Student profiles
+- `student_data_scores.json` - Test scores
+
+## Class Types
+
+| Code | Name |
 |------|------|
-| `generate_parent_message()` | 학생 컨텍스트 + 키워드로 메시지 생성 |
-| `apply_tone_rules()` | 톤 변환 규칙 적용 (formal/caring 등) |
-| `validate_message()` | 메시지 유효성 검증 |
-
-**타입:**
-
-| 타입 | 설명 |
-|------|------|
-| `StudentContext` | 학생 이름, 학년, 반 유형, 과목, 성적, 출결, 이전 메모 |
-| `ClassKeywords` | 수업 날짜, 다룬 주제, 수행 키워드, 숙제, 다음 수업 안내 |
-| `ToneConfig` | 격식(formal/semi_formal), 따뜻함(professional/caring/enthusiastic) |
-| `ParentMessage` | greeting + body + closing + full_text + char_count |
-
-**반 유형:**
-- `regular` — 일반반
-- `ogeum` — 오금고반
-- `medical` — 의대반
-
-**사용 예시:**
-```typescript
-import { generate_parent_message } from './parent_message.js';
-
-const message = generate_parent_message(
-  {
-    name: '김민수',
-    grade: '고1',
-    class_type: 'regular',
-    subjects: ['수학', '물리'],
-  },
-  {
-    date: '2026-03-21',
-    topics_covered: ['이차함수의 그래프', '판별식'],
-    performance_keywords: ['집중력 좋음', '질문 많이 함'],
-    homework: '교재 p.52~54 풀어오기',
-  }
-);
-
-console.log(message.full_text);
-// 안녕하세요, 김민수 학부모님.
-//
-// 3월 21일 수업에서 이차함수의 그래프과(와) 판별식을(를) 학습하였습니다. ...
-//
-// 김민수 학생이 꾸준히 성장할 수 있도록 함께 지도하겠습니다. 감사합니다.
-```
+| `regular` | 일반반 |
+| `ogeum` | 오금고반 |
+| `medical` | 의대반 |
