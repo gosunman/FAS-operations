@@ -6,7 +6,7 @@
 |---------|------|------|
 | [gateway/](gateway/) | Task API 서버 (Express + SQLite) | ✅ 구현 완료 |
 | [notification/](notification/) | Telegram + Slack 알림 | ✅ 구현 완료 |
-| [watchdog/](watchdog/) | 출력 감시 데몬 | ✅ 구현 완료 |
+| [watchdog/](watchdog/) | 출력 감시 + 리소스 모니터 + 기기 상태 분류 + 일일 인프라 리포트 | ✅ 구현 완료 |
 | [shared/](shared/) | 공유 타입 정의 | ✅ 구현 완료 |
 | agents/ | 에이전트 래퍼 | 🔜 Phase 1-2~ |
 | orchestrator/ | n8n 커스텀 노드 | 🔜 Phase 2 |

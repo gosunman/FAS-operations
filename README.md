@@ -201,6 +201,7 @@ launchctl load ~/Library/LaunchAgents/com.fas.hunter.plist
 - **동적 기회 발견**: 크롤링/리서치 결과를 Gemini로 분석하여 추가 행동 아이템 자동 생성 (야간 SLEEP 모드)
 - **Stale task cleanup**: in_progress 30분+ 태스크를 자동 blocked 전환 (5분 간격 체크)
 - **PII 2단계 severity**: critical PII(주민번호, 전화번호, 이름) → quarantine / warning PII(주소, 계좌, 이메일) → auto-sanitize 후 통과
+- **인프라 모니터링 (Plan C)**: GPU/온도/네트워크 확장 메트릭 수집 → 기기 상태 분류(working/idle/down) → 일일 집계 + 병목 분석(5가지) → 모닝 브리핑에 인프라 리포트 자동 포함. AI 사용량(Claude/Gemini/ChatGPT) End-to-End 추적. 상세: `src/watchdog/README.md`
 
 ## 프로젝트 구조
 
@@ -212,7 +213,7 @@ FAS-operations/
 │   ├── hunter/           # 헌터 에이전트 (Playwright 브라우저 자동화 + Task API 폴링)
 │   ├── pipeline/         # 데이터 파이프라인 (AI 트렌드, 블라인드, 대학원 추적, Lighthouse, B2B)
 │   ├── notification/     # Telegram Bot + Slack + Notion + Resilient Sender 자동 큐잉
-│   ├── watchdog/         # 출력 감시 + 헌터 모니터 + 리소스/AI사용량 통합 모니터
+│   ├── watchdog/         # 출력 감시 + 헌터 모니터 + 리소스/AI사용량 통합 모니터 + 기기 상태 분류 + 일일 인프라 리포트
 │   └── shared/           # 공유 타입, agents.yml 로더, local_queue, resilient_sender
 ├── scripts/
 │   ├── setup/            # 환경 셋업 스크립트 (launchd plist 등)
@@ -352,7 +353,7 @@ launchctl load ~/Library/LaunchAgents/com.fas.awake.plist
 - **에이전트 런타임**: tmux + Claude Code CLI, Gemini CLI, OpenClaw
 - **네트워크**: Tailscale (VPN)
 - **소통**: Telegram Bot API + Slack + Notion API
-- **모니터링**: 커스텀 감시 스크립트 (stdout 감지 → Telegram)
+- **모니터링**: 커스텀 감시 스크립트 (stdout 감지 → Telegram) + 인프라 모니터링 파이프라인 (GPU/온도/네트워크 + 일일 리포트)
 - **검증**: NotebookLM (헌터, 웹 자동화), AI 교차 리뷰
 - **브라우저 자동화**: Playwright (Chromium)
 - **언어**: TypeScript (최우선) > Python (필요 시) > Bash (최소한)

@@ -140,6 +140,101 @@
 - **com.fas.sleep.plist**: 23:00 자동 SLEEP 전환 (launchd)
 - **com.fas.awake.plist**: 07:30 자동 AWAKE 전환 (launchd)
 
+## 인프라 모니터링 파이프라인 (Plan C)
+
+Plan C에서 추가된 인프라 모니터링 시스템. 리소스 스냅샷 수집 → 기기 상태 분류 → 일일 집계 → 모닝 브리핑까지의 데이터 흐름.
+
+### 데이터 흐름
+
+```
+resource_monitor.ts                   time_classifier.ts
+  collect_snapshot()                    classify() → MachineTimeEntry[]
+  → ResourceSnapshot                    → get_summary() { working/idle/down_ms }
+       │                                        │
+       └─────────┐              ┌───────────────┘
+                  ▼              ▼
+            daily_aggregator.ts
+              aggregate_snapshots(snapshots, time_summary)
+              → DailyMachineStats
+              analyze_bottlenecks(machines, ai_stats)
+              → BottleneckAlert[]
+              build_daily_report(date, machines, ai_stats)
+              → DailyInfraReport
+              format_infra_report_telegram(report)
+              → string (Telegram 메시지)
+                         │
+                         ▼
+            morning_briefing.ts
+              get_infra_report() 콜백으로 수신
+              → BriefingData.infra_report
+              → Telegram/Slack + Notion 전송
+```
+
+### AI 사용량 추적 파이프라인
+
+```
+[Claude]    output_watcher.ts — [DONE]/[ERROR] 패턴 감지
+               └→ ai_tracker.report_success('claude') / report_failure('claude')
+
+[ChatGPT]   gateway/server.ts — 헌터 태스크 결과 수신
+               └→ ai_tracker.report_success('chatgpt') / report_failure('chatgpt')
+
+[Gemini]    captain/task_executor.ts — 교차 승인 호출
+               └→ ai_tracker.report_success('gemini') / report_failure('gemini')
+
+            activity_integration.ts — log_ai_call(provider, success, reason)
+               └→ ActivityLogger (SQLite) + AIUsageTracker (in-memory) 동시 기록
+
+            ai_tracker.get_summary() → DailyAIStats → daily_aggregator → 모닝 브리핑
+```
+
+### 확장된 타입 (`src/shared/types.ts`)
+
+| 타입 | 용도 |
+|------|------|
+| `ResourceSnapshot` | 시스템 스냅샷 — CPU/RAM/디스크 + GPU/온도/네트워크 (optional 확장) |
+| `MachineState` | 기기 상태 (`'working'` \| `'idle'` \| `'down'`) |
+| `MachineTimeEntry` | 상태 전환 기록 (timestamp, state, duration_ms) |
+| `DailyMachineStats` | 일일 기기 통계 — 시간 분류, CPU/GPU/온도/RAM/네트워크 avg/max/min |
+| `DailyAIStats` | 프로바이더별 일일 AI API 통계 (요청/실패/스로틀 횟수) |
+| `BottleneckAlert` | 병목 알림 (type, device, message, severity) |
+| `DailyInfraReport` | 일일 인프라 종합 보고서 (machines + ai_stats + bottlenecks) |
+
+### 임계값 설정
+
+**시스템 리소스** (`resource_monitor.ts`):
+
+| 메트릭 | 기본 임계값 | 동작 |
+|--------|-----------|------|
+| CPU | 90% (sustained 3회) | Telegram WARNING |
+| RAM | 85% | Telegram WARNING |
+| Disk | 90% | Telegram CRITICAL |
+| 쿨다운 | 5분 | 동일 메트릭 중복 알림 억제 |
+
+**AI 사용량** (`create_ai_usage_tracker()`):
+
+| 레벨 | 임계값 | 동작 |
+|------|--------|------|
+| warning | 일일 예산 70% | 콜백 알림 |
+| critical | 일일 예산 90% | 콜백 알림 |
+
+**병목 분석** (`daily_aggregator.ts`):
+
+| 유형 | 조건 | severity |
+|------|------|----------|
+| `underutilized` | idle 비율 > 60% | warning |
+| `cpu_bottleneck` | CPU 평균 > 70% | warning |
+| `api_limit` | Claude throttle > 3회 | warning |
+| `overheating` | CPU/GPU 온도 > 90°C | critical |
+| `memory_pressure` | RAM 최대 > 85% | warning |
+
+**시간 분류** (`time_classifier.ts`):
+
+| 기기 | 판별 방식 | 기본 설정 |
+|------|----------|----------|
+| captain | pgrep(claude, node) + CPU > 10% → working | check_interval: 60초 |
+| hunter | Gateway heartbeat < 2분 → working | heartbeat timeout: 120초 |
+
 ## API 엔드포인트
 
 | Method | Path | 설명 |
