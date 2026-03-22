@@ -12,6 +12,9 @@ import {
   parse_cpu_usage,
   parse_memory_usage,
   parse_disk_usage,
+  parse_gpu_usage,
+  parse_temperature,
+  parse_network_throughput,
   create_resource_monitor,
   create_telegram_alert_handler,
   create_ai_usage_tracker,
@@ -53,12 +56,32 @@ const SAMPLE_DF_OUTPUT = [
   '/dev/disk3s1       460   230       200       54% 1000000 2000000   33%   /',
 ].join('\n');
 
+// Sample ioreg GPU output (gpu-core-utilization in millipercent: 35000 = 35%)
+const SAMPLE_IOREG_GPU_OUTPUT = '    "gpu-core-utilization" = 35000\n';
+
+// Sample ioreg temperature output (centi-degrees: 5200 = 52.0°C, 4800 = 48.0°C)
+const SAMPLE_IOREG_TEMP_OUTPUT = [
+  '    "die-temperature" = 5200',
+  '    "gpu-temperature" = 4800',
+].join('\n');
+
+// Sample netstat -ib output
+const SAMPLE_NETSTAT_OUTPUT = [
+  'Name  Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll',
+  'lo0   16384 <Link#1>                        123456     0   12345678   123456     0   12345678     0',
+  'en0   1500  <Link#2>    aa:bb:cc:dd:ee:ff   500000     0  750000000   300000     0  250000000     0',
+  'en0   1500  192.168.1     192.168.1.100      400000     0  600000000   200000     0  150000000     0',
+].join('\n');
+
 // Helper: set up mocks for a full snapshot
 const setup_full_mocks = (overrides?: {
   top?: string;
   sysctl?: string;
   vm_stat?: string;
   df?: string;
+  ioreg_gpu?: string;
+  ioreg_temp?: string;
+  netstat?: string;
 }) => {
   mocked_exec.mockImplementation((cmd: string) => {
     const command = String(cmd);
@@ -66,6 +89,10 @@ const setup_full_mocks = (overrides?: {
     if (command.startsWith('sysctl')) return (overrides?.sysctl ?? SAMPLE_SYSCTL_OUTPUT) as any;
     if (command.startsWith('vm_stat')) return (overrides?.vm_stat ?? SAMPLE_VM_STAT_OUTPUT) as any;
     if (command.startsWith('df')) return (overrides?.df ?? SAMPLE_DF_OUTPUT) as any;
+    // ioreg commands: differentiate by class name
+    if (command.includes('IOGPUDevice')) return (overrides?.ioreg_gpu ?? SAMPLE_IOREG_GPU_OUTPUT) as any;
+    if (command.includes('AppleARMIODevice')) return (overrides?.ioreg_temp ?? SAMPLE_IOREG_TEMP_OUTPUT) as any;
+    if (command.startsWith('netstat')) return (overrides?.netstat ?? SAMPLE_NETSTAT_OUTPUT) as any;
     return '' as any;
   });
 };
@@ -158,6 +185,129 @@ describe('Resource Monitor', () => {
     });
   });
 
+  // === parse_gpu_usage ===
+
+  describe('parse_gpu_usage()', () => {
+    it('should parse GPU usage from ioreg output (millipercent to percent)', () => {
+      mocked_exec.mockReturnValue(SAMPLE_IOREG_GPU_OUTPUT as any);
+
+      const result = parse_gpu_usage();
+
+      // 35000 millipercent = 35%
+      expect(result).toBe(35);
+    });
+
+    it('should return 0 on exec failure', () => {
+      mocked_exec.mockImplementation(() => { throw new Error('command failed'); });
+
+      expect(parse_gpu_usage()).toBe(0);
+    });
+
+    it('should return 0 on unparseable output', () => {
+      mocked_exec.mockReturnValue('no gpu info here' as any);
+
+      expect(parse_gpu_usage()).toBe(0);
+    });
+
+    it('should handle 0% GPU usage', () => {
+      mocked_exec.mockReturnValue('    "gpu-core-utilization" = 0\n' as any);
+
+      expect(parse_gpu_usage()).toBe(0);
+    });
+
+    it('should handle 100% GPU usage (100000 millipercent)', () => {
+      mocked_exec.mockReturnValue('    "gpu-core-utilization" = 100000\n' as any);
+
+      expect(parse_gpu_usage()).toBe(100);
+    });
+  });
+
+  // === parse_temperature ===
+
+  describe('parse_temperature()', () => {
+    it('should parse CPU and GPU temperatures from ioreg output', () => {
+      mocked_exec.mockReturnValue(SAMPLE_IOREG_TEMP_OUTPUT as any);
+
+      const result = parse_temperature();
+
+      // 5200 centi-degrees = 52.0°C, 4800 = 48.0°C
+      expect(result.cpu_temp).toBe(52);
+      expect(result.gpu_temp).toBe(48);
+    });
+
+    it('should return zeros on exec failure', () => {
+      mocked_exec.mockImplementation(() => { throw new Error('fail'); });
+
+      const result = parse_temperature();
+      expect(result.cpu_temp).toBe(0);
+      expect(result.gpu_temp).toBe(0);
+    });
+
+    it('should fall back gpu_temp to cpu_temp when gpu-temp is absent', () => {
+      mocked_exec.mockReturnValue('    "die-temperature" = 6000\n' as any);
+
+      const result = parse_temperature();
+      expect(result.cpu_temp).toBe(60);
+      expect(result.gpu_temp).toBe(60); // falls back to cpu_temp
+    });
+
+    it('should return zeros when no temperature patterns match', () => {
+      mocked_exec.mockReturnValue('no temperature data\n' as any);
+
+      const result = parse_temperature();
+      expect(result.cpu_temp).toBe(0);
+      expect(result.gpu_temp).toBe(0);
+    });
+
+    it('should handle die-temp (without "erature" suffix)', () => {
+      mocked_exec.mockReturnValue('    "die-temp" = 7100\n' as any);
+
+      const result = parse_temperature();
+      expect(result.cpu_temp).toBe(71);
+    });
+  });
+
+  // === parse_network_throughput ===
+
+  describe('parse_network_throughput()', () => {
+    it('should parse network bytes from netstat output', () => {
+      mocked_exec.mockReturnValue(SAMPLE_NETSTAT_OUTPUT as any);
+
+      const result = parse_network_throughput();
+
+      // en0 Link row: ibytes=750000000, obytes=250000000
+      // en0 IP row:   ibytes=600000000, obytes=150000000
+      // (lo0 is skipped)
+      expect(result.bytes_recv).toBe(750000000 + 600000000);
+      expect(result.bytes_sent).toBe(250000000 + 150000000);
+    });
+
+    it('should return zeros on exec failure', () => {
+      mocked_exec.mockImplementation(() => { throw new Error('fail'); });
+
+      const result = parse_network_throughput();
+      expect(result.bytes_sent).toBe(0);
+      expect(result.bytes_recv).toBe(0);
+    });
+
+    it('should return zeros on empty output', () => {
+      mocked_exec.mockReturnValue('' as any);
+
+      const result = parse_network_throughput();
+      expect(result.bytes_sent).toBe(0);
+      expect(result.bytes_recv).toBe(0);
+    });
+
+    it('should skip header lines', () => {
+      const header_only = 'Name  Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll\n';
+      mocked_exec.mockReturnValue(header_only as any);
+
+      const result = parse_network_throughput();
+      expect(result.bytes_sent).toBe(0);
+      expect(result.bytes_recv).toBe(0);
+    });
+  });
+
   // === take_snapshot ===
 
   describe('take_snapshot()', () => {
@@ -178,6 +328,25 @@ describe('Resource Monitor', () => {
       expect(snapshot.disk_total_gb).toBe(460);
       expect(snapshot.disk_used_gb).toBe(230);
       expect(new Date(snapshot.timestamp).getTime()).not.toBeNaN();
+    });
+
+    it('should include gpu, temperature, and network fields', () => {
+      setup_full_mocks();
+
+      const monitor = create_resource_monitor({ on_alert: vi.fn() });
+      const snapshot = monitor.take_snapshot();
+
+      expect(snapshot).toHaveProperty('gpu_usage_percent');
+      expect(snapshot).toHaveProperty('cpu_temp_celsius');
+      expect(snapshot).toHaveProperty('gpu_temp_celsius');
+      expect(snapshot).toHaveProperty('network_bytes_sent');
+      expect(snapshot).toHaveProperty('network_bytes_recv');
+      // Verify values from sample data
+      expect(snapshot.gpu_usage_percent).toBe(35);
+      expect(snapshot.cpu_temp_celsius).toBe(52);
+      expect(snapshot.gpu_temp_celsius).toBe(48);
+      expect(snapshot.network_bytes_sent).toBe(250000000 + 150000000);
+      expect(snapshot.network_bytes_recv).toBe(750000000 + 600000000);
     });
   });
 
@@ -682,6 +851,17 @@ describe('Unified Resource Monitor', () => {
       expect(snapshot.disk_total_gb).toBe(460);
       expect(snapshot.disk_used_gb).toBe(230);
       expect(new Date(snapshot.timestamp).getTime()).not.toBeNaN();
+    });
+
+    it('should include extended metrics (gpu, temperature, network)', () => {
+      setup_full_mocks();
+      const monitor = create_unified_monitor();
+      const snapshot = monitor.collect_snapshot();
+      expect(snapshot.gpu_usage_percent).toBe(35);
+      expect(snapshot.cpu_temp_celsius).toBe(52);
+      expect(snapshot.gpu_temp_celsius).toBe(48);
+      expect(snapshot.network_bytes_sent).toBe(400000000);
+      expect(snapshot.network_bytes_recv).toBe(1350000000);
     });
   });
 

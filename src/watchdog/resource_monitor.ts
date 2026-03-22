@@ -166,6 +166,89 @@ export const parse_disk_usage = (): { used_gb: number; total_gb: number } => {
   }
 };
 
+/**
+ * Parse GPU usage on Apple Silicon using ioreg.
+ * Reads GPU utilization from IOAccelerator performance stats.
+ * Returns 0 if unavailable (non-Apple Silicon or permission issue).
+ */
+export const parse_gpu_usage = (): number => {
+  try {
+    // Safe: hardcoded command with no user input
+    const output = execSync(
+      'ioreg -r -d 1 -c IOGPUDevice 2>/dev/null | grep "gpu-core-utilization"',
+      { encoding: 'utf-8', timeout: 5_000 },
+    );
+    // Format: "gpu-core-utilization" = 1234567 (value is in millipercent, 0-100000)
+    const match = output.match(/"gpu-core-utilization"\s*=\s*(\d+)/);
+    if (!match) return 0;
+    return parseInt(match[1], 10) / 1000; // convert millipercent to percent
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Parse CPU and GPU temperatures on macOS.
+ * Uses powermetrics (requires root) or falls back to ioreg thermal data.
+ * Returns { cpu_temp: number, gpu_temp: number } in Celsius.
+ */
+export const parse_temperature = (): { cpu_temp: number; gpu_temp: number } => {
+  try {
+    // Safe: hardcoded command with no user input
+    const output = execSync(
+      'ioreg -r -d 1 -c AppleARMIODevice 2>/dev/null | grep -E "temperature|die-temp"',
+      { encoding: 'utf-8', timeout: 5_000 },
+    );
+
+    // Look for CPU die temperature
+    const cpu_match = output.match(/"die-temp(?:erature)?"\s*=\s*(\d+)/);
+    // Temperature is typically in centi-degrees (e.g., 5200 = 52.0°C)
+    const cpu_temp = cpu_match ? parseInt(cpu_match[1], 10) / 100 : 0;
+
+    // GPU temperature may be reported separately or same as die temp
+    const gpu_match = output.match(/"gpu-temp(?:erature)?"\s*=\s*(\d+)/);
+    const gpu_temp = gpu_match ? parseInt(gpu_match[1], 10) / 100 : cpu_temp;
+
+    return { cpu_temp, gpu_temp };
+  } catch {
+    return { cpu_temp: 0, gpu_temp: 0 };
+  }
+};
+
+/**
+ * Parse network throughput from netstat.
+ * Returns bytes sent/received since boot.
+ * Delta calculation is handled by the caller.
+ */
+export const parse_network_throughput = (): { bytes_sent: number; bytes_recv: number } => {
+  try {
+    // Safe: hardcoded command with no user input
+    const output = execSync('netstat -ib', { encoding: 'utf-8', timeout: 5_000 });
+    const lines = output.split('\n');
+
+    let total_sent = 0;
+    let total_recv = 0;
+
+    for (const line of lines) {
+      // Skip header and loopback
+      if (line.startsWith('Name') || line.startsWith('lo')) continue;
+      const parts = line.trim().split(/\s+/);
+      // netstat -ib columns: Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll
+      // Index:                0    1   2       3       4     5     6      7     8     9      10
+      if (parts.length >= 10) {
+        const ibytes = parseInt(parts[6], 10);
+        const obytes = parseInt(parts[9], 10);
+        if (!isNaN(ibytes)) total_recv += ibytes;
+        if (!isNaN(obytes)) total_sent += obytes;
+      }
+    }
+
+    return { bytes_sent: total_sent, bytes_recv: total_recv };
+  } catch {
+    return { bytes_sent: 0, bytes_recv: 0 };
+  }
+};
+
 // === Resource Monitor (returned interface) ===
 
 export type ResourceMonitor = {
@@ -190,6 +273,9 @@ export const create_resource_monitor = (config: ResourceMonitorConfig): Resource
     const cpu_usage_percent = parse_cpu_usage();
     const { used_mb, total_mb } = parse_memory_usage();
     const { used_gb, total_gb } = parse_disk_usage();
+    const gpu_usage_percent = parse_gpu_usage();
+    const { cpu_temp, gpu_temp } = parse_temperature();
+    const { bytes_sent, bytes_recv } = parse_network_throughput();
 
     return {
       timestamp: new Date().toISOString(),
@@ -198,6 +284,11 @@ export const create_resource_monitor = (config: ResourceMonitorConfig): Resource
       memory_total_mb: total_mb,
       disk_used_gb: used_gb,
       disk_total_gb: total_gb,
+      gpu_usage_percent,
+      cpu_temp_celsius: cpu_temp,
+      gpu_temp_celsius: gpu_temp,
+      network_bytes_sent: bytes_sent,
+      network_bytes_recv: bytes_recv,
     };
   };
 
@@ -733,6 +824,9 @@ export const create_unified_monitor = (config?: UnifiedMonitorConfig) => {
     const cpu_usage_percent = parse_cpu_usage();
     const { used_mb, total_mb } = parse_memory_usage();
     const { used_gb, total_gb } = parse_disk_usage();
+    const gpu_usage_percent = parse_gpu_usage();
+    const { cpu_temp, gpu_temp } = parse_temperature();
+    const { bytes_sent, bytes_recv } = parse_network_throughput();
 
     return {
       timestamp: new Date().toISOString(),
@@ -741,6 +835,11 @@ export const create_unified_monitor = (config?: UnifiedMonitorConfig) => {
       memory_total_mb: total_mb,
       disk_used_gb: used_gb,
       disk_total_gb: total_gb,
+      gpu_usage_percent,
+      cpu_temp_celsius: cpu_temp,
+      gpu_temp_celsius: gpu_temp,
+      network_bytes_sent: bytes_sent,
+      network_bytes_recv: bytes_recv,
     };
   };
 

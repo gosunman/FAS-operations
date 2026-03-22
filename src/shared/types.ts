@@ -236,12 +236,84 @@ export type ResourceSnapshot = {
   memory_total_mb: number;
   disk_used_gb: number;
   disk_total_gb: number;
+  // Extended metrics (Plan C — infra monitoring)
+  gpu_usage_percent?: number;
+  cpu_temp_celsius?: number;
+  gpu_temp_celsius?: number;
+  network_bytes_sent?: number;
+  network_bytes_recv?: number;
 };
 
 export type ResourceThresholds = {
   cpu_percent: number;
   memory_percent: number;
   disk_percent: number;
+};
+
+// === Extended Monitoring Types (Plan C — infra daily report) ===
+
+export type MachineState = 'working' | 'idle' | 'down';
+
+export type MachineTimeEntry = {
+  timestamp: string;
+  state: MachineState;
+  duration_ms: number;
+};
+
+export type DailyMachineStats = {
+  device: string;
+  date: string; // YYYY-MM-DD
+  // Time classification
+  working_ms: number;
+  idle_ms: number;
+  down_ms: number;
+  // CPU stats
+  cpu_avg: number;
+  cpu_max: number;
+  cpu_min: number;
+  // GPU stats
+  gpu_avg: number;
+  gpu_max: number;
+  gpu_min: number;
+  // Temperature stats
+  cpu_temp_avg: number;
+  cpu_temp_max: number;
+  gpu_temp_avg: number;
+  gpu_temp_max: number;
+  // Memory stats
+  ram_avg_mb: number;
+  ram_max_mb: number;
+  ram_total_mb: number;
+  // Network
+  total_bytes_sent: number;
+  total_bytes_recv: number;
+  // Snapshot count (for validation)
+  snapshot_count: number;
+};
+
+export type DailyAIStats = {
+  date: string;
+  claude_requests: number;
+  claude_failures: number;
+  claude_throttle_count: number;
+  chatgpt_requests: number;
+  chatgpt_failures: number;
+  gemini_requests: number;
+  gemini_failures: number;
+};
+
+export type BottleneckAlert = {
+  type: 'underutilized' | 'cpu_bottleneck' | 'api_limit' | 'overheating' | 'memory_pressure';
+  device: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+};
+
+export type DailyInfraReport = {
+  date: string;
+  machines: DailyMachineStats[];
+  ai_stats: DailyAIStats;
+  bottlenecks: BottleneckAlert[];
 };
 
 // === Network Queue Types (Phase 7) ===
