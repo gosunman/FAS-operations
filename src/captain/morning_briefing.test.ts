@@ -500,4 +500,225 @@ describe('morning_briefing', () => {
       expect(result.data.date).toBe('2026-03-19');
     });
   });
+
+  describe('format_short_briefing with infra report', () => {
+    it('should include infra report before overnight section', () => {
+      // Given: briefing data with an infrastructure report
+      const data: BriefingData = {
+        date: '2026-03-23',
+        overnight: { completed_tasks: [], total_count: 0 },
+        today_schedules: [],
+        blocked: { blocked_tasks: [], pending_tasks: [], in_progress_tasks: [] },
+        infra_report: '📊 인프라 일일 보고 — 2026-03-23\n\n[Captain M4 Ultra]\nCPU 34%',
+      };
+
+      // When: formatting the briefing
+      const output = format_short_briefing(data);
+
+      // Then: infra report should appear before overnight section
+      expect(output).toContain('인프라 일일 보고');
+      const infra_idx = output.indexOf('인프라');
+      const overnight_idx = output.indexOf('Overnight');
+      expect(infra_idx).toBeLessThan(overnight_idx);
+    });
+
+    it('should work without infra report (backward compatible)', () => {
+      // Given: briefing data without infra_report field
+      const data: BriefingData = {
+        date: '2026-03-23',
+        overnight: { completed_tasks: [], total_count: 0 },
+        today_schedules: [],
+        blocked: { blocked_tasks: [], pending_tasks: [], in_progress_tasks: [] },
+      };
+
+      // When: formatting the briefing
+      const output = format_short_briefing(data);
+
+      // Then: should still produce valid output with standard sections
+      expect(output).toContain('[Morning Briefing]');
+      expect(output).toContain('Overnight');
+    });
+
+    it('should separate infra report from overnight section with divider', () => {
+      // Given: briefing data with infra report
+      const data: BriefingData = {
+        date: '2026-03-23',
+        overnight: { completed_tasks: [], total_count: 0 },
+        today_schedules: [],
+        blocked: { blocked_tasks: [], pending_tasks: [], in_progress_tasks: [] },
+        infra_report: 'Test infra content',
+      };
+
+      // When: formatting the briefing
+      const output = format_short_briefing(data);
+
+      // Then: divider should appear between infra and overnight
+      const infra_idx = output.indexOf('Test infra content');
+      const divider_idx = output.indexOf('---', infra_idx);
+      const overnight_idx = output.indexOf('Overnight');
+      expect(divider_idx).toBeGreaterThan(infra_idx);
+      expect(divider_idx).toBeLessThan(overnight_idx);
+    });
+  });
+
+  describe('collect_briefing_data with infra report', () => {
+    it('should include infra_report when provided', () => {
+      // Given: a store and an infra report string
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      // When: collecting briefing data with infra report
+      const data = collect_briefing_data(store, schedules_path, now, 'test infra report');
+
+      // Then: infra_report field should be set
+      expect(data.infra_report).toBe('test infra report');
+    });
+
+    it('should omit infra_report when null', () => {
+      // Given: a store and null infra report
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      // When: collecting briefing data with null infra report
+      const data = collect_briefing_data(store, schedules_path, now, null);
+
+      // Then: infra_report field should be undefined
+      expect(data.infra_report).toBeUndefined();
+    });
+
+    it('should omit infra_report when not provided (backward compatible)', () => {
+      // Given: a store, no infra report parameter
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      // When: collecting briefing data without infra report param
+      const data = collect_briefing_data(store, schedules_path, now);
+
+      // Then: infra_report field should be undefined
+      expect(data.infra_report).toBeUndefined();
+    });
+  });
+
+  describe('format_detailed_briefing with infra report', () => {
+    it('should include infra section as first section when present', () => {
+      // Given: briefing data with infra report
+      const data: BriefingData = {
+        date: '2026-03-23',
+        overnight: { completed_tasks: [], total_count: 0 },
+        today_schedules: [],
+        blocked: { blocked_tasks: [], pending_tasks: [], in_progress_tasks: [] },
+        infra_report: 'CPU 34% | Memory 60%',
+      };
+
+      // When: formatting for Notion
+      const result = format_detailed_briefing(data);
+
+      // Then: first section should be the infra report
+      expect(result.sections[0].title).toBe('Infrastructure Report');
+      expect(result.sections[0].content).toContain('CPU 34%');
+      expect(result.sections).toHaveLength(4); // infra + overnight + schedule + status
+    });
+
+    it('should not include infra section when not present', () => {
+      // Given: briefing data without infra report
+      const data: BriefingData = {
+        date: '2026-03-23',
+        overnight: { completed_tasks: [], total_count: 0 },
+        today_schedules: [],
+        blocked: { blocked_tasks: [], pending_tasks: [], in_progress_tasks: [] },
+      };
+
+      // When: formatting for Notion
+      const result = format_detailed_briefing(data);
+
+      // Then: should have only 3 sections (no infra)
+      expect(result.sections).toHaveLength(3);
+      expect(result.sections[0].title).toBe('Overnight Completed Tasks');
+    });
+  });
+
+  describe('create_morning_briefing with infra report', () => {
+    it('should include infra report when get_infra_report callback is provided', async () => {
+      // Given: a briefing module with get_infra_report callback
+      const router = create_mock_router();
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      const briefing = create_morning_briefing({
+        store,
+        router,
+        notion: null,
+        schedules_path,
+        get_infra_report: () => 'Captain CPU 30%',
+      });
+
+      // When: running the briefing
+      const result = await briefing.run(now);
+
+      // Then: infra report should be in the data
+      expect(result.data.infra_report).toBe('Captain CPU 30%');
+
+      // And: the short message sent via router should contain infra report
+      const route_call = (router.route as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(route_call.message).toContain('Captain CPU 30%');
+    });
+
+    it('should work without get_infra_report callback (backward compatible)', async () => {
+      // Given: a briefing module without get_infra_report
+      const router = create_mock_router();
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      const briefing = create_morning_briefing({
+        store,
+        router,
+        notion: null,
+        schedules_path,
+      });
+
+      // When: running the briefing
+      const result = await briefing.run(now);
+
+      // Then: should succeed without infra report
+      expect(result.success).toBe(true);
+      expect(result.data.infra_report).toBeUndefined();
+    });
+
+    it('should gracefully handle get_infra_report throwing an error', async () => {
+      // Given: a briefing module with a failing get_infra_report callback
+      const router = create_mock_router();
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      const briefing = create_morning_briefing({
+        store,
+        router,
+        notion: null,
+        schedules_path,
+        get_infra_report: () => { throw new Error('disk read failed'); },
+      });
+
+      // When: running the briefing
+      const result = await briefing.run(now);
+
+      // Then: should succeed without crashing, infra_report should be absent
+      expect(result.success).toBe(true);
+      expect(result.data.infra_report).toBeUndefined();
+    });
+
+    it('should handle get_infra_report returning null', async () => {
+      // Given: a briefing module with get_infra_report returning null
+      const router = create_mock_router();
+      const now = new Date('2026-03-23T07:30:00Z');
+
+      const briefing = create_morning_briefing({
+        store,
+        router,
+        notion: null,
+        schedules_path,
+        get_infra_report: () => null,
+      });
+
+      // When: running the briefing
+      const result = await briefing.run(now);
+
+      // Then: should succeed, infra_report should be absent
+      expect(result.success).toBe(true);
+      expect(result.data.infra_report).toBeUndefined();
+    });
+  });
 });

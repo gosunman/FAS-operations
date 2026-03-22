@@ -17,6 +17,7 @@ export type MorningBriefingDeps = {
   router: NotificationRouter;
   notion: NotionClient | null;
   schedules_path: string;
+  get_infra_report?: () => string | null; // callback to get formatted infra report
 };
 
 // === Schedule types (mirrored from planning_loop for schedule reading) ===
@@ -71,6 +72,7 @@ export type BriefingData = {
   overnight: OvernightSummary;
   today_schedules: TodaySchedule[];
   blocked: BlockedTasksSummary;
+  infra_report?: string; // pre-formatted infra report string
 };
 
 // === Helper: check if a timestamp falls within overnight window ===
@@ -126,6 +128,7 @@ export const collect_briefing_data = (
   store: TaskStore,
   schedules_path: string,
   now: Date = new Date(),
+  infra_report_text?: string | null,
 ): BriefingData => {
   const date_str = now.toISOString().slice(0, 10);
 
@@ -173,6 +176,8 @@ export const collect_briefing_data = (
       pending_tasks,
       in_progress_tasks,
     },
+    // Only include infra_report if a non-null string was provided
+    ...(infra_report_text ? { infra_report: infra_report_text } : {}),
   };
 };
 
@@ -183,6 +188,14 @@ export const format_short_briefing = (data: BriefingData): string => {
 
   lines.push(`[Morning Briefing] ${data.date}`);
   lines.push('');
+
+  // Infrastructure report (if available)
+  if (data.infra_report) {
+    lines.push(data.infra_report);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
 
   // Overnight summary
   lines.push(`## Overnight (${OVERNIGHT_START_HOUR}:00~${OVERNIGHT_END_HOUR}:00)`);
@@ -233,6 +246,11 @@ export const format_detailed_briefing = (data: BriefingData): {
   sections: Array<{ title: string; content: string }>;
 } => {
   const sections: Array<{ title: string; content: string }> = [];
+
+  // Infrastructure report (if available)
+  if (data.infra_report) {
+    sections.push({ title: 'Infrastructure Report', content: data.infra_report });
+  }
 
   // Overnight completed tasks
   const overnight_lines: string[] = [];
@@ -332,8 +350,19 @@ export const create_morning_briefing = (deps: MorningBriefingDeps) => {
     data: BriefingData;
     channels: { telegram_slack: boolean; notion: boolean };
   }> => {
-    // 1. Collect data
-    const data = collect_briefing_data(deps.store, deps.schedules_path, now);
+    // Get infra report if callback provided
+    let infra_report_text: string | null = null;
+    try {
+      if (deps.get_infra_report) {
+        infra_report_text = deps.get_infra_report();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[MorningBriefing] Failed to get infra report: ${msg}`);
+    }
+
+    // 1. Collect data (with optional infra report)
+    const data = collect_briefing_data(deps.store, deps.schedules_path, now, infra_report_text);
 
     // 2. Format short message for Telegram + Slack (via notification router)
     const short_msg = format_short_briefing(data);
